@@ -1,5 +1,6 @@
 package dev.soupslurpr.beautyxt
 
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
@@ -32,6 +33,7 @@ import dev.soupslurpr.beautyxt.ui.FileEditScreen
 import dev.soupslurpr.beautyxt.ui.LicenseScreen
 import dev.soupslurpr.beautyxt.ui.PrivacyPolicyScreen
 import dev.soupslurpr.beautyxt.ui.SettingsScreen
+import java.time.LocalDateTime
 
 enum class BeauTyXTScreens(@StringRes val title: Int) {
     Start(title = R.string.app_name),
@@ -126,7 +128,13 @@ fun BeauTyXTApp(
                     },
                     onCreateButtonClicked = {
                         createFileLauncher.launch(
-                            "",
+                            // Make default file name the current LocalDateTime, and for devices
+                            // which don't support LocalDateTime, make it blank.
+                            (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                LocalDateTime.now().toString()
+                            } else {
+                                ""
+                            }),
                             ActivityOptionsCompat.makeBasic()
                         )
                     },
