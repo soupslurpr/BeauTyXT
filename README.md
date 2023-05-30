@@ -11,3 +11,6 @@ Implements Material Design 3 and dynamic color schemes – because that's what t
 
 # Download
 Wanna download BeauTyXT? You can get it on the Accrescent app store by clicking the image below.
+<a href="https://accrescent.app/app/dev.soupslurpr.beautyxt">
+    <img alt="Get it on Accrescent" src="https://accrescent.app/badges/get-it-on.png">
+</a>
