@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">BeauTyXT</string>
+    <string name="settings">Impostazioni</string>
+    <string name="back_button">Indietro</string>
+    <string name="welcome">Benvenuto su BeauTyXT!</string>
+    <string name="create_new_file">Crea un nuovo file</string>
+    <string name="open_existing_txt_file">Apri un file .txt esistente</string>
+    <string name="file_editor">Editor di file</string>
+    <string name="view_source_code_setting_name">Codice sorgente</string>
+    <string name="view_source_code_setting_description">Visualizza il codice sorgente di BeauTyXT sul sito di GitHub nel browser</string>
+    <string name="privacy_policy_setting_name">Informativa sulla privacy</string>
+    <string name="privacy_policy_setting_description">Visualizza l\'informativa sulla privacy nell\'app</string>
+    <string name="license">Licenza</string>
+    <string name="privacy_policy">Informativa sulla privacy</string>
+    <string name="license_setting_name">Informativa sulla privacy di BeauTyXT</string>
+    <string name="license_setting_description">Visualizza la licenza di BeauTyXT nell'app</string>
+    <string name="credits">Riconoscimenti</string>
+    <string name="credits_setting_name">Riconoscimenti</string>
+    <string name="credits_setting_description">Visualizza le licenze open source del codice che BeauTyXT utilizza nell\'app</string>
+    <string name="open_existing_file_of_any_type">Apri un file esistente di qualsiasi tipo</string>
+</resources>
