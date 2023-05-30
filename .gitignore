@@ -14,3 +14,5 @@
 .cxx
 local.properties
 /app/release/bundletool-all-1.15.1.jar
+/app/release/app-release.aab
+/app/release/BeauTyXT-release.apks
