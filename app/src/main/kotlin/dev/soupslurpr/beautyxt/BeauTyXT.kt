@@ -120,9 +120,15 @@ fun BeauTyXTApp(
             composable(route = BeauTyXTScreens.Start.name) {
                 StartupScreen(
                     modifier = modifier,
-                    onOpenButtonClicked = {
+                    onOpenTxtButtonClicked = {
                         openFileLauncher.launch(
                             arrayOf("text/plain"),
+                            ActivityOptionsCompat.makeBasic(),
+                        )
+                    },
+                    onOpenAnyButtonClicked = {
+                        openFileLauncher.launch(
+                            arrayOf("*/*"),
                             ActivityOptionsCompat.makeBasic(),
                         )
                     },
