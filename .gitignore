@@ -13,3 +13,4 @@
 .externalNativeBuild
 .cxx
 local.properties
+/app/release/bundletool-all-1.15.1.jar
