@@ -34,7 +34,8 @@ import dev.soupslurpr.beautyxt.R
 @Composable
 fun StartupScreen(
     modifier: Modifier,
-    onOpenButtonClicked: () -> Unit,
+    onOpenTxtButtonClicked: () -> Unit,
+    onOpenAnyButtonClicked: () -> Unit,
     onCreateButtonClicked: () -> Unit,
     onSettingsButtonClicked: () -> Unit,
 ) {
@@ -56,19 +57,30 @@ fun StartupScreen(
             style = MaterialTheme.typography.headlineLarge
         )
         Text(
-            text = "Text, but beautiful.",
+            text = "3 releases in one day?!",
             style = MaterialTheme.typography.bodySmall
         )
         FilledTonalButton(
             modifier = modifier.fillMaxWidth(),
-            onClick = { onOpenButtonClicked() }
+            onClick = { onOpenTxtButtonClicked() }
         ) {
             Icon(
                 painter = painterResource(id = R.drawable.baseline_file_open_24),
                 contentDescription = null
             )
             Spacer(modifier = modifier.width(8.dp))
-            Text(stringResource(R.string.open_existing_file))
+            Text(stringResource(R.string.open_existing_txt_file))
+        }
+        FilledTonalButton(
+            modifier = modifier.fillMaxWidth(),
+            onClick = { onOpenAnyButtonClicked() }
+        ) {
+            Icon(
+                painter = painterResource(id = R.drawable.baseline_file_open_24),
+                contentDescription = null
+            )
+            Spacer(modifier = modifier.width(8.dp))
+            Text(stringResource(R.string.open_existing_file_of_any_type))
         }
         FilledTonalButton(
             modifier = modifier.fillMaxWidth(),
@@ -100,7 +112,8 @@ fun StartupScreen(
 fun StartupPreview() {
     StartupScreen(
         modifier = Modifier.fillMaxSize(),
-        onOpenButtonClicked = {},
+        onOpenTxtButtonClicked = {},
+        onOpenAnyButtonClicked = {},
         onCreateButtonClicked = {},
         onSettingsButtonClicked = {},
     )
