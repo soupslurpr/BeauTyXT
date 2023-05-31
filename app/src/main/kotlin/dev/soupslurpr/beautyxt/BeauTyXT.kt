@@ -122,7 +122,11 @@ fun BeauTyXTApp(
                     modifier = modifier,
                     onOpenButtonClicked = {
                         openFileLauncher.launch(
-                            arrayOf("text/plain"),
+                            arrayOf(
+                                "text/*",
+                                "application/xml",
+                                "application/json",
+                            ),
                             ActivityOptionsCompat.makeBasic(),
                         )
                     },
