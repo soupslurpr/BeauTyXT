@@ -4,7 +4,7 @@
     <string name="back_button">Back</string>
     <string name="welcome">Welcome to BeauTyXT!</string>
     <string name="create_new_file">Create a new file</string>
-    <string name="open_existing_txt_file">Open an existing .txt file</string>
+    <string name="open_existing_file">Open an existing file</string>
     <string name="file_editor">File Editor</string>
     <string name="view_source_code_setting_name">Source code</string>
     <string name="view_source_code_setting_description">View BeauTyXT\'s source code on the GitHub website in your web browser</string>
@@ -17,5 +17,4 @@
     <string name="credits">Credits</string>
     <string name="credits_setting_name">Credits</string>
     <string name="credits_setting_description">View open source licenses of code that BeauTyXT uses in app</string>
-    <string name="open_existing_file_of_any_type">Open an existing file of any type</string>
 </resources>
