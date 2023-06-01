@@ -1,5 +1,7 @@
 package dev.soupslurpr.beautyxt
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
@@ -15,6 +17,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -73,7 +76,8 @@ fun BeauTyXTAppBar(
 @Composable
 fun BeauTyXTApp(
     viewModel: FileViewModel = viewModel(),
-    modifier: Modifier
+    modifier: Modifier,
+    intent: Intent,
 ) {
     val navController = rememberNavController()
 
@@ -84,6 +88,8 @@ fun BeauTyXTApp(
     )
 
     val context = LocalContext.current
+
+    val uiState by viewModel.uiState.collectAsState()
 
     val openFileLauncher = rememberLauncherForActivityResult(contract = OpenDocument()) {
         if (it != null) {
@@ -99,7 +105,15 @@ fun BeauTyXTApp(
         }
     }
 
-    val uiState by viewModel.uiState.collectAsState()
+    LaunchedEffect(key1 = Unit) {
+        if (intent.action == Intent.ACTION_VIEW || intent.action == Intent.ACTION_EDIT) {
+            val uri: Uri? = intent.data
+            if (uri != null) {
+                viewModel.setUri(uri, context)
+                navController.navigate(BeauTyXTScreens.FileEdit.name)
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
