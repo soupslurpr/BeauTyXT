@@ -14,3 +14,6 @@ Wanna download BeauTyXT? You can get it on the Accrescent app store by clicking 
 <a href="https://accrescent.app/app/dev.soupslurpr.beautyxt">
     <img alt="Get it on Accrescent" src="https://accrescent.app/badges/get-it-on.png">
 </a>
+
+## Screenshots
+<img alt="BeauTyXT screenshot" src="https://raw.githubusercontent.com/soupslurpr/BeauTyXT/master/Screenshot_20230601-054228.png">
