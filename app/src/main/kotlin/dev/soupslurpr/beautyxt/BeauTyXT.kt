@@ -77,6 +77,7 @@ fun BeauTyXTAppBar(
 fun BeauTyXTApp(
     viewModel: FileViewModel = viewModel(),
     modifier: Modifier,
+    intent: Intent,
 ) {
     val navController = rememberNavController()
 
@@ -87,6 +88,8 @@ fun BeauTyXTApp(
     )
 
     val context = LocalContext.current
+
+    val uiState by viewModel.uiState.collectAsState()
 
     val openFileLauncher = rememberLauncherForActivityResult(contract = OpenDocument()) {
         if (it != null) {
@@ -102,7 +105,15 @@ fun BeauTyXTApp(
         }
     }
 
-    val uiState by viewModel.uiState.collectAsState()
+    LaunchedEffect(key1 = Unit) {
+        if (intent.action == Intent.ACTION_VIEW || intent.action == Intent.ACTION_EDIT) {
+            val uri: Uri? = intent.data
+            if (uri != null) {
+                viewModel.setUri(uri, context)
+                navController.navigate(BeauTyXTScreens.FileEdit.name)
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
