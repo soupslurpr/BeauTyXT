@@ -14,11 +14,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -35,10 +41,13 @@ import dev.soupslurpr.beautyxt.R
 @Composable
 fun StartupScreen(
     modifier: Modifier,
-    onOpenButtonClicked: () -> Unit,
-    onCreateButtonClicked: () -> Unit,
+    onOpenTxtButtonClicked: () -> Unit,
+    onCreateTxtButtonClicked: () -> Unit,
     onSettingsButtonClicked: () -> Unit,
+    onOpenAnyButtonClicked: () -> Unit,
 ) {
+    var isOpenDropdownMenuExpanded by remember { mutableStateOf(false) }
+    var isCreateDropdownMenuExpanded by remember { mutableStateOf(false) }
     Column(
         modifier = modifier
             .padding(16.dp)
@@ -59,14 +68,14 @@ fun StartupScreen(
         Text(
             text = "Text, but beautiful.\n" +
                     "\n" +
-                    "NEW! BeauTyXT now shows up as an option" +
-                    " to open files in file explorers and other apps!",
+                    "NEW! You can now open custom or any file type in BeauTyXT!\n" +
+                    "Just make sure they are plain text.",
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center
         )
         FilledTonalButton(
             modifier = modifier.fillMaxWidth(),
-            onClick = { onOpenButtonClicked() }
+            onClick = { isOpenDropdownMenuExpanded = true }
         ) {
             Icon(
                 painter = painterResource(id = R.drawable.baseline_file_open_24),
@@ -74,10 +83,29 @@ fun StartupScreen(
             )
             Spacer(modifier = modifier.width(8.dp))
             Text(stringResource(R.string.open_existing_file))
+            DropdownMenu(
+                expanded = isOpenDropdownMenuExpanded,
+                onDismissRequest = { isOpenDropdownMenuExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text(text = ".txt") },
+                    onClick = {
+                        isOpenDropdownMenuExpanded = false
+                        onOpenTxtButtonClicked()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.any)) },
+                    onClick = {
+                        isOpenDropdownMenuExpanded = false
+                        onOpenAnyButtonClicked()
+                    },
+                )
+            }
         }
         FilledTonalButton(
             modifier = modifier.fillMaxWidth(),
-            onClick = { onCreateButtonClicked() }
+            onClick = { isCreateDropdownMenuExpanded = true }
         ) {
             Icon(
                 imageVector = Icons.Filled.Add,
@@ -85,6 +113,18 @@ fun StartupScreen(
             )
             Spacer(modifier = modifier.width(8.dp))
             Text(stringResource(R.string.create_new_file))
+            DropdownMenu(
+                expanded = isCreateDropdownMenuExpanded,
+                onDismissRequest = { isCreateDropdownMenuExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text(text = ".txt") },
+                    onClick = {
+                        isCreateDropdownMenuExpanded = false
+                        onCreateTxtButtonClicked()
+                    },
+                )
+            }
         }
         FilledTonalButton(
             modifier = modifier.fillMaxWidth(),
@@ -105,8 +145,9 @@ fun StartupScreen(
 fun StartupPreview() {
     StartupScreen(
         modifier = Modifier.fillMaxSize(),
-        onOpenButtonClicked = {},
-        onCreateButtonClicked = {},
+        onOpenAnyButtonClicked = {},
+        onOpenTxtButtonClicked = {},
+        onCreateTxtButtonClicked = {},
         onSettingsButtonClicked = {},
     )
 }

@@ -134,7 +134,7 @@ fun BeauTyXTApp(
             composable(route = BeauTyXTScreens.Start.name) {
                 StartupScreen(
                     modifier = modifier,
-                    onOpenButtonClicked = {
+                    onOpenTxtButtonClicked = {
                         openFileLauncher.launch(
                             arrayOf(
                                 "text/*",
@@ -144,7 +144,13 @@ fun BeauTyXTApp(
                             ActivityOptionsCompat.makeBasic(),
                         )
                     },
-                    onCreateButtonClicked = {
+                    onOpenAnyButtonClicked = {
+                        openFileLauncher.launch(
+                            arrayOf("*/*"),
+                            ActivityOptionsCompat.makeBasic(),
+                        )
+                    },
+                    onCreateTxtButtonClicked = {
                         createFileLauncher.launch(
                             // Make default file name the current LocalDateTime, and for devices
                             // which don't support LocalDateTime, make it blank.
