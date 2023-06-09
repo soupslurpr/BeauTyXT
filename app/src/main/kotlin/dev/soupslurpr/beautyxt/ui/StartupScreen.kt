@@ -9,16 +9,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialogDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -46,7 +50,7 @@ fun StartupScreen(
     onSettingsButtonClicked: () -> Unit,
     onOpenAnyButtonClicked: () -> Unit,
 ) {
-    var isOpenDropdownMenuExpanded by remember { mutableStateOf(false) }
+    var isOpenFileTypeAlertDialogShown by remember { mutableStateOf(false) }
     var isCreateDropdownMenuExpanded by remember { mutableStateOf(false) }
     Column(
         modifier = modifier
@@ -75,7 +79,7 @@ fun StartupScreen(
         )
         FilledTonalButton(
             modifier = modifier.fillMaxWidth(),
-            onClick = { isOpenDropdownMenuExpanded = true }
+            onClick = { isOpenFileTypeAlertDialogShown = true }
         ) {
             Icon(
                 painter = painterResource(id = R.drawable.baseline_file_open_24),
@@ -83,24 +87,31 @@ fun StartupScreen(
             )
             Spacer(modifier = modifier.width(8.dp))
             Text(stringResource(R.string.open_existing_file))
-            DropdownMenu(
-                expanded = isOpenDropdownMenuExpanded,
-                onDismissRequest = { isOpenDropdownMenuExpanded = false },
+            FileTypeSelectionDialog(
+                isShown = isOpenFileTypeAlertDialogShown,
+                onDismissRequest = { isOpenFileTypeAlertDialogShown = false }
             ) {
-                DropdownMenuItem(
-                    text = { Text(text = ".txt") },
+                Text(
+                    text = stringResource(R.string.pick_a_file_type_to_open)
+                )
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
                     onClick = {
-                        isOpenDropdownMenuExpanded = false
                         onOpenTxtButtonClicked()
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.any)) },
+                        isOpenFileTypeAlertDialogShown = false
+                    }
+                ) {
+                    Text(text = stringResource(id = R.string.txt))
+                }
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
                     onClick = {
-                        isOpenDropdownMenuExpanded = false
                         onOpenAnyButtonClicked()
-                    },
-                )
+                        isOpenFileTypeAlertDialogShown = false
+                    }
+                ) {
+                    Text(text = stringResource(id = R.string.any))
+                }
             }
         }
         FilledTonalButton(
@@ -113,17 +124,22 @@ fun StartupScreen(
             )
             Spacer(modifier = modifier.width(8.dp))
             Text(stringResource(R.string.create_new_file))
-            DropdownMenu(
-                expanded = isCreateDropdownMenuExpanded,
+            FileTypeSelectionDialog(
+                isShown = isCreateDropdownMenuExpanded,
                 onDismissRequest = { isCreateDropdownMenuExpanded = false },
             ) {
-                DropdownMenuItem(
-                    text = { Text(text = ".txt") },
+                Text(
+                    text = stringResource(R.string.pick_a_file_type_to_create)
+                )
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         isCreateDropdownMenuExpanded = false
                         onCreateTxtButtonClicked()
                     },
-                )
+                ) {
+                    Text(text = stringResource(R.string.txt))
+                }
             }
         }
         FilledTonalButton(
@@ -136,6 +152,36 @@ fun StartupScreen(
             )
             Spacer(modifier = modifier.width(8.dp))
             Text(stringResource(R.string.settings))
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+fun FileTypeSelectionDialog(
+    isShown: Boolean,
+    onDismissRequest: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    if (isShown) {
+        AlertDialog(
+            onDismissRequest = onDismissRequest,
+        ) {
+            Surface(
+                modifier = Modifier
+                    .wrapContentWidth()
+                    .wrapContentHeight(),
+                shape = MaterialTheme.shapes.large,
+                tonalElevation = AlertDialogDefaults.TonalElevation
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    content()
+                }
+            }
         }
     }
 }
