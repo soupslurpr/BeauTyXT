@@ -51,7 +51,7 @@ fun StartupScreen(
     onOpenAnyButtonClicked: () -> Unit,
 ) {
     var isOpenFileTypeAlertDialogShown by remember { mutableStateOf(false) }
-    var isCreateDropdownMenuExpanded by remember { mutableStateOf(false) }
+    var isCreateFileTypeAlertDialogShown by remember { mutableStateOf(false) }
     Column(
         modifier = modifier
             .padding(16.dp)
@@ -116,7 +116,7 @@ fun StartupScreen(
         }
         FilledTonalButton(
             modifier = modifier.fillMaxWidth(),
-            onClick = { isCreateDropdownMenuExpanded = true }
+            onClick = { isCreateFileTypeAlertDialogShown = true }
         ) {
             Icon(
                 imageVector = Icons.Filled.Add,
@@ -125,8 +125,8 @@ fun StartupScreen(
             Spacer(modifier = modifier.width(8.dp))
             Text(stringResource(R.string.create_new_file))
             FileTypeSelectionDialog(
-                isShown = isCreateDropdownMenuExpanded,
-                onDismissRequest = { isCreateDropdownMenuExpanded = false },
+                isShown = isCreateFileTypeAlertDialogShown,
+                onDismissRequest = { isCreateFileTypeAlertDialogShown = false },
             ) {
                 Text(
                     text = stringResource(R.string.pick_a_file_type_to_create)
@@ -134,7 +134,7 @@ fun StartupScreen(
                 FilledTonalButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
-                        isCreateDropdownMenuExpanded = false
+                        isCreateFileTypeAlertDialogShown = false
                         onCreateTxtButtonClicked()
                     },
                 ) {
