@@ -20,5 +20,5 @@
     <string name="any">Any</string>
     <string name="pick_a_file_type_to_create">Pick a file type to create</string>
     <string name="pick_a_file_type_to_open">Pick a file type to open</string>
-    <string name="txt">Text (.txt)</string>
+    <string name="txt">Plain Text (.txt)</string>
 </resources>
