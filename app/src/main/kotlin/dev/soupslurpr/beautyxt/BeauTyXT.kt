@@ -24,18 +24,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.app.ActivityOptionsCompat
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
-import dev.soupslurpr.beautyxt.ui.FileViewModel
-import dev.soupslurpr.beautyxt.ui.StartupScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 import dev.soupslurpr.beautyxt.ui.CreditsScreen
 import dev.soupslurpr.beautyxt.ui.FileEditScreen
+import dev.soupslurpr.beautyxt.ui.FileViewModel
 import dev.soupslurpr.beautyxt.ui.LicenseScreen
 import dev.soupslurpr.beautyxt.ui.PrivacyPolicyScreen
 import dev.soupslurpr.beautyxt.ui.SettingsScreen
+import dev.soupslurpr.beautyxt.ui.StartupScreen
 import java.time.LocalDateTime
 
 enum class BeauTyXTScreens(@StringRes val title: Int) {
@@ -169,10 +169,12 @@ fun BeauTyXTApp(
             }
             composable(route = BeauTyXTScreens.FileEdit.name) {
                 FileEditScreen(
-                    content = uiState.content,
-                    uri = uiState.uri,
+                    content = uiState.content.value,
                     name = uiState.name,
-                    onContentChanged = { viewModel.setContentToUri(it, uiState.uri, context) },
+                    onContentChanged = {
+                        viewModel.updateContent(it)
+                        viewModel.setContentToUri(uri = uiState.uri, context = context)
+                    },
                 )
             }
             composable(route = BeauTyXTScreens.Settings.name) {

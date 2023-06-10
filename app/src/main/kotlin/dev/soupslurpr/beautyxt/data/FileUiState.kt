@@ -1,6 +1,8 @@
 package dev.soupslurpr.beautyxt.data
 
 import android.net.Uri
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 
 data class FileUiState(
     /** uri of file */
@@ -8,7 +10,7 @@ data class FileUiState(
     /** name of file */
     val name: String = "",
     /** content of file */
-    val content: String = "",
+    var content: MutableState<String> = mutableStateOf(""),
     /** mimeType of file */
     // TODO: add support for multiple file types (.md maybe 😉)
 )
