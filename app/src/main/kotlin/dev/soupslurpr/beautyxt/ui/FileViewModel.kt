@@ -4,6 +4,8 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import dev.soupslurpr.beautyxt.data.FileUiState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,7 +60,7 @@ class FileViewModel : ViewModel() {
         return name
     }
 
-    private fun getContentFromUri(uri: Uri, context: Context): String {
+    private fun getContentFromUri(uri: Uri, context: Context): MutableState<String> {
         val stringBuilder = StringBuilder()
         val contentResolver = context.contentResolver
         contentResolver.openInputStream(uri)?.use { inputStream ->
@@ -71,17 +73,16 @@ class FileViewModel : ViewModel() {
                 }
             }
         }
-        return stringBuilder.toString()
+        return mutableStateOf(stringBuilder.toString())
     }
 
-    fun setContentToUri(content: String, uri: Uri, context: Context) {
-        println(content)
+    fun setContentToUri(uri: Uri, context: Context) {
         try {
             val contentResolver = context.contentResolver
             contentResolver.openFileDescriptor(uri, "wt")?.use {
                 FileOutputStream(it.fileDescriptor).use {
                     it.write(
-                        (content)
+                        (uiState.value.content.value)
                             .toByteArray()
                     )
                 }
@@ -91,5 +92,9 @@ class FileViewModel : ViewModel() {
         } catch (e: IOException) {
             e.printStackTrace()
         }
+    }
+
+    fun updateContent(content: String) {
+        uiState.value.content.value = content
     }
 }
