@@ -137,9 +137,7 @@ fun BeauTyXTApp(
                     onOpenTxtButtonClicked = {
                         openFileLauncher.launch(
                             arrayOf(
-                                "text/*",
-                                "application/xml",
-                                "application/json",
+                                "text/plain"
                             ),
                             ActivityOptionsCompat.makeBasic(),
                         )
