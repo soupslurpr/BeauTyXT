@@ -17,8 +17,8 @@
     <string name="credits">Credits</string>
     <string name="credits_setting_name">Credits</string>
     <string name="credits_setting_description">View open source licenses of code that BeauTyXT uses in app</string>
-    <string name="any">any</string>
+    <string name="any">Any</string>
     <string name="pick_a_file_type_to_create">Pick a file type to create</string>
     <string name="pick_a_file_type_to_open">Pick a file type to open</string>
-    <string name="txt">.txt (plain text)</string>
+    <string name="txt">Text (.txt)</string>
 </resources>
