@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "dev.soupslurpr.beautyxt"
-    compileSdk = 34
+    compileSdkPreview = "UpsideDownCake"
 
     defaultConfig {
         applicationId = "dev.soupslurpr.beautyxt"
