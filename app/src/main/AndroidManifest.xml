@@ -11,7 +11,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.beautyxt"
         android:enableOnBackInvokedCallback="true"
-        tools:targetApi="33">
+        tools:targetApi="34">
         <activity
             android:name="dev.soupslurpr.beautyxt.MainActivity"
             android:windowSoftInputMode="adjustResize"
