@@ -63,7 +63,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview:1.5.0-beta02")
     implementation("androidx.compose.material3:material3:1.2.0-alpha02")
     implementation("com.google.android.material:material:1.10.0-alpha03")
-    implementation("com.google.accompanist:accompanist-systemuicontroller:0.31.3-beta")
+    implementation("com.google.accompanist:accompanist-systemuicontroller:0.31.4-beta")
     implementation("androidx.navigation:navigation-compose:2.7.0-beta01")
     implementation("androidx.datastore:datastore-preferences:1.0.0")
     implementation("androidx.compose.material:material:1.5.0-beta02")
