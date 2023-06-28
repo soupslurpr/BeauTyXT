@@ -37,7 +37,7 @@ fun FileEditScreen(
                 Text(
                     text = name
                 )
-            }
+            },
         )
     }
 }
