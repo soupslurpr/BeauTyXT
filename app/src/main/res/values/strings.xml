@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">BeauTyXT</string>
     <string name="settings">Settings</string>
     <string name="back_button">Back</string>
@@ -17,8 +17,12 @@
     <string name="credits">Credits</string>
     <string name="credits_setting_name">Credits</string>
     <string name="credits_setting_description">View open source licenses of code that BeauTyXT uses in app</string>
-    <string name="any">Any</string>
-    <string name="pick_a_file_type_to_create">Pick a file type to create</string>
-    <string name="pick_a_file_type_to_open">Pick a file type to open</string>
-    <string name="txt">Plain Text (.txt &amp; .text)</string>
+    <string name="any" tools:ignore="MissingTranslation">Any</string>
+    <string name="pick_a_file_type_to_create" tools:ignore="MissingTranslation">Pick a file type to create</string>
+    <string name="pick_a_file_type_to_open" tools:ignore="MissingTranslation">Pick a file type to open</string>
+    <string name="txt" tools:ignore="MissingTranslation">Plain Text (.txt &amp; .text)</string>
+    <string name="pitch_black_background_setting_name" tools:ignore="MissingTranslation">Pitch black background</string>
+    <string name="pitch_black_background_setting_description" tools:ignore="MissingTranslation">Replaces background with pitch black background when dark theme is on</string>
+    <string name="about" tools:ignore="MissingTranslation">About</string>
+    <string name="theme" tools:ignore="MissingTranslation">Theme</string>
 </resources>

@@ -72,8 +72,7 @@ fun StartupScreen(
         Text(
             text = "Text, but beautiful.\n" +
                     "\n" +
-                    "NEW! You can now open custom or any file type in BeauTyXT!\n" +
-                    "Just make sure they are plain text.",
+                    "Now includes actual settings!",
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center
         )

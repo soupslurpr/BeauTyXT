@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "dev.soupslurpr.beautyxt"
-    compileSdkPreview = "UpsideDownCake"
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "dev.soupslurpr.beautyxt"
@@ -51,6 +51,11 @@ android {
                 "proguard-rules.pro"
             )
         }
+        getByName("debug") {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
 }
 
@@ -67,4 +72,5 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.7.0-beta01")
     implementation("androidx.datastore:datastore-preferences:1.0.0")
     implementation("androidx.compose.material:material:1.6.0-alpha01")
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
 }

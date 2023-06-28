@@ -24,11 +24,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.app.ActivityOptionsCompat
+import androidx.datastore.core.DataStore
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import dev.soupslurpr.beautyxt.settings.SettingsViewModel
 import dev.soupslurpr.beautyxt.ui.CreditsScreen
 import dev.soupslurpr.beautyxt.ui.FileEditScreen
 import dev.soupslurpr.beautyxt.ui.FileViewModel
@@ -75,9 +77,11 @@ fun BeauTyXTAppBar(
 
 @Composable
 fun BeauTyXTApp(
-    viewModel: FileViewModel = viewModel(),
+    fileViewModel: FileViewModel = viewModel(),
+    settingsViewModel: SettingsViewModel = viewModel(),
     modifier: Modifier,
     intent: Intent,
+    dataStore: DataStore<androidx.datastore.preferences.core.Preferences>
 ) {
     val navController = rememberNavController()
 
@@ -89,18 +93,18 @@ fun BeauTyXTApp(
 
     val context = LocalContext.current
 
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by fileViewModel.uiState.collectAsState()
 
     val openFileLauncher = rememberLauncherForActivityResult(contract = OpenDocument()) {
         if (it != null) {
-            viewModel.setUri(it, context)
+            fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
         }
     }
 
     val createFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument("text/plain")) {
         if (it != null) {
-            viewModel.setUri(it, context)
+            fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
         }
     }
@@ -109,7 +113,7 @@ fun BeauTyXTApp(
         if (intent.action == Intent.ACTION_VIEW || intent.action == Intent.ACTION_EDIT) {
             val uri: Uri? = intent.data
             if (uri != null) {
-                viewModel.setUri(uri, context)
+                fileViewModel.setUri(uri, context)
                 navController.navigate(BeauTyXTScreens.FileEdit.name)
             }
         }
@@ -170,8 +174,8 @@ fun BeauTyXTApp(
                     content = uiState.content.value,
                     name = uiState.name,
                     onContentChanged = {
-                        viewModel.updateContent(it)
-                        viewModel.setContentToUri(uri = uiState.uri, context = context)
+                        fileViewModel.updateContent(it)
+                        fileViewModel.setContentToUri(uri = uiState.uri, context = context)
                     },
                 )
             }
@@ -185,7 +189,9 @@ fun BeauTyXTApp(
                     },
                     onCreditsIconButtonClicked = {
                         navController.navigate(BeauTyXTScreens.Credits.name)
-                    }
+                    },
+                    dataStore = dataStore,
+                    settingsViewModel = settingsViewModel
                 )
             }
             composable(route = BeauTyXTScreens.License.name) {
