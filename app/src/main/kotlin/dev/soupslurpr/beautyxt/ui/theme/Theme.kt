@@ -9,13 +9,10 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import dev.soupslurpr.beautyxt.settings.SettingsViewModel
@@ -53,30 +50,44 @@ fun BeauTyXTTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Dynamic color is available on Android 12+
     dynamicColor: Boolean = true,
-    dataStore: DataStore<Preferences>,
     settingsViewModel: SettingsViewModel = viewModel(),
     content: @Composable () -> Unit
 ) {
 
-    LaunchedEffect(key1 = Unit) {
-        settingsViewModel.populateSettingsFromDatastore(dataStore)
-    }
-
     val settingsUiState by settingsViewModel.uiState.collectAsState()
+
+    val pitchBlackBackground = settingsUiState.pitchBlackBackground.second.value and darkTheme
 
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            if (darkTheme) {
+                if (pitchBlackBackground) {
+                    dynamicDarkColorScheme(context).copy(
+                        background = Color.Black,
+                        surface = Color.Black,
+                    )
+                } else {
+                    dynamicDarkColorScheme(context)
+                }
+            } else {
+                dynamicLightColorScheme(context)
+            }
         }
-
-        darkTheme -> DarkColorScheme
+        darkTheme -> {
+            if (pitchBlackBackground) {
+                DarkColorScheme.copy(
+                    background = Color.Black,
+                    surface = Color.Black
+                )
+            } else {
+                DarkColorScheme
+            }
+        }
         else -> LightColorScheme
     }
 
     val systemUiController = rememberSystemUiController()
-
-    val pitchBlackBackground = settingsUiState.pitchBlackBackground.second.value and darkTheme
 
     val finalColorScheme: ColorScheme = colorScheme.copy(
         background = if (pitchBlackBackground) {Color.Black} else {colorScheme.background},

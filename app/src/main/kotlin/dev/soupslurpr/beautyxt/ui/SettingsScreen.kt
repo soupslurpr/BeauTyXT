@@ -25,8 +25,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.settings.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -40,7 +38,6 @@ fun SettingsScreen(
     onPrivacyPolicyIconButtonClicked: () -> Unit,
     onCreditsIconButtonClicked: () -> Unit,
     settingsViewModel: SettingsViewModel,
-    dataStore: DataStore<Preferences>,
 ) {
     val localUriHandler = LocalUriHandler.current
     val settingsUiState by settingsViewModel.uiState.collectAsState()
@@ -60,7 +57,7 @@ fun SettingsScreen(
                 checked = settingsUiState.pitchBlackBackground.second.value,
                 onCheckedChange = {
                     coroutineScope.launch {
-                        settingsViewModel.setSetting(dataStore, settingsUiState.pitchBlackBackground.first, it)
+                        settingsViewModel.setSetting(settingsUiState.pitchBlackBackground.first, it)
                     }
                 }
             )
