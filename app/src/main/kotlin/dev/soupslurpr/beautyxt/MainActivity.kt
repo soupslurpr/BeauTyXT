@@ -18,15 +18,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent() {
-            val settingsViewModel: SettingsViewModel = viewModel()
+            val settingsViewModel: SettingsViewModel = viewModel(
+                factory = SettingsViewModel.SettingsViewModelFactory(
+                    dataStore
+                )
+            )
             BeauTyXTTheme(
-                dataStore = dataStore,
                 settingsViewModel = settingsViewModel
             ) {
                 BeauTyXTApp(
                     modifier = Modifier,
                     intent = intent,
-                    dataStore = dataStore,
                     settingsViewModel = settingsViewModel
                 )
             }
