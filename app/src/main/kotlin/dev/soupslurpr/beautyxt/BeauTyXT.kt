@@ -24,7 +24,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.app.ActivityOptionsCompat
-import androidx.datastore.core.DataStore
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -81,7 +80,6 @@ fun BeauTyXTApp(
     settingsViewModel: SettingsViewModel = viewModel(),
     modifier: Modifier,
     intent: Intent,
-    dataStore: DataStore<androidx.datastore.preferences.core.Preferences>
 ) {
     val navController = rememberNavController()
 
@@ -190,7 +188,6 @@ fun BeauTyXTApp(
                     onCreditsIconButtonClicked = {
                         navController.navigate(BeauTyXTScreens.Credits.name)
                     },
-                    dataStore = dataStore,
                     settingsViewModel = settingsViewModel
                 )
             }
