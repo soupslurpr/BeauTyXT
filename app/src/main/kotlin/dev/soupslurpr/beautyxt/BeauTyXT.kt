@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -103,13 +104,14 @@ fun BeauTyXTAppBar(
                     Surface(
                         modifier = Modifier
                             .wrapContentWidth()
-                            .wrapContentHeight(),
+                            .wrapContentHeight()
+                            .fillMaxWidth(0.95f),
                         shape = MaterialTheme.shapes.large,
                         tonalElevation = AlertDialogDefaults.TonalElevation
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
+                            horizontalAlignment = Alignment.Start,
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             infoDialogContent()
@@ -118,6 +120,13 @@ fun BeauTyXTAppBar(
                 }
             }
         }
+    )
+}
+
+@Composable
+fun InfoDialogItem(info: String, value: String) {
+    Text(
+        text = "$info:\n$value",
     )
 }
 
@@ -165,11 +174,14 @@ fun BeauTyXTApp(
                 onInfoDismissRequest = { infoShown.value = false },
                 onInfoButtonClicked = { infoShown.value = !infoShown.value },
                 infoDialogContent = {
-                    Text(text = stringResource(R.string.file_info_button), style = typography.headlineMedium)
-                    Text(text = stringResource(id = R.string.name) + ": " + uiState.name.value)
-                    Text(text = stringResource(id = R.string.size) +
-                            ": " + uiState.size.value.toString() + " " + stringResource(id = R.string.bytes))
-                    uiState.mimeType.value?.let { Text(text = stringResource(id = R.string.mime_type) + ": " + it) }
+                    Text(text = stringResource(R.string.file_info_button), style = typography.headlineSmall)
+                    InfoDialogItem(info = stringResource(id = R.string.name), value = uiState.name.value)
+                    InfoDialogItem(info = stringResource(id = R.string.size), value = uiState.size.value.toString() + " " + stringResource(id = R.string.bytes))
+                    uiState.mimeType.value?.let {
+                        InfoDialogItem(info = stringResource(id = R.string.mime_type),
+                            it
+                        )
+                    }
                 },
                 modifier = modifier
             )

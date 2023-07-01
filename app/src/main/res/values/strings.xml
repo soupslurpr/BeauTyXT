@@ -18,8 +18,6 @@
     <string name="credits_setting_name">Credits</string>
     <string name="credits_setting_description">View open source licenses of code that BeauTyXT uses in app</string>
     <string name="any" tools:ignore="MissingTranslation">Any</string>
-    <string name="pick_a_file_type_to_create" tools:ignore="MissingTranslation">Pick a file type to create</string>
-    <string name="pick_a_file_type_to_open" tools:ignore="MissingTranslation">Pick a file type to open</string>
     <string name="txt" tools:ignore="MissingTranslation">Plain Text (.txt &amp; .text)</string>
     <string name="pitch_black_background_setting_name" tools:ignore="MissingTranslation">Pitch black background</string>
     <string name="pitch_black_background_setting_description" tools:ignore="MissingTranslation">Replaces background with pitch black background when dark theme is on</string>
@@ -30,4 +28,6 @@
     <string name="size" tools:ignore="MissingTranslation">Size</string>
     <string name="mime_type" tools:ignore="MissingTranslation">MIME Type</string>
     <string name="bytes" tools:ignore="MissingTranslation">Bytes</string>
+    <string name="new_file" tools:ignore="MissingTranslation">New File</string>
+    <string name="open_file" tools:ignore="MissingTranslation">Open File</string>
 </resources>
