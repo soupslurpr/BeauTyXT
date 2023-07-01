@@ -93,7 +93,7 @@ fun BeauTyXTAppBar(
                 IconButton(
                     onClick = onInfoButtonClicked,
                     content = {
-                        Icon(imageVector = Icons.Filled.Info, contentDescription = stringResource(R.string.file_info_button))
+                        Icon(imageVector = Icons.Filled.Info, contentDescription = stringResource(R.string.file_info))
                     }
                 )
             }
@@ -110,10 +110,13 @@ fun BeauTyXTAppBar(
                         tonalElevation = AlertDialogDefaults.TonalElevation
                     ) {
                         Column(
-                            modifier = Modifier.padding(16.dp),
-                            horizontalAlignment = Alignment.Start,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                            modifier = Modifier
+                                .padding(16.dp)
+                                .fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            horizontalAlignment = Alignment.Start
                         ) {
+                            Text(text = stringResource(R.string.file_info), style = typography.headlineSmall, modifier = Modifier.align(Alignment.CenterHorizontally))
                             infoDialogContent()
                         }
                     }
@@ -174,7 +177,6 @@ fun BeauTyXTApp(
                 onInfoDismissRequest = { infoShown.value = false },
                 onInfoButtonClicked = { infoShown.value = !infoShown.value },
                 infoDialogContent = {
-                    Text(text = stringResource(R.string.file_info_button), style = typography.headlineSmall)
                     InfoDialogItem(info = stringResource(id = R.string.name), value = uiState.name.value)
                     InfoDialogItem(info = stringResource(id = R.string.size), value = uiState.size.value.toString() + " " + stringResource(id = R.string.bytes))
                     uiState.mimeType.value?.let {
