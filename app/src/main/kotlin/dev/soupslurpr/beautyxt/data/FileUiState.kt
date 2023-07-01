@@ -8,7 +8,7 @@ data class FileUiState(
     /** uri of file */
     val uri: Uri = Uri.EMPTY,
     /** name of file */
-    val name: String = "",
+    val name: MutableState<String> = mutableStateOf(""),
     /** content of file */
     var content: MutableState<String> = mutableStateOf(""),
     /** mimeType of file */
