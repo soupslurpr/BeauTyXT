@@ -91,8 +91,8 @@ fun StartupScreen(
                 onDismissRequest = { isOpenFileTypeAlertDialogShown = false }
             ) {
                 Text(
-                    text = stringResource(R.string.pick_a_file_type_to_open),
-                    style = MaterialTheme.typography.bodyLarge
+                    text = stringResource(R.string.open_file),
+                    style = MaterialTheme.typography.headlineSmall
                 )
                 FilledTonalButton(
                     modifier = Modifier.fillMaxWidth(),
@@ -129,8 +129,8 @@ fun StartupScreen(
                 onDismissRequest = { isCreateFileTypeAlertDialogShown = false },
             ) {
                 Text(
-                    text = stringResource(R.string.pick_a_file_type_to_create),
-                    style = MaterialTheme.typography.bodyLarge
+                    text = stringResource(R.string.new_file),
+                    style = MaterialTheme.typography.headlineSmall
                 )
                 FilledTonalButton(
                     modifier = Modifier.fillMaxWidth(),

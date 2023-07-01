@@ -5,6 +5,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import dev.soupslurpr.beautyxt.data.FileUiState
@@ -34,7 +35,9 @@ class FileViewModel : ViewModel() {
             currentState.copy(
                 uri = uri,
                 name = getNameFromUri(uri = uri, context),
-                content = getContentFromUri(uri = uri, context)
+                content = getContentFromUri(uri = uri, context),
+                mimeType = getMimeTypeFromUri(uri = uri, context),
+                size = getSizeFromUri(uri = uri, context)
             )
         }
     }
@@ -74,6 +77,30 @@ class FileViewModel : ViewModel() {
             }
         }
         return mutableStateOf(stringBuilder.toString())
+    }
+
+    private fun getMimeTypeFromUri(uri: Uri, context: Context): MutableState<String?> {
+        return mutableStateOf(context.contentResolver.getType(uri))
+    }
+
+    fun getSizeFromUri(uri: Uri, context: Context): MutableState<Long> {
+        var size = 0L
+        val contentResolver = context.contentResolver
+        // The query, because it only applies to a single document, returns only
+        // one row. There's no need to filter, sort, or select fields,
+        // because we want all fields for one document.
+        val cursor: Cursor? = contentResolver.query(
+            uri, null, null, null, null, null)
+
+        cursor?.use {
+            // moveToFirst() returns false if the cursor has 0 rows. Very handy for
+            // "if there's anything to look at, look at it" conditionals.
+            if (it.moveToFirst()) {
+                size = it.getLong(it.getColumnIndexOrThrow(OpenableColumns.SIZE))
+            }
+        }
+        uiState.value.size = mutableLongStateOf(size)
+        return mutableLongStateOf(size)
     }
 
     fun setContentToUri(uri: Uri, context: Context) {
