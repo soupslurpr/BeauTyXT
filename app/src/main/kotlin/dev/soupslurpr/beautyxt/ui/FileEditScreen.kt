@@ -8,7 +8,6 @@ import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.tooling.preview.Preview
 
 /**
  * Composable for editing text in a TextField,
@@ -40,10 +39,4 @@ fun FileEditScreen(
             },
         )
     }
-}
-
-@Preview
-@Composable
-fun FileEditPreview() {
-    FileEditScreen(content = "test", name = "test.txt")
 }

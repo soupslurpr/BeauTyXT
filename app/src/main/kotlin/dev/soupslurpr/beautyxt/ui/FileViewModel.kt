@@ -39,7 +39,7 @@ class FileViewModel : ViewModel() {
         }
     }
 
-    private fun getNameFromUri(uri: Uri, context: Context): String {
+    private fun getNameFromUri(uri: Uri, context: Context): MutableState<String> {
         var name = ""
         val contentResolver = context.contentResolver
         // The query, because it only applies to a single document, returns only
@@ -57,7 +57,7 @@ class FileViewModel : ViewModel() {
                 name = it.getString(it.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME))
             }
         }
-        return name
+        return mutableStateOf(name)
     }
 
     private fun getContentFromUri(uri: Uri, context: Context): MutableState<String> {

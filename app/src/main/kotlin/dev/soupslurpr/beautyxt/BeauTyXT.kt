@@ -1,7 +1,5 @@
 package dev.soupslurpr.beautyxt
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
@@ -17,7 +15,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -29,6 +26,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navDeepLink
 import dev.soupslurpr.beautyxt.settings.SettingsViewModel
 import dev.soupslurpr.beautyxt.ui.CreditsScreen
 import dev.soupslurpr.beautyxt.ui.FileEditScreen
@@ -79,7 +77,6 @@ fun BeauTyXTApp(
     fileViewModel: FileViewModel = viewModel(),
     settingsViewModel: SettingsViewModel = viewModel(),
     modifier: Modifier,
-    intent: Intent,
 ) {
     val navController = rememberNavController()
 
@@ -104,16 +101,6 @@ fun BeauTyXTApp(
         if (it != null) {
             fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
-        }
-    }
-
-    LaunchedEffect(key1 = Unit) {
-        if (intent.action == Intent.ACTION_VIEW || intent.action == Intent.ACTION_EDIT) {
-            val uri: Uri? = intent.data
-            if (uri != null) {
-                fileViewModel.setUri(uri, context)
-                navController.navigate(BeauTyXTScreens.FileEdit.name)
-            }
         }
     }
 
@@ -167,14 +154,27 @@ fun BeauTyXTApp(
                     }
                 )
             }
-            composable(route = BeauTyXTScreens.FileEdit.name) {
+            composable(
+                route = BeauTyXTScreens.FileEdit.name,
+                deepLinks = listOf(
+                    navDeepLink {
+                        mimeType = "text/plain"
+                    },
+                    navDeepLink {
+                        mimeType = "application/json"
+                    },
+                    navDeepLink {
+                        mimeType = "application/xml"
+                    }
+                ),
+            ) {
                 FileEditScreen(
-                    content = uiState.content.value,
-                    name = uiState.name,
+                    name = uiState.name.value,
                     onContentChanged = {
                         fileViewModel.updateContent(it)
                         fileViewModel.setContentToUri(uri = uiState.uri, context = context)
                     },
+                    content = uiState.content.value,
                 )
             }
             composable(route = BeauTyXTScreens.Settings.name) {
