@@ -8,6 +8,8 @@ Implements Material Design 3 and dynamic color schemes – because that's what t
 * Written entirely in Kotlin
 * Implements Material Design 3 for a modern look
 * Dynamic color based on the system wallpaper
+* Pitch black background option
+* File info dialog
 
 # Download
 Wanna download BeauTyXT? You can get it on the Accrescent app store by clicking on the image below.
@@ -20,5 +22,5 @@ Wanna download BeauTyXT? You can get it on the Accrescent app store by clicking 
 <img alt="BeauTyXT screenshot" src="https://raw.githubusercontent.com/soupslurpr/BeauTyXT/master/Screenshot_20230601-054228.png" style="width:50%; height:auto;">
 
 ## Matrix room
-BeauTyXT has a matrix room where you can discuss features, bugs, and give me feedback. 
+BeauTyXT has a matrix room where you can discuss features, bugs, and give feedback. 
 It's at #BeauTyXT:matrix.org
