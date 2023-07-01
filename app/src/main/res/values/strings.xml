@@ -25,4 +25,9 @@
     <string name="pitch_black_background_setting_description" tools:ignore="MissingTranslation">Replaces background with pitch black background when dark theme is on</string>
     <string name="about" tools:ignore="MissingTranslation">About</string>
     <string name="theme" tools:ignore="MissingTranslation">Theme</string>
+    <string name="file_info_button" tools:ignore="MissingTranslation">File Info</string>
+    <string name="name" tools:ignore="MissingTranslation">Name</string>
+    <string name="size" tools:ignore="MissingTranslation">Size</string>
+    <string name="mime_type" tools:ignore="MissingTranslation">MIME Type</string>
+    <string name="bytes" tools:ignore="MissingTranslation">Bytes</string>
 </resources>

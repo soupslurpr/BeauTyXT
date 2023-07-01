@@ -2,6 +2,7 @@ package dev.soupslurpr.beautyxt.data
 
 import android.net.Uri
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 
 data class FileUiState(
@@ -12,5 +13,7 @@ data class FileUiState(
     /** content of file */
     var content: MutableState<String> = mutableStateOf(""),
     /** mimeType of file */
-    // TODO: add support for multiple file types (.md maybe 😉)
+    var mimeType: MutableState<String?> = mutableStateOf(""),
+    /** size of file */
+    var size: MutableState<Long> = mutableLongStateOf(0L)
 )

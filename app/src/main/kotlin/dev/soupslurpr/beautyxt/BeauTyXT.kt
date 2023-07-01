@@ -5,21 +5,35 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.annotation.StringRes
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MaterialTheme.typography
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityOptionsCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
@@ -52,6 +66,10 @@ fun BeauTyXTAppBar(
     currentScreen: BeauTyXTScreens,
     canNavigateBack: Boolean,
     navigateUp: () -> Unit,
+    infoShown: Boolean,
+    onInfoDismissRequest: () -> Unit,
+    onInfoButtonClicked: () -> Unit,
+    infoDialogContent: @Composable () -> Unit,
     modifier: Modifier
 ) {
     TopAppBar(
@@ -66,6 +84,37 @@ fun BeauTyXTAppBar(
                         imageVector = Icons.Filled.ArrowBack,
                         contentDescription = stringResource(R.string.back_button)
                     )
+                }
+            }
+        },
+        actions = {
+            if (currentScreen == BeauTyXTScreens.FileEdit) {
+                IconButton(
+                    onClick = onInfoButtonClicked,
+                    content = {
+                        Icon(imageVector = Icons.Filled.Info, contentDescription = stringResource(R.string.file_info_button))
+                    }
+                )
+            }
+            if (infoShown) {
+                AlertDialog(
+                    onDismissRequest = onInfoDismissRequest,
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .wrapContentWidth()
+                            .wrapContentHeight(),
+                        shape = MaterialTheme.shapes.large,
+                        tonalElevation = AlertDialogDefaults.TonalElevation
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            infoDialogContent()
+                        }
+                    }
                 }
             }
         }
@@ -104,12 +153,24 @@ fun BeauTyXTApp(
         }
     }
 
+    val infoShown = remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             BeauTyXTAppBar(
                 currentScreen = currentScreen,
                 canNavigateBack = navController.previousBackStackEntry != null,
                 navigateUp = { navController.navigateUp() },
+                infoShown = infoShown.value,
+                onInfoDismissRequest = { infoShown.value = false },
+                onInfoButtonClicked = { infoShown.value = !infoShown.value },
+                infoDialogContent = {
+                    Text(text = stringResource(R.string.file_info_button), style = typography.headlineMedium)
+                    Text(text = stringResource(id = R.string.name) + ": " + uiState.name.value)
+                    Text(text = stringResource(id = R.string.size) +
+                            ": " + uiState.size.value.toString() + " " + stringResource(id = R.string.bytes))
+                    uiState.mimeType.value?.let { Text(text = stringResource(id = R.string.mime_type) + ": " + it) }
+                },
                 modifier = modifier
             )
         }
@@ -173,6 +234,7 @@ fun BeauTyXTApp(
                     onContentChanged = {
                         fileViewModel.updateContent(it)
                         fileViewModel.setContentToUri(uri = uiState.uri, context = context)
+                        fileViewModel.getSizeFromUri(uri = uiState.uri, context = context)
                     },
                     content = uiState.content.value,
                 )
