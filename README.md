@@ -11,7 +11,7 @@ Implements Material Design 3 and dynamic color schemes – because that's what t
 * Pitch black background option
 * File info dialog
 
-# Download
+## Download
 Wanna download BeauTyXT? You can get it on the Accrescent app store by clicking on the image below.
 
 <a href="https://accrescent.app/app/dev.soupslurpr.beautyxt">
