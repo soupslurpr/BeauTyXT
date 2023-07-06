@@ -8,6 +8,7 @@ Implements Material Design 3 and dynamic color schemes – because that's what t
 * Written entirely in Kotlin
 * Implements Material Design 3 for a modern look
 * Dynamic color based on the system wallpaper
+* Open files from other apps
 * Pitch black background option
 * File info dialog
 
