@@ -17,17 +17,17 @@
     <string name="credits">Credits</string>
     <string name="credits_setting_name">Credits</string>
     <string name="credits_setting_description">View open source licenses of code that BeauTyXT uses in app</string>
-    <string name="any" tools:ignore="MissingTranslation">Any</string>
-    <string name="txt" tools:ignore="MissingTranslation">Plain Text (.txt &amp; .text)</string>
-    <string name="pitch_black_background_setting_name" tools:ignore="MissingTranslation">Pitch black background</string>
-    <string name="pitch_black_background_setting_description" tools:ignore="MissingTranslation">Replaces background with pitch black background when dark theme is on</string>
-    <string name="about" tools:ignore="MissingTranslation">About</string>
-    <string name="theme" tools:ignore="MissingTranslation">Theme</string>
-    <string name="file_info" tools:ignore="MissingTranslation">File Info</string>
-    <string name="name" tools:ignore="MissingTranslation">Name</string>
-    <string name="size" tools:ignore="MissingTranslation">Size</string>
-    <string name="mime_type" tools:ignore="MissingTranslation">MIME Type</string>
-    <string name="bytes" tools:ignore="MissingTranslation">Bytes</string>
-    <string name="new_file" tools:ignore="MissingTranslation">New File</string>
-    <string name="open_file" tools:ignore="MissingTranslation">Open File</string>
+    <string name="any">Any</string>
+    <string name="txt">Plain Text (.txt &amp; .text)</string>
+    <string name="pitch_black_background_setting_name">Pitch black background</string>
+    <string name="pitch_black_background_setting_description">Replaces background with pitch black background when dark theme is on</string>
+    <string name="about">About</string>
+    <string name="theme">Theme</string>
+    <string name="file_info">File Info</string>
+    <string name="name">Name</string>
+    <string name="size">Size</string>
+    <string name="mime_type">MIME Type</string>
+    <string name="bytes">Bytes</string>
+    <string name="new_file">New File</string>
+    <string name="open_file">Open File</string>
 </resources>
