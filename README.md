@@ -24,5 +24,5 @@ Want to download BeauTyXT? You can get it on the Accrescent app store by clickin
 <img alt="BeauTyXT screenshot of README.md" src="https://raw.githubusercontent.com/soupslurpr/BeauTyXT/master/Screenshot_20230705-233654.png" style="width:50%; height:auto;">
 
 ## Matrix room
-BeauTyXT has a matrix room where you can discuss features, bugs, and give feedback. 
+BeauTyXT has a matrix room where you can discuss features, bugs, and give feedback.\
 It's at [#BeauTyXT:matrix.org](https://matrix.to/#/#BeauTyXT:matrix.org)
