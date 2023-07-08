@@ -25,4 +25,4 @@ Want to download BeauTyXT? You can get it on the Accrescent app store by clickin
 
 ## Matrix room
 BeauTyXT has a matrix room where you can discuss features, bugs, and give feedback. 
-It's at #BeauTyXT:matrix.org
+It's at #BeauTyXT:matrix.org (https://matrix.to/#/#BeauTyXT:matrix.org)
