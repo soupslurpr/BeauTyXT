@@ -66,6 +66,20 @@ fun SettingsScreen(
         Column {
             SettingsCategoryText(category = stringResource(id = R.string.about))
             SettingsItem(
+                name = stringResource(id = R.string.open_beautyxt_website_setting_name),
+                description = stringResource(id = R.string.open_beautyxt_website_setting_description),
+                hasIconButton = true,
+                onClickIconButton = {
+                    localUriHandler.openUri("https://beautyxt.soupslurpr.dev")
+                },
+                iconButtonContent = {
+                    Icon(
+                        imageVector = Icons.Filled.ExitToApp,
+                        contentDescription = stringResource(id = R.string.open_beautyxt_website_setting_description)
+                    )
+                }
+            )
+            SettingsItem(
                 name = stringResource(id = R.string.view_source_code_setting_name),
                 description = stringResource(id = R.string.view_source_code_setting_description),
                 hasIconButton = true,

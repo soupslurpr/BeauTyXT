@@ -30,4 +30,6 @@
     <string name="bytes" tools:ignore="MissingTranslation">Bytes</string>
     <string name="new_file" tools:ignore="MissingTranslation">New File</string>
     <string name="open_file" tools:ignore="MissingTranslation">Open File</string>
+    <string name="open_beautyxt_website_setting_name" tools:ignore="MissingTranslation">BeauTyXT\'s Website</string>
+    <string name="open_beautyxt_website_setting_description" tools:ignore="MissingTranslation">Open BeauTyXT\'s website in your web browser</string>
 </resources>
