@@ -1,5 +1,6 @@
 package dev.soupslurpr.beautyxt.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -75,7 +76,7 @@ fun SettingsScreen(
                 iconButtonContent = {
                     Icon(
                         imageVector = Icons.Filled.ExitToApp,
-                        contentDescription = stringResource(id = R.string.open_beautyxt_website_setting_description)
+                        contentDescription = ""
                     )
                 }
             )
@@ -89,7 +90,7 @@ fun SettingsScreen(
                 iconButtonContent = {
                     Icon(
                         imageVector = Icons.Filled.ExitToApp,
-                        contentDescription = stringResource(id = R.string.view_source_code_setting_description)
+                        contentDescription = ""
                     )
                 }
             )
@@ -101,7 +102,7 @@ fun SettingsScreen(
                 iconButtonContent = {
                     Icon(
                         imageVector = Icons.Filled.Info,
-                        contentDescription = stringResource(id = R.string.license_setting_description)
+                        contentDescription = ""
                     )
                 }
             )
@@ -113,7 +114,7 @@ fun SettingsScreen(
                 iconButtonContent = {
                     Icon(
                         imageVector = Icons.Filled.Info,
-                        contentDescription = stringResource(id = R.string.privacy_policy_setting_description)
+                        contentDescription = ""
                     )
                 }
             )
@@ -125,7 +126,7 @@ fun SettingsScreen(
                 iconButtonContent = {
                     Icon(
                         imageVector = Icons.Filled.Info,
-                        contentDescription = stringResource(id = R.string.credits_setting_description)
+                        contentDescription = ""
                     )
                 }
             )
@@ -148,6 +149,14 @@ fun SettingsItem(
     iconButtonContent: @Composable () -> Unit = {},
 ) {
     ListItem(
+        modifier = Modifier.clickable(onClick = {
+            if (hasSwitch) {
+                onCheckedChange(!checked)
+            }
+            if (hasIconButton) {
+                onClickIconButton()
+            }
+        }),
         headlineContent = {
             Text(
                 text = name,
