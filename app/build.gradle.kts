@@ -32,7 +32,7 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.4.7"
+        kotlinCompilerExtensionVersion = "1.4.8"
     }
     packaging {
         resources {
@@ -42,7 +42,6 @@ android {
     androidResources {
         generateLocaleConfig = true
     }
-    buildToolsVersion = "34.0.0 rc4"
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -67,9 +66,9 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics:1.6.0-alpha01")
     implementation("androidx.compose.ui:ui-tooling-preview:1.6.0-alpha01")
     implementation("androidx.compose.material3:material3:1.2.0-alpha03")
-    implementation("com.google.android.material:material:1.10.0-alpha04")
+    implementation("com.google.android.material:material:1.10.0-alpha05")
     implementation("com.google.accompanist:accompanist-systemuicontroller:0.31.3-beta")
-    implementation("androidx.navigation:navigation-compose:2.7.0-beta01")
+    implementation("androidx.navigation:navigation-compose:2.7.0-beta02")
     implementation("androidx.datastore:datastore-preferences:1.0.0")
     implementation("androidx.compose.material:material:1.6.0-alpha01")
     implementation("androidx.datastore:datastore-preferences:1.0.0")
