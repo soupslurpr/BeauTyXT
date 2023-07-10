@@ -76,7 +76,7 @@ fun SettingsScreen(
                 iconButtonContent = {
                     Icon(
                         imageVector = Icons.Filled.ExitToApp,
-                        contentDescription = ""
+                        contentDescription = null
                     )
                 }
             )
@@ -90,7 +90,7 @@ fun SettingsScreen(
                 iconButtonContent = {
                     Icon(
                         imageVector = Icons.Filled.ExitToApp,
-                        contentDescription = ""
+                        contentDescription = null
                     )
                 }
             )
@@ -102,7 +102,7 @@ fun SettingsScreen(
                 iconButtonContent = {
                     Icon(
                         imageVector = Icons.Filled.Info,
-                        contentDescription = ""
+                        contentDescription = null
                     )
                 }
             )
@@ -114,7 +114,7 @@ fun SettingsScreen(
                 iconButtonContent = {
                     Icon(
                         imageVector = Icons.Filled.Info,
-                        contentDescription = ""
+                        contentDescription = null
                     )
                 }
             )
@@ -126,7 +126,7 @@ fun SettingsScreen(
                 iconButtonContent = {
                     Icon(
                         imageVector = Icons.Filled.Info,
-                        contentDescription = ""
+                        contentDescription = null
                     )
                 }
             )
