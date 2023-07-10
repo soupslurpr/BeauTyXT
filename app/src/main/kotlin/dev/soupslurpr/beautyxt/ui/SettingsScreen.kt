@@ -1,5 +1,6 @@
 package dev.soupslurpr.beautyxt.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -148,6 +149,14 @@ fun SettingsItem(
     iconButtonContent: @Composable () -> Unit = {},
 ) {
     ListItem(
+        modifier = Modifier.clickable(onClick = {
+            if (hasSwitch) {
+                onCheckedChange(!checked)
+            }
+            if (hasIconButton) {
+                onClickIconButton()
+            }
+        }),
         headlineContent = {
             Text(
                 text = name,
