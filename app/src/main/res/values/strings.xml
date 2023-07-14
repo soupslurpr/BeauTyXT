@@ -30,6 +30,6 @@
     <string name="bytes">Bytes</string>
     <string name="new_file">New File</string>
     <string name="open_file">Open File</string>
-    <string name="open_beautyxt_website_setting_name" tools:ignore="MissingTranslation">BeauTyXT\'s Website</string>
-    <string name="open_beautyxt_website_setting_description" tools:ignore="MissingTranslation">Open BeauTyXT\'s website in your web browser</string>
+    <string name="open_beautyxt_website_setting_name">BeauTyXT\'s Website</string>
+    <string name="open_beautyxt_website_setting_description">Open BeauTyXT\'s website in your web browser</string>
 </resources>
