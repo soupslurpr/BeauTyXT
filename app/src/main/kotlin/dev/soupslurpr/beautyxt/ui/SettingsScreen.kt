@@ -5,12 +5,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MaterialTheme.typography
@@ -69,11 +69,11 @@ fun SettingsScreen(
             SettingsItem(
                 name = stringResource(id = R.string.open_beautyxt_website_setting_name),
                 description = stringResource(id = R.string.open_beautyxt_website_setting_description),
-                hasIconButton = true,
-                onClickIconButton = {
+                hasIcon = true,
+                onClickIconSetting = {
                     localUriHandler.openUri("https://beautyxt.soupslurpr.dev")
                 },
-                iconButtonContent = {
+                icon = {
                     Icon(
                         imageVector = Icons.Filled.ExitToApp,
                         contentDescription = null
@@ -83,11 +83,11 @@ fun SettingsScreen(
             SettingsItem(
                 name = stringResource(id = R.string.view_source_code_setting_name),
                 description = stringResource(id = R.string.view_source_code_setting_description),
-                hasIconButton = true,
-                onClickIconButton = {
+                hasIcon = true,
+                onClickIconSetting = {
                     localUriHandler.openUri("https://github.com/soupslurpr/BeauTyXT")
                 },
-                iconButtonContent = {
+                icon = {
                     Icon(
                         imageVector = Icons.Filled.ExitToApp,
                         contentDescription = null
@@ -97,9 +97,9 @@ fun SettingsScreen(
             SettingsItem(
                 name = stringResource(id = R.string.license_setting_name),
                 description = stringResource(id = R.string.license_setting_description),
-                hasIconButton = true,
-                onClickIconButton = { onLicenseIconButtonClicked() },
-                iconButtonContent = {
+                hasIcon = true,
+                onClickIconSetting = { onLicenseIconButtonClicked() },
+                icon = {
                     Icon(
                         imageVector = Icons.Filled.Info,
                         contentDescription = null
@@ -109,21 +109,21 @@ fun SettingsScreen(
             SettingsItem(
                 name = stringResource(id = R.string.privacy_policy_setting_name),
                 description = stringResource(id = R.string.privacy_policy_setting_description),
-                hasIconButton = true,
-                onClickIconButton = { onPrivacyPolicyIconButtonClicked() },
-                iconButtonContent = {
+                hasIcon = true,
+                onClickIconSetting = { onPrivacyPolicyIconButtonClicked() },
+                icon = {
                     Icon(
                         imageVector = Icons.Filled.Info,
-                        contentDescription = null
+                        contentDescription = null,
                     )
                 }
             )
             SettingsItem(
                 name = stringResource(id = R.string.credits_setting_name),
                 description = stringResource(id = R.string.credits_setting_description),
-                hasIconButton = true,
-                onClickIconButton = { onCreditsIconButtonClicked() },
-                iconButtonContent = {
+                hasIcon = true,
+                onClickIconSetting = { onCreditsIconButtonClicked() },
+                icon = {
                     Icon(
                         imageVector = Icons.Filled.Info,
                         contentDescription = null
@@ -142,38 +142,34 @@ fun SettingsItem(
     name: String,
     description: String,
     hasSwitch: Boolean = false,
-    hasIconButton: Boolean = false,
+    hasIcon: Boolean = false,
     onCheckedChange: (Boolean) -> Unit = {},
     checked: Boolean = false,
-    onClickIconButton: () -> Unit = {},
-    iconButtonContent: @Composable () -> Unit = {},
+    onClickIconSetting: () -> Unit = {},
+    icon: @Composable () -> Unit = {},
 ) {
     ListItem(
-        modifier = Modifier.clickable(onClick = {
-            if (hasSwitch) {
-                onCheckedChange(!checked)
-            }
-            if (hasIconButton) {
-                onClickIconButton()
-            }
-        }),
+        modifier = when {
+            hasIcon -> Modifier.clickable( onClick = { onClickIconSetting() })
+            hasSwitch -> Modifier.toggleable(
+                value = checked,
+                onValueChange = { onCheckedChange(it) }
+            )
+            else -> Modifier
+        },
         headlineContent = {
             Text(
                 text = name,
                 fontWeight = FontWeight.SemiBold
-            ) },
+            )
+        },
         supportingContent = { Text(text = description) },
-        trailingContent = { 
-            if (hasSwitch) {
-                Switch(
+        trailingContent = {
+            when {
+                hasIcon -> icon()
+                hasSwitch -> Switch(
                     checked = checked,
-                    onCheckedChange = { onCheckedChange(it) },
-                ) 
-            }
-            if (hasIconButton) {
-                IconButton(
-                    onClick = { onClickIconButton() },
-                    content = { iconButtonContent() }
+                    onCheckedChange = null,
                 )
             }
         }
