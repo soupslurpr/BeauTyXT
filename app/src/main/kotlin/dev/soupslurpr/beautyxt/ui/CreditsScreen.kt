@@ -1,11 +1,11 @@
 package dev.soupslurpr.beautyxt.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme.typography
 import androidx.compose.material3.Text
@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
 const val APACHE2LICENSE = "\n" +
@@ -925,19 +926,17 @@ fun CreditsItem(
     dependencyLicense: String,
 ) {
     var dropped by rememberSaveable { mutableStateOf(false)}
+
     ListItem(
-        modifier = Modifier,
+        modifier = Modifier.clickable(
+            onClickLabel = "View $dependencyName's license",
+            role = Role.DropdownList,
+            onClick = { dropped = !dropped },
+        ),
         headlineContent = { Text(text = dependencyName) },
         supportingContent = { Text(text = dependencyPackageName) },
         trailingContent = {
-            IconButton(
-                onClick = {
-                    dropped = !dropped
-                },
-                content = {
-                    Icon(imageVector = Icons.Filled.Info, contentDescription = "View $dependencyName's license")
-                }
-            )
+            Icon(imageVector = Icons.Filled.Info, contentDescription = null)
         }
     )
     if (dropped) {
