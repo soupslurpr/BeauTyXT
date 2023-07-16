@@ -11,7 +11,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.viewmodel.compose.viewModel
-import dev.soupslurpr.beautyxt.settings.SettingsViewModel
+import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
 import dev.soupslurpr.beautyxt.ui.FileViewModel
 import dev.soupslurpr.beautyxt.ui.theme.BeauTyXTTheme
 
@@ -21,18 +21,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            val settingsViewModel: SettingsViewModel = viewModel(
-                factory = SettingsViewModel.SettingsViewModelFactory(dataStore)
+            val preferencesViewModel: PreferencesViewModel = viewModel(
+                factory = PreferencesViewModel.SettingsViewModelFactory(dataStore)
             )
             val fileViewModel: FileViewModel = viewModel()
             if (intent.action == Intent.ACTION_VIEW) {
                 intent.data?.let { fileViewModel.setUri(it, LocalContext.current) }
             }
             BeauTyXTTheme(
-                settingsViewModel = settingsViewModel
+                preferencesViewModel = preferencesViewModel
             ) {
                 BeauTyXTApp(
-                    settingsViewModel = settingsViewModel,
+                    preferencesViewModel = preferencesViewModel,
                     modifier = Modifier
                 )
             }

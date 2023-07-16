@@ -42,12 +42,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navDeepLink
-import dev.soupslurpr.beautyxt.settings.SettingsViewModel
+import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
 import dev.soupslurpr.beautyxt.ui.CreditsScreen
 import dev.soupslurpr.beautyxt.ui.FileEditScreen
 import dev.soupslurpr.beautyxt.ui.FileViewModel
 import dev.soupslurpr.beautyxt.ui.LicenseScreen
 import dev.soupslurpr.beautyxt.ui.PrivacyPolicyScreen
+import dev.soupslurpr.beautyxt.ui.ReviewPrivacyPolicyAndLicense
 import dev.soupslurpr.beautyxt.ui.SettingsScreen
 import dev.soupslurpr.beautyxt.ui.StartupScreen
 import java.time.LocalDateTime
@@ -59,6 +60,7 @@ enum class BeauTyXTScreens(@StringRes val title: Int) {
     License(title = R.string.license),
     PrivacyPolicy(title = R.string.privacy_policy),
     Credits(title = R.string.credits),
+    ReviewPrivacyPolicyAndLicense(title = R.string.review_privacy_policy_and_license),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -136,7 +138,7 @@ fun InfoDialogItem(info: String, value: String) {
 @Composable
 fun BeauTyXTApp(
     fileViewModel: FileViewModel = viewModel(),
-    settingsViewModel: SettingsViewModel = viewModel(),
+    preferencesViewModel: PreferencesViewModel = viewModel(),
     modifier: Modifier,
 ) {
     val navController = rememberNavController()
@@ -149,7 +151,9 @@ fun BeauTyXTApp(
 
     val context = LocalContext.current
 
-    val uiState by fileViewModel.uiState.collectAsState()
+    val fileUiState by fileViewModel.uiState.collectAsState()
+
+    val preferencesUiState by preferencesViewModel.uiState.collectAsState()
 
     val openFileLauncher = rememberLauncherForActivityResult(contract = OpenDocument()) {
         if (it != null) {
@@ -177,9 +181,9 @@ fun BeauTyXTApp(
                 onInfoDismissRequest = { infoShown.value = false },
                 onInfoButtonClicked = { infoShown.value = !infoShown.value },
                 infoDialogContent = {
-                    InfoDialogItem(info = stringResource(id = R.string.name), value = uiState.name.value)
-                    InfoDialogItem(info = stringResource(id = R.string.size), value = uiState.size.value.toString() + " " + stringResource(id = R.string.bytes))
-                    uiState.mimeType.value?.let {
+                    InfoDialogItem(info = stringResource(id = R.string.name), value = fileUiState.name.value)
+                    InfoDialogItem(info = stringResource(id = R.string.size), value = fileUiState.size.value.toString() + " " + stringResource(id = R.string.bytes))
+                    fileUiState.mimeType.value?.let {
                         InfoDialogItem(info = stringResource(id = R.string.mime_type),
                             it
                         )
@@ -189,12 +193,14 @@ fun BeauTyXTApp(
             )
         }
     ) { innerPadding ->
-
         NavHost(
             navController = navController,
-            startDestination = BeauTyXTScreens.Start.name,
-            modifier = modifier.padding(innerPadding)
+            startDestination = if (preferencesUiState.acceptedPrivacyPolicyAndLicense.second.value) {BeauTyXTScreens.Start.name} else {BeauTyXTScreens.ReviewPrivacyPolicyAndLicense.name},
+            modifier = modifier.padding(innerPadding),
         ) {
+            composable(route = BeauTyXTScreens.ReviewPrivacyPolicyAndLicense.name) {
+                ReviewPrivacyPolicyAndLicense(preferencesViewModel = preferencesViewModel)
+            }
             composable(route = BeauTyXTScreens.Start.name) {
                 StartupScreen(
                     modifier = modifier,
@@ -244,13 +250,13 @@ fun BeauTyXTApp(
                 ),
             ) {
                 FileEditScreen(
-                    name = uiState.name.value,
+                    name = fileUiState.name.value,
                     onContentChanged = {
                         fileViewModel.updateContent(it)
-                        fileViewModel.setContentToUri(uri = uiState.uri, context = context)
-                        fileViewModel.getSizeFromUri(uri = uiState.uri, context = context)
+                        fileViewModel.setContentToUri(uri = fileUiState.uri, context = context)
+                        fileViewModel.getSizeFromUri(uri = fileUiState.uri, context = context)
                     },
-                    content = uiState.content.value,
+                    content = fileUiState.content.value,
                 )
             }
             composable(route = BeauTyXTScreens.Settings.name) {
@@ -264,7 +270,7 @@ fun BeauTyXTApp(
                     onCreditsIconButtonClicked = {
                         navController.navigate(BeauTyXTScreens.Credits.name)
                     },
-                    settingsViewModel = settingsViewModel
+                    preferencesViewModel = preferencesViewModel
                 )
             }
             composable(route = BeauTyXTScreens.License.name) {

@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
-import dev.soupslurpr.beautyxt.settings.SettingsViewModel
+import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
 
 /**
  * Dark color scheme for devices < Android 12, which do not support dynamic color.
@@ -49,11 +49,11 @@ fun BeauTyXTTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Dynamic color is available on Android 12+
     dynamicColor: Boolean = true,
-    settingsViewModel: SettingsViewModel = viewModel(),
+    preferencesViewModel: PreferencesViewModel = viewModel(),
     content: @Composable () -> Unit
 ) {
 
-    val settingsUiState by settingsViewModel.uiState.collectAsState()
+    val settingsUiState by preferencesViewModel.uiState.collectAsState()
 
     val pitchBlackBackground = settingsUiState.pitchBlackBackground.second.value and darkTheme
 

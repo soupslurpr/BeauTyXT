@@ -27,7 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
-import dev.soupslurpr.beautyxt.settings.SettingsViewModel
+import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
 import kotlinx.coroutines.launch
 
 /**
@@ -38,10 +38,10 @@ fun SettingsScreen(
     onLicenseIconButtonClicked: () -> Unit,
     onPrivacyPolicyIconButtonClicked: () -> Unit,
     onCreditsIconButtonClicked: () -> Unit,
-    settingsViewModel: SettingsViewModel,
+    preferencesViewModel: PreferencesViewModel,
 ) {
     val localUriHandler = LocalUriHandler.current
-    val settingsUiState by settingsViewModel.uiState.collectAsState()
+    val preferencesUiState by preferencesViewModel.uiState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     Column(
@@ -55,10 +55,10 @@ fun SettingsScreen(
                 name = stringResource(id = R.string.pitch_black_background_setting_name),
                 description = stringResource(id = R.string.pitch_black_background_setting_description),
                 hasSwitch = true,
-                checked = settingsUiState.pitchBlackBackground.second.value,
+                checked = preferencesUiState.pitchBlackBackground.second.value,
                 onCheckedChange = {
                     coroutineScope.launch {
-                        settingsViewModel.setSetting(settingsUiState.pitchBlackBackground.first, it)
+                        preferencesViewModel.setSetting(preferencesUiState.pitchBlackBackground.first, it)
                     }
                 }
             )

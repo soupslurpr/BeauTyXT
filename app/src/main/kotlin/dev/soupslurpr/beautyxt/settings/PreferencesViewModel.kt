@@ -15,12 +15,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class SettingsViewModel(private val dataStore: DataStore<Preferences>) : ViewModel() {
+class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : ViewModel() {
     /**
      * Settings state
      */
-    private val _uiState = MutableStateFlow(SettingsUiState())
-    val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(PreferencesUiState())
+    val uiState: StateFlow<PreferencesUiState> = _uiState.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -37,8 +37,12 @@ class SettingsViewModel(private val dataStore: DataStore<Preferences>) : ViewMod
             _uiState.update { currentState ->
                 currentState.copy(
                     pitchBlackBackground = Pair(
-                            uiState.value.pitchBlackBackground.first,
-                            mutableStateOf(settings[uiState.value.pitchBlackBackground.first] ?: uiState.value.pitchBlackBackground.second.value)
+                        uiState.value.pitchBlackBackground.first,
+                        mutableStateOf(settings[uiState.value.pitchBlackBackground.first] ?: uiState.value.pitchBlackBackground.second.value)
+                    ),
+                    acceptedPrivacyPolicyAndLicense = Pair(
+                        uiState.value.acceptedPrivacyPolicyAndLicense.first,
+                        mutableStateOf(settings[uiState.value.acceptedPrivacyPolicyAndLicense.first] ?: uiState.value.acceptedPrivacyPolicyAndLicense.second.value)
                     )
                 )
             }
@@ -46,12 +50,13 @@ class SettingsViewModel(private val dataStore: DataStore<Preferences>) : ViewMod
     }
 
     /**
-     * Set a setting to a value and save to Preferences DataStore
+     * Set a preference to a value and save to Preferences DataStore
      */
     suspend fun setSetting(key: Preferences.Key<Boolean>, value: Boolean) {
         _uiState.update { currentState ->
             currentState.copy(
-                pitchBlackBackground = if (uiState.value.pitchBlackBackground.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.pitchBlackBackground}
+                pitchBlackBackground = if (uiState.value.pitchBlackBackground.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.pitchBlackBackground},
+                acceptedPrivacyPolicyAndLicense = if (uiState.value.acceptedPrivacyPolicyAndLicense.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.acceptedPrivacyPolicyAndLicense},
             )
         }
         dataStore.edit { settings ->
@@ -61,9 +66,9 @@ class SettingsViewModel(private val dataStore: DataStore<Preferences>) : ViewMod
 
     class SettingsViewModelFactory(private val dataStore: DataStore<Preferences>) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            if (modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
+            if (modelClass.isAssignableFrom(PreferencesViewModel::class.java)) {
                 @Suppress("UNCHECKED_CAST")
-                return SettingsViewModel(dataStore) as T
+                return PreferencesViewModel(dataStore) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class $modelClass")
         }
