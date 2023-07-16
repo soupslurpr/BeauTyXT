@@ -48,7 +48,6 @@ import dev.soupslurpr.beautyxt.ui.FileEditScreen
 import dev.soupslurpr.beautyxt.ui.FileViewModel
 import dev.soupslurpr.beautyxt.ui.LicenseScreen
 import dev.soupslurpr.beautyxt.ui.PrivacyPolicyScreen
-import dev.soupslurpr.beautyxt.ui.ReviewPrivacyPolicyAndLicense
 import dev.soupslurpr.beautyxt.ui.SettingsScreen
 import dev.soupslurpr.beautyxt.ui.StartupScreen
 import java.time.LocalDateTime
@@ -60,7 +59,6 @@ enum class BeauTyXTScreens(@StringRes val title: Int) {
     License(title = R.string.license),
     PrivacyPolicy(title = R.string.privacy_policy),
     Credits(title = R.string.credits),
-    ReviewPrivacyPolicyAndLicense(title = R.string.review_privacy_policy_and_license),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -195,12 +193,9 @@ fun BeauTyXTApp(
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = if (preferencesUiState.acceptedPrivacyPolicyAndLicense.second.value) {BeauTyXTScreens.Start.name} else {BeauTyXTScreens.ReviewPrivacyPolicyAndLicense.name},
+            startDestination = BeauTyXTScreens.Start.name,
             modifier = modifier.padding(innerPadding),
         ) {
-            composable(route = BeauTyXTScreens.ReviewPrivacyPolicyAndLicense.name) {
-                ReviewPrivacyPolicyAndLicense(preferencesViewModel = preferencesViewModel)
-            }
             composable(route = BeauTyXTScreens.Start.name) {
                 StartupScreen(
                     modifier = modifier,
@@ -257,6 +252,8 @@ fun BeauTyXTApp(
                         fileViewModel.getSizeFromUri(uri = fileUiState.uri, context = context)
                     },
                     content = fileUiState.content.value,
+                    mimeType = fileUiState.mimeType.value!!,
+                    preferencesUiState = preferencesUiState
                 )
             }
             composable(route = BeauTyXTScreens.Settings.name) {

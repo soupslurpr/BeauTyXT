@@ -8,6 +8,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 
 /**
  * Composable for editing text in a TextField,
@@ -17,7 +18,9 @@ import androidx.compose.ui.graphics.Color
 fun FileEditScreen(
     name: String,
     onContentChanged: (String) -> Unit = {},
-    content: String
+    content: String,
+    mimeType: String,
+    preferencesUiState: PreferencesUiState,
 ) {
     Column(
         modifier = Modifier

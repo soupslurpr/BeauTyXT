@@ -12,7 +12,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
 
@@ -49,7 +48,7 @@ fun BeauTyXTTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Dynamic color is available on Android 12+
     dynamicColor: Boolean = true,
-    preferencesViewModel: PreferencesViewModel = viewModel(),
+    preferencesViewModel: PreferencesViewModel,
     content: @Composable () -> Unit
 ) {
 

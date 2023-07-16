@@ -49,6 +49,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug") // for testing purposes, actual releases are still signed by my key, do not worry :)
         }
         getByName("debug") {
             applicationIdSuffix = ".debug"
