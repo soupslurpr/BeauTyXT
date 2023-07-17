@@ -75,7 +75,7 @@ fun StartupScreen(
         Text(
             text = "Text, but beautiful.\n" +
                     "\n" +
-                    "Now includes actual settings!",
+                    "Now supports rendering Markdown (.md) files!",
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center
         )
