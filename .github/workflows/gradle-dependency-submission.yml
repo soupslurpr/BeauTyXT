@@ -2,7 +2,7 @@ name: build
 on:
   push:
     branches:
-      - develop # run the action on your projects default branch
+      - master # run the action on your projects default branch
 
 jobs:
   build:
@@ -17,5 +17,5 @@ jobs:
       - name: Run snapshot action
         uses: mikepenz/gradle-dependency-submission@{latest}
         with:
-          gradle-project-path: "gradle-example"
+          gradle-project-path: "."
           gradle-build-module: ":app"
