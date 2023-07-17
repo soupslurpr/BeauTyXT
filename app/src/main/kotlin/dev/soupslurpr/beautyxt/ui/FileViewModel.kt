@@ -46,11 +46,11 @@ class FileViewModel : ViewModel() {
     fun setUri(uri: Uri, context: Context) {
         _uiState.update { currentState ->
             currentState.copy(
-                uri = uri,
+                uri = mutableStateOf(uri),
                 name = getNameFromUri(uri = uri, context),
                 content = getContentFromUri(uri = uri, context),
                 mimeType = getMimeTypeFromUri(uri = uri, context),
-                size = getSizeFromUri(uri = uri, context)
+                size = getSizeFromUri(uri = uri, context),
             )
         }
     }
@@ -112,7 +112,7 @@ class FileViewModel : ViewModel() {
                 size = it.getLong(it.getColumnIndexOrThrow(OpenableColumns.SIZE))
             }
         }
-        uiState.value.size = mutableLongStateOf(size)
+        uiState.value.size.value = size
         return mutableLongStateOf(size)
     }
 
@@ -138,11 +138,23 @@ class FileViewModel : ViewModel() {
         uiState.value.content.value = content
     }
 
-    fun convertMarkdownToHtml(markdown: String) {
+    fun getMarkdownToHtml(): MutableState<String> {
         val parser = Parser.builder(options).build()
         val renderer = HtmlRenderer.builder(options).build()
 
-        val document = parser.parse(markdown)
+        val document = parser.parse(uiState.value.content.value)
+
         uiState.value.contentConvertedToHtml.value = renderer.render(document)
+        return mutableStateOf(renderer.render(document))
+    }
+
+    /** Clear uiState. */
+    fun clearUiState() {
+        uiState.value.content.value = ""
+        uiState.value.contentConvertedToHtml.value = ""
+        uiState.value.size.value = 0L
+        uiState.value.mimeType.value = ""
+        uiState.value.name.value = ""
+        uiState.value.uri.value = Uri.EMPTY
     }
 }

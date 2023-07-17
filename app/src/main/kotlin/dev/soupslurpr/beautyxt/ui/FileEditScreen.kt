@@ -12,6 +12,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -32,11 +33,18 @@ fun FileEditScreen(
     mimeType: String,
     contentConvertedToHtml: String,
     preferencesUiState: PreferencesUiState,
+    fileViewModel: FileViewModel,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val textColor = colorScheme.onBackground
     val renderedMarkdownVerticalScrollState = rememberScrollState()
     val textStyle = typography.bodyLarge
+
+    LaunchedEffect(key1 = Unit) {
+        if (preferencesUiState.renderMarkdown.second.value) {
+            fileViewModel.getMarkdownToHtml()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -117,10 +125,15 @@ fun FileEditScreen(
                                         </style>
                                     </head>
                                     <body>
-                                        ${(contentConvertedToHtml)}
+                                        ${if (contentConvertedToHtml == "") {
+                                            fileViewModel.getMarkdownToHtml().value
+
+                                        } else {
+                                            contentConvertedToHtml
+                                        }}
                                     </body>
                                 </html>
-                            """.trimIndent()
+                                """.trimIndent()
                                 view.loadData(html, "text/html", "UTF-8")
                             }
                         )

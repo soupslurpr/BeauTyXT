@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,9 +52,15 @@ fun StartupScreen(
     onCreateTxtButtonClicked: () -> Unit,
     onCreateMdButtonClicked: () -> Unit,
     onSettingsButtonClicked: () -> Unit,
+    fileViewModel: FileViewModel,
 ) {
     var isOpenFileTypeAlertDialogShown by remember { mutableStateOf(false) }
     var isCreateFileTypeAlertDialogShown by remember { mutableStateOf(false) }
+
+    // clear FileUiState when exiting file editor and going back to startup screen.
+    LaunchedEffect(key1 = Unit) {
+        fileViewModel.clearUiState()
+    }
 
     Column(
         modifier = modifier
@@ -219,5 +226,6 @@ fun StartupPreview() {
         onCreateTxtButtonClicked = {},
         onCreateMdButtonClicked = {},
         onSettingsButtonClicked = {},
+        fileViewModel = FileViewModel()
     )
 }

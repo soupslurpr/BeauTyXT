@@ -306,7 +306,8 @@ fun BeauTyXTApp(
                     },
                     onSettingsButtonClicked = {
                         navController.navigate(BeauTyXTScreens.Settings.name)
-                    }
+                    },
+                    fileViewModel = fileViewModel
                 )
             }
             composable(
@@ -330,16 +331,18 @@ fun BeauTyXTApp(
                     name = fileUiState.name.value,
                     onContentChanged = { content ->
                         fileViewModel.updateContent(content)
-                        fileViewModel.setContentToUri(uri = fileUiState.uri, context = context)
+                        fileViewModel.setContentToUri(uri = fileUiState.uri.value, context = context)
                         when (fileUiState.mimeType.value) {
-                            "text/markdown" -> fileViewModel.convertMarkdownToHtml(content)
-                        }
-                        fileViewModel.getSizeFromUri(uri = fileUiState.uri, context = context)
+                            "text/markdown" -> if (preferencesUiState.renderMarkdown.second.value) {
+                                fileViewModel.getMarkdownToHtml()
+                            }}
+                        fileViewModel.getSizeFromUri(uri = fileUiState.uri.value, context = context)
                     },
                     content = fileUiState.content.value,
                     mimeType = fileUiState.mimeType.value!!,
                     contentConvertedToHtml = fileUiState.contentConvertedToHtml.value,
-                    preferencesUiState = preferencesUiState
+                    preferencesUiState = preferencesUiState,
+                    fileViewModel = fileViewModel
                 )
             }
             composable(route = BeauTyXTScreens.Settings.name) {

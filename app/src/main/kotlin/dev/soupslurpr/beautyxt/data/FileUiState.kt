@@ -7,15 +7,15 @@ import androidx.compose.runtime.mutableStateOf
 
 data class FileUiState(
     /** uri of file */
-    val uri: Uri = Uri.EMPTY,
+    val uri: MutableState<Uri> = mutableStateOf(Uri.EMPTY),
     /** name of file */
     val name: MutableState<String> = mutableStateOf(""),
     /** content of file */
-    var content: MutableState<String> = mutableStateOf(""),
+    val content: MutableState<String> = mutableStateOf(""),
     /** mimeType of file */
-    var mimeType: MutableState<String?> = mutableStateOf(""),
+    val mimeType: MutableState<String?> = mutableStateOf(""),
     /** size of file */
-    var size: MutableState<Long> = mutableLongStateOf(0L),
+    val size: MutableState<Long> = mutableLongStateOf(0L),
     /** Content (markdown) converted to HTML */
-    var contentConvertedToHtml: MutableState<String> = mutableStateOf(""),
+    val contentConvertedToHtml: MutableState<String> = mutableStateOf(""),
 )
