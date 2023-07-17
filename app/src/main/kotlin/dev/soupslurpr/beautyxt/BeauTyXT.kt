@@ -328,13 +328,17 @@ fun BeauTyXTApp(
             ) {
                 FileEditScreen(
                     name = fileUiState.name.value,
-                    onContentChanged = {
-                        fileViewModel.updateContent(it)
+                    onContentChanged = { content ->
+                        fileViewModel.updateContent(content)
                         fileViewModel.setContentToUri(uri = fileUiState.uri, context = context)
+                        when (fileUiState.mimeType.value) {
+                            "text/markdown" -> fileViewModel.convertMarkdownToHtml(content)
+                        }
                         fileViewModel.getSizeFromUri(uri = fileUiState.uri, context = context)
                     },
                     content = fileUiState.content.value,
                     mimeType = fileUiState.mimeType.value!!,
+                    contentConvertedToHtml = fileUiState.contentConvertedToHtml.value,
                     preferencesUiState = preferencesUiState
                 )
             }

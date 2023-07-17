@@ -8,6 +8,11 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
+import com.vladsch.flexmark.ext.gfm.strikethrough.StrikethroughExtension
+import com.vladsch.flexmark.ext.tables.TablesExtension
+import com.vladsch.flexmark.html.HtmlRenderer
+import com.vladsch.flexmark.parser.Parser
+import com.vladsch.flexmark.util.data.MutableDataSet
 import dev.soupslurpr.beautyxt.data.FileUiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +31,14 @@ class FileViewModel : ViewModel() {
      */
     private val _uiState = MutableStateFlow(FileUiState())
     val uiState: StateFlow<FileUiState> = _uiState.asStateFlow()
+
+    private val options = MutableDataSet()
+        .set(TablesExtension.COLUMN_SPANS, false)
+        .set(TablesExtension.APPEND_MISSING_COLUMNS, true)
+        .set(TablesExtension.DISCARD_EXTRA_COLUMNS, true)
+        .set(TablesExtension.HEADER_SEPARATOR_COLUMN_MATCH, true)
+        .set(Parser.EXTENSIONS, listOf(TablesExtension.create(), StrikethroughExtension.create()))
+        .toImmutable()
 
     /**
      * Set the uri for this file and update the content
@@ -123,5 +136,13 @@ class FileViewModel : ViewModel() {
 
     fun updateContent(content: String) {
         uiState.value.content.value = content
+    }
+
+    fun convertMarkdownToHtml(markdown: String) {
+        val parser = Parser.builder(options).build()
+        val renderer = HtmlRenderer.builder(options).build()
+
+        val document = parser.parse(markdown)
+        uiState.value.contentConvertedToHtml.value = renderer.render(document)
     }
 }

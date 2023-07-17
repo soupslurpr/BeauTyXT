@@ -15,5 +15,7 @@ data class FileUiState(
     /** mimeType of file */
     var mimeType: MutableState<String?> = mutableStateOf(""),
     /** size of file */
-    var size: MutableState<Long> = mutableLongStateOf(0L)
+    var size: MutableState<Long> = mutableLongStateOf(0L),
+    /** Content (markdown) converted to HTML */
+    var contentConvertedToHtml: MutableState<String> = mutableStateOf(""),
 )

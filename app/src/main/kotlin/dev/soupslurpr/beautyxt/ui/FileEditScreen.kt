@@ -19,12 +19,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.vladsch.flexmark.ext.gfm.strikethrough.StrikethroughExtension
-import com.vladsch.flexmark.ext.tables.TablesExtension
-import com.vladsch.flexmark.html.HtmlRenderer
-import com.vladsch.flexmark.parser.Parser
-import com.vladsch.flexmark.util.data.DataSet
-import com.vladsch.flexmark.util.data.MutableDataSet
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 
 /**
@@ -36,18 +30,12 @@ fun FileEditScreen(
     onContentChanged: (String) -> Unit = {},
     content: String,
     mimeType: String,
+    contentConvertedToHtml: String,
     preferencesUiState: PreferencesUiState,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val textColor = colorScheme.onBackground
     val renderedMarkdownVerticalScrollState = rememberScrollState()
-    val options = MutableDataSet()
-        .set(TablesExtension.COLUMN_SPANS, false)
-        .set(TablesExtension.APPEND_MISSING_COLUMNS, true)
-        .set(TablesExtension.DISCARD_EXTRA_COLUMNS, true)
-        .set(TablesExtension.HEADER_SEPARATOR_COLUMN_MATCH, true)
-        .set(Parser.EXTENSIONS, listOf(TablesExtension.create(), StrikethroughExtension.create()))
-        .toImmutable()
     val textStyle = typography.bodyLarge
 
     Column(
@@ -129,7 +117,7 @@ fun FileEditScreen(
                                         </style>
                                     </head>
                                     <body>
-                                        ${markdownToHtml(content, options)}
+                                        ${(contentConvertedToHtml)}
                                     </body>
                                 </html>
                             """.trimIndent()
@@ -145,12 +133,4 @@ fun FileEditScreen(
 
 fun Color.toCssColor(): String {
     return "rgb(${red*255}, ${green*255}, ${blue*255})"
-}
-
-fun markdownToHtml(markdown: String, options: DataSet): String {
-    val parser = Parser.builder(options).build()
-    val renderer = HtmlRenderer.builder(options).build()
-
-    val document = parser.parse(markdown)
-    return renderer.render(document)
 }
