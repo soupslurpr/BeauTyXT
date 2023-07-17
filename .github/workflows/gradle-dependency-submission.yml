@@ -14,6 +14,9 @@ jobs:
       - name: 'Checkout Repository'
         uses: actions/checkout@v3
 
+      - name: 'List files in workspace'
+        run: ls -la
+      
       - name: Run snapshot action
         uses: mikepenz/gradle-dependency-submission@v0.9.0
         with:
