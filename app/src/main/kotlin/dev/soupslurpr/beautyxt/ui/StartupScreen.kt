@@ -46,12 +46,15 @@ import dev.soupslurpr.beautyxt.R
 fun StartupScreen(
     modifier: Modifier,
     onOpenTxtButtonClicked: () -> Unit,
-    onCreateTxtButtonClicked: () -> Unit,
-    onSettingsButtonClicked: () -> Unit,
+    onOpenMdButtonClicked: () -> Unit,
     onOpenAnyButtonClicked: () -> Unit,
+    onCreateTxtButtonClicked: () -> Unit,
+    onCreateMdButtonClicked: () -> Unit,
+    onSettingsButtonClicked: () -> Unit,
 ) {
     var isOpenFileTypeAlertDialogShown by remember { mutableStateOf(false) }
     var isCreateFileTypeAlertDialogShown by remember { mutableStateOf(false) }
+
     Column(
         modifier = modifier
             .padding(16.dp)
@@ -81,7 +84,7 @@ fun StartupScreen(
             onClick = { isOpenFileTypeAlertDialogShown = true }
         ) {
             Icon(
-                painter = painterResource(id = R.drawable.baseline_file_open_24),
+                painter = painterResource(R.drawable.baseline_file_open_24),
                 contentDescription = null
             )
             Spacer(modifier = modifier.width(8.dp))
@@ -101,7 +104,16 @@ fun StartupScreen(
                         isOpenFileTypeAlertDialogShown = false
                     }
                 ) {
-                    Text(text = stringResource(id = R.string.txt))
+                    Text(text = stringResource(R.string.txt))
+                }
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        onOpenMdButtonClicked()
+                        isOpenFileTypeAlertDialogShown = false
+                    }
+                ) {
+                    Text(text = stringResource(R.string.md))
                 }
                 FilledTonalButton(
                     modifier = Modifier.fillMaxWidth(),
@@ -110,7 +122,7 @@ fun StartupScreen(
                         isOpenFileTypeAlertDialogShown = false
                     }
                 ) {
-                    Text(text = stringResource(id = R.string.any))
+                    Text(text = stringResource(R.string.any))
                 }
             }
         }
@@ -140,6 +152,15 @@ fun StartupScreen(
                     },
                 ) {
                     Text(text = stringResource(R.string.txt))
+                }
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        isCreateFileTypeAlertDialogShown = false
+                        onCreateMdButtonClicked()
+                    },
+                ) {
+                    Text(text = stringResource(R.string.md))
                 }
             }
         }
@@ -194,7 +215,9 @@ fun StartupPreview() {
         modifier = Modifier.fillMaxSize(),
         onOpenAnyButtonClicked = {},
         onOpenTxtButtonClicked = {},
+        onOpenMdButtonClicked = {},
         onCreateTxtButtonClicked = {},
+        onCreateMdButtonClicked = {},
         onSettingsButtonClicked = {},
     )
 }

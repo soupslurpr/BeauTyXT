@@ -65,6 +65,21 @@ fun SettingsScreen(
         }
 
         Column {
+            SettingsCategoryText(category = stringResource(id = R.string.markdown))
+            SettingsItem(
+                name = stringResource(id = R.string.render_markdown_setting_name),
+                description = stringResource(id = R.string.render_markdown_setting_description),
+                hasSwitch = true,
+                checked = preferencesUiState.renderMarkdown.second.value,
+                onCheckedChange = {
+                    coroutineScope.launch {
+                        preferencesViewModel.setSetting(preferencesUiState.renderMarkdown.first, it)
+                    }
+                }
+            )
+        }
+
+        Column {
             SettingsCategoryText(category = stringResource(id = R.string.about))
             SettingsItem(
                 name = stringResource(id = R.string.open_beautyxt_website_setting_name),

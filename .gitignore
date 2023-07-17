@@ -14,8 +14,8 @@
 .externalNativeBuild
 .cxx
 local.properties
-/app/release/bundletool-all-1.15.1.jar
 /app/release/app-release.aab
 /app/release/BeauTyXT-release.apks
 /app/release/output-metadata.json
 /app/release/app-release.apk
+/app/release/bundletool-all-1.15.2.jar

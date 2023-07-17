@@ -9,13 +9,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +36,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -69,8 +76,12 @@ fun BeauTyXTAppBar(
     navigateUp: () -> Unit,
     infoShown: Boolean,
     onInfoDismissRequest: () -> Unit,
-    onInfoButtonClicked: () -> Unit,
+    onFileInfoDropdownMenuItemClicked: () -> Unit,
     infoDialogContent: @Composable () -> Unit,
+    dropDownMenuShown: Boolean,
+    onDropDownMenuButtonClicked: () -> Unit,
+    onDropDownMenuDismissRequest: () -> Unit,
+    onSettingsDropdownMenuItemClicked: () -> Unit,
     modifier: Modifier
 ) {
     TopAppBar(
@@ -91,33 +102,66 @@ fun BeauTyXTAppBar(
         actions = {
             if (currentScreen == BeauTyXTScreens.FileEdit) {
                 IconButton(
-                    onClick = onInfoButtonClicked,
+                    onClick = onDropDownMenuButtonClicked,
                     content = {
-                        Icon(imageVector = Icons.Filled.Info, contentDescription = stringResource(R.string.file_info))
+                        Icon(imageVector = Icons.Filled.MoreVert,
+                            stringResource(R.string.options_dropdown_menu))
                     }
                 )
-            }
-            if (infoShown) {
-                AlertDialog(
-                    onDismissRequest = onInfoDismissRequest,
+                DropdownMenu(
+                    expanded = dropDownMenuShown,
+                    onDismissRequest = { onDropDownMenuDismissRequest() },
+                    scrollState = rememberScrollState(),
+                    modifier = Modifier.width(200.dp)
                 ) {
-                    Surface(
-                        modifier = Modifier
-                            .wrapContentWidth()
-                            .wrapContentHeight()
-                            .fillMaxWidth(0.95f),
-                        shape = MaterialTheme.shapes.large,
-                        tonalElevation = AlertDialogDefaults.TonalElevation
+                    val dropDownMenuItemTextStyle = typography.bodyLarge
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.file_info),
+                                style = dropDownMenuItemTextStyle
+                            )
+                        },
+                        onClick = { onFileInfoDropdownMenuItemClicked() },
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Filled.Info, contentDescription = null)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.settings),
+                                style = dropDownMenuItemTextStyle
+                            )
+                        },
+                        onClick = { onSettingsDropdownMenuItemClicked() },
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Filled.Settings, contentDescription = null)
+                        }
+                    )
+                }
+                if (infoShown) {
+                    AlertDialog(
+                        onDismissRequest = onInfoDismissRequest,
                     ) {
-                        Column(
+                        Surface(
                             modifier = Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                            horizontalAlignment = Alignment.Start
+                                .wrapContentWidth()
+                                .wrapContentHeight()
+                                .fillMaxWidth(0.95f),
+                            shape = MaterialTheme.shapes.large,
+                            tonalElevation = AlertDialogDefaults.TonalElevation
                         ) {
-                            Text(text = stringResource(R.string.file_info), style = typography.headlineSmall, modifier = Modifier.align(Alignment.CenterHorizontally))
-                            infoDialogContent()
+                            Column(
+                                modifier = Modifier
+                                    .padding(16.dp)
+                                    .fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                                horizontalAlignment = Alignment.Start
+                            ) {
+                                Text(text = stringResource(R.string.file_info), style = typography.headlineSmall, modifier = Modifier.align(Alignment.CenterHorizontally))
+                                infoDialogContent()
+                            }
                         }
                     }
                 }
@@ -160,14 +204,23 @@ fun BeauTyXTApp(
         }
     }
 
-    val createFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument("text/plain")) {
+    val createTxtFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument("text/plain")) {
         if (it != null) {
             fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
         }
     }
 
-    val infoShown = remember { mutableStateOf(false) }
+    val createMdFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument("text/markdown")) {
+        if (it != null) {
+            fileViewModel.setUri(it, context)
+            navController.navigate(BeauTyXTScreens.FileEdit.name)
+        }
+    }
+
+    var infoShown by remember { mutableStateOf(false) }
+
+    var dropDownMenuShown by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -175,9 +228,12 @@ fun BeauTyXTApp(
                 currentScreen = currentScreen,
                 canNavigateBack = navController.previousBackStackEntry != null,
                 navigateUp = { navController.navigateUp() },
-                infoShown = infoShown.value,
-                onInfoDismissRequest = { infoShown.value = false },
-                onInfoButtonClicked = { infoShown.value = !infoShown.value },
+                infoShown = infoShown,
+                onInfoDismissRequest = { infoShown = false },
+                onFileInfoDropdownMenuItemClicked = {
+                    infoShown = !infoShown
+                    dropDownMenuShown = false
+                },
                 infoDialogContent = {
                     InfoDialogItem(info = stringResource(id = R.string.name), value = fileUiState.name.value)
                     InfoDialogItem(info = stringResource(id = R.string.size), value = fileUiState.size.value.toString() + " " + stringResource(id = R.string.bytes))
@@ -186,6 +242,13 @@ fun BeauTyXTApp(
                             it
                         )
                     }
+                },
+                dropDownMenuShown = dropDownMenuShown,
+                onDropDownMenuButtonClicked = { dropDownMenuShown = !dropDownMenuShown },
+                onDropDownMenuDismissRequest = { dropDownMenuShown = false },
+                onSettingsDropdownMenuItemClicked = {
+                    navController.navigate(BeauTyXTScreens.Settings.name)
+                    dropDownMenuShown = false
                 },
                 modifier = modifier
             )
@@ -201,9 +264,13 @@ fun BeauTyXTApp(
                     modifier = modifier,
                     onOpenTxtButtonClicked = {
                         openFileLauncher.launch(
-                            arrayOf(
-                                "text/plain"
-                            ),
+                            arrayOf("text/plain"),
+                            ActivityOptionsCompat.makeBasic(),
+                        )
+                    },
+                    onOpenMdButtonClicked = {
+                        openFileLauncher.launch(
+                            arrayOf("text/markdown"),
                             ActivityOptionsCompat.makeBasic(),
                         )
                     },
@@ -214,7 +281,19 @@ fun BeauTyXTApp(
                         )
                     },
                     onCreateTxtButtonClicked = {
-                        createFileLauncher.launch(
+                        createTxtFileLauncher.launch(
+                            // Make default file name the current LocalDateTime, and for devices
+                            // which don't support LocalDateTime, make it blank.
+                            (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                LocalDateTime.now().toString()
+                            } else {
+                                ""
+                            }),
+                            ActivityOptionsCompat.makeBasic()
+                        )
+                    },
+                    onCreateMdButtonClicked = {
+                        createMdFileLauncher.launch(
                             // Make default file name the current LocalDateTime, and for devices
                             // which don't support LocalDateTime, make it blank.
                             (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -241,6 +320,9 @@ fun BeauTyXTApp(
                     },
                     navDeepLink {
                         mimeType = "application/xml"
+                    },
+                    navDeepLink {
+                        mimeType = "text/markdown"
                     }
                 ),
             ) {

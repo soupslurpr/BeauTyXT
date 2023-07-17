@@ -32,9 +32,14 @@
     <string name="open_file">Open File</string>
     <string name="open_beautyxt_website_setting_name">BeauTyXT\'s Website</string>
     <string name="open_beautyxt_website_setting_description">Open BeauTyXT\'s website in your web browser</string>
-    <string name="review_privacy_policy_and_license" tools:ignore="MissingTranslation" translatable="false">Review BeauTyXT\'s privacy policy and license (scroll down)</string>
+    <string name="review_privacy_policy_and_license" translatable="false">Review BeauTyXT\'s privacy policy and license (scroll down)</string>
     <string name="full_privacy_policy" translatable="false">BeauTyXT privacy policy\n\nThis app does not use any sensitive permissions, makes no internet connections, and does not store any data in itself other than preferences. This app uses the Android Storage Access Framework (SAF) to interact with files you choose to access, which can be stored in and exported to various locations of your choice. You are responsible for where you choose to store and export your files to. This app does not access, collect, or transmit data from these locations beyond these purposes.\n\nBeauTyXT\'s privacy policy may be updated from time to time.\n\nLast updated: July 15, 2023.</string>
     <string name="full_license" translatable="false">ISC License\n\nCopyright (c) 2023 soupslurpr\n\nPermission to use, copy, modify, and/or distribute this software for any\npurpose with or without fee is hereby granted, provided that the above\ncopyright notice and this permission notice appear in all copies.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH\nREGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY\nAND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,\nINDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM\nLOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR\nOTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR\nPERFORMANCE OF THIS SOFTWARE.</string>
-    <string name="privacy_policy_and_license_checkbox_text" translatable="false">By checking the checkbox and continuing, you agree to BeauTyXT\'s privacy policy and license, which are shown above.</string>
+    <string name="privacy_policy_and_license_checkbox_text" translatable="false">By checking the checkbox and continuing, you agree to BeauTyXT\'s privacy policy and license, which are shown above</string>
     <string name="continue_to_app" translatable="false">Continue</string>
+    <string name="options_dropdown_menu" tools:ignore="MissingTranslation">Options dropdown menu</string>
+    <string name="render_markdown_setting_name" tools:ignore="MissingTranslation">Render Markdown</string>
+    <string name="markdown" tools:ignore="MissingTranslation">Markdown</string>
+    <string name="render_markdown_setting_description" tools:ignore="MissingTranslation">Render Markdown (.md) files on the bottom side of the screen</string>
+    <string name="md" tools:ignore="MissingTranslation">Markdown (.md)</string>
 </resources>

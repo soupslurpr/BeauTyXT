@@ -221,6 +221,32 @@ const val APACHE2LICENSE = "\n" +
         "   See the License for the specific language governing permissions and\n" +
         "   limitations under the License."
 
+const val BSD2LICENSE = "Copyright (c) 2015-2016, Atlassian Pty Ltd\n" +
+        "All rights reserved.\n" +
+        "\n" +
+        "Copyright (c) 2016-2018, Vladimir Schneider,\n" +
+        "All rights reserved.\n" +
+        "\n" +
+        "Redistribution and use in source and binary forms, with or without\n" +
+        "modification, are permitted provided that the following conditions are met:\n" +
+        "\n" +
+        "* Redistributions of source code must retain the above copyright notice, this\n" +
+        "  list of conditions and the following disclaimer.\n" +
+        "\n" +
+        "* Redistributions in binary form must reproduce the above copyright notice,\n" +
+        "  this list of conditions and the following disclaimer in the documentation\n" +
+        "  and/or other materials provided with the distribution.\n" +
+        "\n" +
+        "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"\n" +
+        "AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE\n" +
+        "IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\n" +
+        "DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE\n" +
+        "FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\n" +
+        "DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR\n" +
+        "SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER\n" +
+        "CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,\n" +
+        "OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\n" +
+        "OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
 @Composable
 fun CreditsScreen() {
     LazyColumn(
@@ -235,8 +261,8 @@ fun CreditsScreen() {
         }
         item {
             CreditsItem(
-                dependencyName = "Compose Material3 Components",
-                dependencyPackageName = "androidx.compose.material3:material3",
+                dependencyName = "Material Components For Android",
+                dependencyPackageName = "com.google.android.material:material",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
@@ -277,8 +303,8 @@ fun CreditsScreen() {
         }
         item {
             CreditsItem(
-                dependencyName = "Material Components For Android",
-                dependencyPackageName = "com.google.android.material:material",
+                dependencyName = "Compose Material3 Components",
+                dependencyPackageName = "androidx.compose.material3:material3-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
@@ -326,13 +352,6 @@ fun CreditsScreen() {
         }
         item {
             CreditsItem(
-                dependencyName = "Activity Kotlin Extensions",
-                dependencyPackageName = "androidx.activity:activity-ktx",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
                 dependencyName = "Activity Compose",
                 dependencyPackageName = "androidx.activity:activity-compose",
                 dependencyLicense = APACHE2LICENSE,
@@ -341,99 +360,113 @@ fun CreditsScreen() {
         item {
             CreditsItem(
                 dependencyName = "Compose Material Ripple",
-                dependencyPackageName = "androidx.compose.material:material-ripple",
+                dependencyPackageName = "androidx.compose.material:material-ripple-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Compose Material Icons Core",
-                dependencyPackageName = "androidx.compose.material:material-icons-core",
+                dependencyPackageName = "androidx.compose.material:material-icons-core-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Compose Material Components",
-                dependencyPackageName = "androidx.compose.material:material",
+                dependencyPackageName = "androidx.compose.material:material-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Compose Foundation",
-                dependencyPackageName = "androidx.compose.foundation:foundation",
+                dependencyPackageName = "androidx.compose.foundation:foundation-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Compose Animation",
-                dependencyPackageName = "androidx.compose.animation:animation",
+                dependencyPackageName = "androidx.compose.animation:animation-core-android",
+                dependencyLicense = APACHE2LICENSE,
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Compose Animation",
+                dependencyPackageName = "androidx.compose.animation:animation-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Compose Layouts",
-                dependencyPackageName = "androidx.compose.foundation:foundation-layout",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Compose Animation Core",
-                dependencyPackageName = "androidx.compose.animation:animation-core",
+                dependencyPackageName = "androidx.compose.foundation:foundation-layout-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Compose Util",
-                dependencyPackageName = "androidx.compose.ui:ui-util",
+                dependencyPackageName = "androidx.compose.ui:ui-util-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Compose Unit",
-                dependencyPackageName = "androidx.compose.ui:ui-unit",
+                dependencyPackageName = "androidx.compose.ui:ui-unit-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Compose UI Text",
-                dependencyPackageName = "androidx.compose.ui:ui-text",
+                dependencyPackageName = "androidx.compose.ui:ui-text-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Compose Geometry",
-                dependencyPackageName = "androidx.compose.ui:ui-geometry",
+                dependencyPackageName = "androidx.compose.ui:ui-geometry-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Compose UI Preview Tooling",
-                dependencyPackageName = "androidx.compose.ui:ui-tooling-preview",
+                dependencyPackageName = "androidx.compose.ui:ui-tooling-preview-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Compose Graphics",
-                dependencyPackageName = "androidx.compose.ui:ui-graphics",
+                dependencyPackageName = "androidx.compose.ui:ui-graphics-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
-                dependencyName = "SavedState Kotlin Extensions",
-                dependencyPackageName = "androidx.savedstate:savedstate-ktx",
-                dependencyLicense = APACHE2LICENSE,
+                dependencyName = "Dynamic Animation",
+                dependencyPackageName = "androidx.dynamicanimation:dynamicanimation",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Legacy Support Core Utils",
+                dependencyPackageName = "androidx.legacy:legacy-support-core-utils",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Loader",
+                dependencyPackageName = "androidx.loader:loader",
+                dependencyLicense = APACHE2LICENSE
             )
         }
         item {
@@ -452,92 +485,127 @@ fun CreditsScreen() {
         }
         item {
             CreditsItem(
-                dependencyName = "Android Support DynamicAnimation",
-                dependencyPackageName = "androidx.dynamicanimation:dynamicanimation",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Android Support Library Core Utilities",
-                dependencyPackageName = "androidx.legacy:legacy-support-core-utils",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Android Support Library Loader",
-                dependencyPackageName = "androidx.loader:loader",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Android Lifecycle LiveData",
-                dependencyPackageName = "androidx.lifecycle:lifecycle-livedata",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Android Lifecycle Process",
+                dependencyName = "Lifecycle Process",
                 dependencyPackageName = "androidx.lifecycle:lifecycle-process",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
-                dependencyName = "Android Lifecycle LiveData Core",
+                dependencyName = "Lifecycle Livedata",
+                dependencyPackageName = "androidx.lifecycle:lifecycle-livedata",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Lifecycle Livedata Core",
                 dependencyPackageName = "androidx.lifecycle:lifecycle-livedata-core",
-                dependencyLicense = APACHE2LICENSE,
+                dependencyLicense = APACHE2LICENSE
             )
         }
         item {
             CreditsItem(
-                dependencyName = "Android Lifecycle ViewModel Kotlin Extensions",
-                dependencyPackageName = "androidx.lifecycle:lifecycle-viewmodel-ktx",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Android Lifecycle ViewModel with SavedState",
-                dependencyPackageName = "androidx.lifecycle:lifecycle-viewmodel-savedstate",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Saved State",
-                dependencyPackageName = "androidx.savedstate:savedstate",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Android Lifecycle Common",
-                dependencyPackageName = "androidx.lifecycle:lifecycle-common",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Android Lifecycle Common For Java 8 Language",
+                dependencyName = "Lifecycle Common java8l",
                 dependencyPackageName = "androidx.lifecycle:lifecycle-common-java8",
-                dependencyLicense = APACHE2LICENSE,
+                dependencyLicense = APACHE2LICENSE
             )
         }
         item {
             CreditsItem(
-                dependencyName = "Android Lifecycle ViewModel",
+                dependencyName = "Lifecycle ViewModel Ktx",
+                dependencyPackageName = "androidx.lifecycle:lifecycle-viewmodel-ktx",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Savedstate Ktx",
+                dependencyPackageName = "androidx.savedstate:savedstate-ktx",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Savedstate",
+                dependencyPackageName = "androidx.savedstate:savedstate",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Lifecycle Common",
+                dependencyPackageName = "androidx.lifecycle:lifecycle-common",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Lifecycle ViewModel",
                 dependencyPackageName = "androidx.lifecycle:lifecycle-viewmodel",
-                dependencyLicense = APACHE2LICENSE,
+                dependencyLicense = APACHE2LICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Lifecycle ViewModel Compose",
                 dependencyPackageName = "androidx.lifecycle:lifecycle-viewmodel-compose",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Compose UI Android",
+                dependencyPackageName = "androidx.compose.ui:ui-android",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Activity Ktx",
+                dependencyPackageName = "androidx.activity:activity-ktx",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Customview Poolingcontainer",
+                dependencyPackageName = "androidx.customview:customview-poolingcontainer",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Core Ktx",
+                dependencyPackageName = "androidx.core:core-ktx",
+                dependencyLicense = APACHE2LICENSE,
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Coordinatorlayout",
+                dependencyPackageName = "androidx.coordinatorlayout:coordinatorlayout",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Drawerlayout",
+                dependencyPackageName = "androidx.drawerlayout:drawerlayout",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Transition",
+                dependencyPackageName = "androidx.transition:transition",
+                dependencyLicense = APACHE2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Android Lifecycle ViewModel with SavedState",
+                dependencyPackageName = "androidx.lifecycle:lifecycle-viewmodel-savedstate",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
@@ -550,43 +618,8 @@ fun CreditsScreen() {
         }
         item {
             CreditsItem(
-                dependencyName = "CustomView Poolingcontainer",
-                dependencyPackageName = "androidx.customview:customview-poolingcontainer",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Core Kotlin Extensions",
-                dependencyPackageName = "androidx.core:core-ktx",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
                 dependencyName = "Autofill",
                 dependencyPackageName = "androidx.autofill:autofill",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Android Support Library Coordinator Layout",
-                dependencyPackageName = "androidx.coordinatorlayout:coordinatorlayout",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Android Support Library Drawer Layout",
-                dependencyPackageName = "androidx.drawerlayout:drawerlayout",
-                dependencyLicense = APACHE2LICENSE,
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Android Transition Support Library",
-                dependencyPackageName = "androidx.transition:transition",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
@@ -649,14 +682,14 @@ fun CreditsScreen() {
         item {
             CreditsItem(
                 dependencyName = "Compose Saveable",
-                dependencyPackageName = "androidx.compose.runtime:runtime-saveable",
+                dependencyPackageName = "androidx.compose.runtime:runtime-saveable-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Compose Runtime",
-                dependencyPackageName = "androidx.compose.runtime:runtime",
+                dependencyPackageName = "androidx.compose.runtime:runtime-android",
                 dependencyLicense = APACHE2LICENSE,
             )
         }
@@ -886,6 +919,118 @@ fun CreditsScreen() {
         }
         item {
             CreditsItem(
+                dependencyName = "Android Sample Code",
+                dependencyPackageName = "https://developer.android.com/",
+                dependencyLicense = APACHE2LICENSE,
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark gfm strikethrough",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-ext-gfm-strikethrough",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark tables",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-ext-tables",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark Util",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-util",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark Util Format",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-format",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark Util AST",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-ast",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark Util Builder",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-builder",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark Util Dependency",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-dependency",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark Util HTML",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-html",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark Util Options",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-options",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark Util Sequence",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-sequence",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark Util Collection",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-collection",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark Util Data",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-data",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark Util Misc",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-misc",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Flexmark Util Visitor",
+                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-visitor",
+                dependencyLicense = BSD2LICENSE
+            )
+        }
+        item {
+            CreditsItem(
                 dependencyName = "grapheneos.org website",
                 dependencyPackageName = "",
                 dependencyLicense = "Copyright © 2014-2023 GrapheneOS\n" +
@@ -941,7 +1086,7 @@ fun CreditsItem(
     )
     if (dropped) {
         Text(
-            modifier = Modifier.padding(horizontal = 15.dp),
+            modifier = Modifier.padding(horizontal = 16.dp),
             style = typography.bodySmall,
             text = dependencyLicense,
         )

@@ -12,9 +12,16 @@ data class PreferencesUiState(
         (booleanPreferencesKey("PITCH_BLACK_BACKGROUND")),
         mutableStateOf(false)
     ),
+
     /** Whether the user has accepted the privacy policy and license. */
     var acceptedPrivacyPolicyAndLicense: Pair<Preferences.Key<Boolean>, MutableState<Boolean>> = Pair(
         (booleanPreferencesKey("ACCEPTED_PRIVACY_POLICY_AND_LICENSE")),
         mutableStateOf(false)
+    ),
+
+    /** Render Markdown (.md) files on the bottom side of the screen. */
+    var renderMarkdown: Pair<Preferences.Key<Boolean>, MutableState<Boolean>> = Pair(
+        (booleanPreferencesKey("RENDER_MARKDOWN")),
+        mutableStateOf(true)
     ),
 )

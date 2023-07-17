@@ -43,6 +43,10 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
                     acceptedPrivacyPolicyAndLicense = Pair(
                         uiState.value.acceptedPrivacyPolicyAndLicense.first,
                         mutableStateOf(settings[uiState.value.acceptedPrivacyPolicyAndLicense.first] ?: uiState.value.acceptedPrivacyPolicyAndLicense.second.value)
+                    ),
+                    renderMarkdown = Pair(
+                        uiState.value.renderMarkdown.first,
+                        mutableStateOf(settings[uiState.value.renderMarkdown.first] ?: uiState.value.renderMarkdown.second.value)
                     )
                 )
             }
@@ -57,6 +61,7 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
             currentState.copy(
                 pitchBlackBackground = if (uiState.value.pitchBlackBackground.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.pitchBlackBackground},
                 acceptedPrivacyPolicyAndLicense = if (uiState.value.acceptedPrivacyPolicyAndLicense.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.acceptedPrivacyPolicyAndLicense},
+                renderMarkdown = if (uiState.value.renderMarkdown.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.renderMarkdown},
             )
         }
         dataStore.edit { settings ->
