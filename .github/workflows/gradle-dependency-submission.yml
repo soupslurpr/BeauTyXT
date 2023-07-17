@@ -24,4 +24,4 @@ jobs:
  
           sub-module-mode: INDIVIDUAL_DEEP
           gradle-build-module: ":app"
-l
+
