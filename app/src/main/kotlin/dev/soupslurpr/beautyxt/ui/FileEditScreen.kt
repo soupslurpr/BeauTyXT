@@ -37,6 +37,7 @@ fun FileEditScreen(
     readOnly: Boolean,
     preferencesUiState: PreferencesUiState,
     fileViewModel: FileViewModel,
+    previewMarkdownRenderedToHtmlFullscreen: Boolean,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val textColor = colorScheme.onBackground
@@ -63,12 +64,24 @@ fun FileEditScreen(
             modifier = if (readOnly) {
                 Modifier
                     .fillMaxSize()
-                    .weight(1f)
+                    .weight(
+                        if (previewMarkdownRenderedToHtmlFullscreen) {
+                            0.00000001f
+                        } else {
+                            1f
+                        }
+                    )
                     .verticalScroll(textFieldVerticalScrollState)
             } else {
                 Modifier
                     .fillMaxSize()
-                    .weight(1f)
+                    .weight(
+                        if (previewMarkdownRenderedToHtmlFullscreen) {
+                            0.00000001f
+                        } else {
+                            1f
+                        }
+                    )
             },
             value = content,
             onValueChange = {
@@ -80,19 +93,23 @@ fun FileEditScreen(
                 unfocusedBorderColor = Color.Transparent
             ),
             label = {
-                Text(
-                    text = name,
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
+                if (previewMarkdownRenderedToHtmlFullscreen) {
+                    // if we don't do this then when the preview is fullscreen the label appears
+                } else {
+                    Text(
+                        text = name,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             },
             textStyle = textStyle,
             enabled = !readOnly
         )
         when (mimeType) {
             "text/markdown" -> {
-                if (preferencesUiState.renderMarkdown.second.value) {
+                if (preferencesUiState.renderMarkdown.second.value or previewMarkdownRenderedToHtmlFullscreen) {
                     Text(
                         text = stringResource(R.string.rendered_markdown),
                         textAlign = TextAlign.Center,

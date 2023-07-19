@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityOptionsCompat
@@ -49,6 +50,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navDeepLink
+import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
 import dev.soupslurpr.beautyxt.ui.CreditsScreen
 import dev.soupslurpr.beautyxt.ui.FileEditScreen
@@ -74,6 +76,7 @@ fun BeauTyXTAppBar(
     currentScreen: BeauTyXTScreens,
     canNavigateBack: Boolean,
     navigateUp: () -> Unit,
+    preferencesUiState: PreferencesUiState,
     infoShown: Boolean,
     onInfoDismissRequest: () -> Unit,
     onFileInfoDropdownMenuItemClicked: () -> Unit,
@@ -83,6 +86,8 @@ fun BeauTyXTAppBar(
     onDropDownMenuDismissRequest: () -> Unit,
     onSettingsDropdownMenuItemClicked: () -> Unit,
     readOnly: Boolean,
+    mimeType: String?,
+    onPreviewMarkdownRenderedToFullscreenButtonClicked: () -> Unit,
     modifier: Modifier
 ) {
     TopAppBar(
@@ -104,6 +109,20 @@ fun BeauTyXTAppBar(
             if (currentScreen == BeauTyXTScreens.FileEdit) {
                 if (readOnly) {
                     Text(text = stringResource(R.string.read_only))
+                }
+                if (mimeType == "text/markdown") {
+                    if (preferencesUiState.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value) {
+                        /** TODO: Fix this resetting when rotating */
+                        IconButton(
+                            onClick = onPreviewMarkdownRenderedToFullscreenButtonClicked,
+                            content = {
+                                Icon(
+                                    painter = painterResource(R.drawable.baseline_preview_24),
+                                    contentDescription = stringResource(R.string.preview_markdown_rendered_to_html)
+                                )
+                            }
+                        )
+                    }
                 }
                 IconButton(
                     onClick = onDropDownMenuButtonClicked,
@@ -229,12 +248,15 @@ fun BeauTyXTApp(
 
     var dropDownMenuShown by remember { mutableStateOf(false) }
 
+    var previewMarkdownRenderedToFullscreen by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             BeauTyXTAppBar(
                 currentScreen = currentScreen,
                 canNavigateBack = navController.previousBackStackEntry != null,
                 navigateUp = { navController.navigateUp() },
+                preferencesUiState = preferencesUiState,
                 infoShown = infoShown,
                 onInfoDismissRequest = { infoShown = false },
                 onFileInfoDropdownMenuItemClicked = {
@@ -259,6 +281,12 @@ fun BeauTyXTApp(
                 },
 
                 readOnly = fileUiState.readOnly.value,
+
+                mimeType = fileUiState.mimeType.value,
+
+                onPreviewMarkdownRenderedToFullscreenButtonClicked = {
+                    previewMarkdownRenderedToFullscreen = !previewMarkdownRenderedToFullscreen
+                },
 
                 modifier = modifier
             )
@@ -355,6 +383,7 @@ fun BeauTyXTApp(
                     readOnly = fileUiState.readOnly.value,
                     preferencesUiState = preferencesUiState,
                     fileViewModel = fileViewModel,
+                    previewMarkdownRenderedToHtmlFullscreen = previewMarkdownRenderedToFullscreen,
                 )
             }
             composable(route = BeauTyXTScreens.Settings.name) {

@@ -47,7 +47,11 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
                     renderMarkdown = Pair(
                         uiState.value.renderMarkdown.first,
                         mutableStateOf(settings[uiState.value.renderMarkdown.first] ?: uiState.value.renderMarkdown.second.value)
-                    )
+                    ),
+                    experimentalFeaturePreviewRenderedMarkdownInFullscreen = Pair(
+                        uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first,
+                        mutableStateOf(settings[uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first] ?: uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value)
+                    ),
                 )
             }
         }.collect()
@@ -62,6 +66,7 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
                 pitchBlackBackground = if (uiState.value.pitchBlackBackground.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.pitchBlackBackground},
                 acceptedPrivacyPolicyAndLicense = if (uiState.value.acceptedPrivacyPolicyAndLicense.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.acceptedPrivacyPolicyAndLicense},
                 renderMarkdown = if (uiState.value.renderMarkdown.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.renderMarkdown},
+                experimentalFeaturePreviewRenderedMarkdownInFullscreen = if (uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen},
             )
         }
         dataStore.edit { settings ->

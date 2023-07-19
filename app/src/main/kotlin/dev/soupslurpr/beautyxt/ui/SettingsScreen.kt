@@ -80,6 +80,21 @@ fun SettingsScreen(
         }
 
         Column {
+            SettingsCategoryText(category = stringResource(R.string.experimental_features))
+            SettingsItem(
+                name = stringResource(R.string.fullscreen_markdown_render_preview_setting_name),
+                description = stringResource(R.string.fullscreen_markdown_render_preview_setting_description),
+                hasSwitch = true,
+                checked = preferencesUiState.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value,
+                onCheckedChange = {
+                    coroutineScope.launch {
+                        preferencesViewModel.setSetting(preferencesUiState.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first, it)
+                    }
+                }
+            )
+        }
+
+        Column {
             SettingsCategoryText(category = stringResource(id = R.string.about))
             SettingsItem(
                 name = stringResource(id = R.string.open_beautyxt_website_setting_name),
