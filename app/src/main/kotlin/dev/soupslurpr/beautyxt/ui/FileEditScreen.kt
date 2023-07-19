@@ -1,6 +1,5 @@
 package dev.soupslurpr.beautyxt.ui
 
-import android.net.Uri
 import android.webkit.WebView
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,7 +21,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.navigation.NavController
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 
@@ -39,7 +37,6 @@ fun FileEditScreen(
     readOnly: Boolean,
     preferencesUiState: PreferencesUiState,
     fileViewModel: FileViewModel,
-    navController: NavController,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val textColor = colorScheme.onBackground

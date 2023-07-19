@@ -355,7 +355,6 @@ fun BeauTyXTApp(
                     readOnly = fileUiState.readOnly.value,
                     preferencesUiState = preferencesUiState,
                     fileViewModel = fileViewModel,
-                    navController = navController,
                 )
             }
             composable(route = BeauTyXTScreens.Settings.name) {
