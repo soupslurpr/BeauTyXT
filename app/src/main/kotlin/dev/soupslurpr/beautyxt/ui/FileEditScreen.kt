@@ -32,14 +32,17 @@ fun FileEditScreen(
     content: String,
     mimeType: String,
     contentConvertedToHtml: String,
+    readOnly: Boolean,
     preferencesUiState: PreferencesUiState,
     fileViewModel: FileViewModel,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val textColor = colorScheme.onBackground
     val renderedMarkdownVerticalScrollState = rememberScrollState()
+    val textFieldVerticalScrollState = rememberScrollState()
     val textStyle = typography.bodyLarge
 
+    /** This is so markdown renders when enabling render markdown from settings */
     LaunchedEffect(key1 = Unit) {
         if (preferencesUiState.renderMarkdown.second.value) {
             fileViewModel.getMarkdownToHtml()
@@ -50,9 +53,20 @@ fun FileEditScreen(
         modifier = Modifier
     ) {
         TextField(
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f),
+            /** We cannot use .verticalScroll when editing is possible as the TextField currently
+             * does not scroll to the next line when pressing enter automatically with .verticalScroll.
+             * It does scroll to the next line when pressing enter without it having .verticalScroll.
+             */
+            modifier = if (readOnly) {
+                Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+                    .verticalScroll(textFieldVerticalScrollState)
+            } else {
+                Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+            },
             value = content,
             onValueChange = {
                 onContentChanged(it)
@@ -70,7 +84,8 @@ fun FileEditScreen(
                     fontWeight = FontWeight.Bold
                 )
             },
-            textStyle = textStyle
+            textStyle = textStyle,
+            enabled = !readOnly
         )
         when (mimeType) {
             "text/markdown" -> {
