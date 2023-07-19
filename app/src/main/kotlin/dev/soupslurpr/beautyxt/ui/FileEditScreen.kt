@@ -48,12 +48,6 @@ fun FileEditScreen(
     val textStyle = typography.bodyLarge
 
     LaunchedEffect(key1 = Unit) {
-        /** Detect if fileViewModel was cleared (uri == Uri.EMPTY) and if so, go back to the
-         * previous screen.
-         */
-        if (fileViewModel.uiState.value.uri.value == Uri.EMPTY) {
-            navController.navigateUp()
-        }
         /** This is so the markdown render updates when disabling render markdown, making a change,
          * and then turning it on again. Or else it only updates after a character gets typed. */
         if (preferencesUiState.renderMarkdown.second.value) {

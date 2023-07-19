@@ -30,13 +30,6 @@ class MainActivity : ComponentActivity() {
             )
             val fileViewModel: FileViewModel = viewModel()
 
-            /** Clear savedInstanceState if it exists and call fileViewModel.clearUiState()
-             * so the file editor screen detects it was cleared and goes back to the previous screen*/
-            if (savedInstanceState != null) {
-                savedInstanceState.clear()
-                fileViewModel.clearUiState()
-            }
-
             if ((intent.action == Intent.ACTION_VIEW) or (intent.action == Intent.ACTION_EDIT)) {
                 val readOnly = intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION == 0
 
