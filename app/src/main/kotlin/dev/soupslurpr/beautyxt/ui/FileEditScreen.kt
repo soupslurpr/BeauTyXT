@@ -17,11 +17,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavController
+import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 
 /**
@@ -101,7 +103,7 @@ fun FileEditScreen(
             "text/markdown" -> {
                 if (preferencesUiState.renderMarkdown.second.value) {
                     Text(
-                        text = "Rendered markdown",
+                        text = stringResource(R.string.rendered_markdown),
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 0.dp),
