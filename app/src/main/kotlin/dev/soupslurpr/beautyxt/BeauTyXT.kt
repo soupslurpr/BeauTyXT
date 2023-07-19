@@ -82,6 +82,7 @@ fun BeauTyXTAppBar(
     onDropDownMenuButtonClicked: () -> Unit,
     onDropDownMenuDismissRequest: () -> Unit,
     onSettingsDropdownMenuItemClicked: () -> Unit,
+    readOnly: Boolean,
     modifier: Modifier
 ) {
     TopAppBar(
@@ -101,6 +102,9 @@ fun BeauTyXTAppBar(
         },
         actions = {
             if (currentScreen == BeauTyXTScreens.FileEdit) {
+                if (readOnly) {
+                    Text(text = stringResource(R.string.read_only))
+                }
                 IconButton(
                     onClick = onDropDownMenuButtonClicked,
                     content = {
@@ -199,6 +203,7 @@ fun BeauTyXTApp(
 
     val openFileLauncher = rememberLauncherForActivityResult(contract = OpenDocument()) {
         if (it != null) {
+            fileViewModel.setReadOnly(false)
             fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
         }
@@ -206,6 +211,7 @@ fun BeauTyXTApp(
 
     val createTxtFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument("text/plain")) {
         if (it != null) {
+            fileViewModel.setReadOnly(false)
             fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
         }
@@ -213,6 +219,7 @@ fun BeauTyXTApp(
 
     val createMdFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument("text/markdown")) {
         if (it != null) {
+            fileViewModel.setReadOnly(false)
             fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
         }
@@ -250,6 +257,9 @@ fun BeauTyXTApp(
                     navController.navigate(BeauTyXTScreens.Settings.name)
                     dropDownMenuShown = false
                 },
+
+                readOnly = fileUiState.readOnly.value,
+
                 modifier = modifier
             )
         }
@@ -335,14 +345,16 @@ fun BeauTyXTApp(
                         when (fileUiState.mimeType.value) {
                             "text/markdown" -> if (preferencesUiState.renderMarkdown.second.value) {
                                 fileViewModel.getMarkdownToHtml()
-                            }}
+                            }
+                        }
                         fileViewModel.getSizeFromUri(uri = fileUiState.uri.value, context = context)
                     },
                     content = fileUiState.content.value,
                     mimeType = fileUiState.mimeType.value!!,
                     contentConvertedToHtml = fileUiState.contentConvertedToHtml.value,
+                    readOnly = fileUiState.readOnly.value,
                     preferencesUiState = preferencesUiState,
-                    fileViewModel = fileViewModel
+                    fileViewModel = fileViewModel,
                 )
             }
             composable(route = BeauTyXTScreens.Settings.name) {

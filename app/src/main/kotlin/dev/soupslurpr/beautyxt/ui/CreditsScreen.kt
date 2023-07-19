@@ -221,7 +221,7 @@ const val APACHE2LICENSE = "\n" +
         "   See the License for the specific language governing permissions and\n" +
         "   limitations under the License."
 
-const val BSD2LICENSE = "Copyright (c) 2015-2016, Atlassian Pty Ltd\n" +
+const val FLEXMARKLICENSE = "Copyright (c) 2015-2016, Atlassian Pty Ltd\n" +
         "All rights reserved.\n" +
         "\n" +
         "Copyright (c) 2016-2018, Vladimir Schneider,\n" +
@@ -928,105 +928,105 @@ fun CreditsScreen() {
             CreditsItem(
                 dependencyName = "Flexmark gfm strikethrough",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-ext-gfm-strikethrough",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark tables",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-ext-tables",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark Util",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-util",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark Util Format",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-util-format",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark Util AST",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-util-ast",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark Util Builder",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-util-builder",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark Util Dependency",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-util-dependency",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark Util HTML",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-util-html",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark Util Options",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-util-options",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark Util Sequence",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-util-sequence",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark Util Collection",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-util-collection",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark Util Data",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-util-data",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark Util Misc",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-util-misc",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {
             CreditsItem(
                 dependencyName = "Flexmark Util Visitor",
                 dependencyPackageName = "com.vladsch.flexmark:flexmark-util-visitor",
-                dependencyLicense = BSD2LICENSE
+                dependencyLicense = FLEXMARKLICENSE
             )
         }
         item {

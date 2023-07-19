@@ -19,9 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.io.BufferedReader
-import java.io.FileNotFoundException
 import java.io.FileOutputStream
-import java.io.IOException
 import java.io.InputStreamReader
 
 class FileViewModel : ViewModel() {
@@ -51,8 +49,11 @@ class FileViewModel : ViewModel() {
                 content = getContentFromUri(uri = uri, context),
                 mimeType = getMimeTypeFromUri(uri = uri, context),
                 size = getSizeFromUri(uri = uri, context),
+                readOnly = uiState.value.readOnly,
             )
         }
+        // We need to do this to check if the file is readOnly from the start and not after typing a character.
+        setContentToUri(uri = uri, context = context)
     }
 
     private fun getNameFromUri(uri: Uri, context: Context): MutableState<String> {
@@ -127,11 +128,15 @@ class FileViewModel : ViewModel() {
                     )
                 }
             }
-        } catch (e: FileNotFoundException) {
-            e.printStackTrace()
-        } catch (e: IOException) {
-            e.printStackTrace()
+        } catch (e: UnsupportedOperationException) {
+            setReadOnly(true)
+        } catch (e: SecurityException) {
+            setReadOnly(true)
         }
+        // TODO: Handle more exceptions
+//        } catch (e: IOException) {
+//            e.printStackTrace()
+//        }
     }
 
     fun updateContent(content: String) {
@@ -148,7 +153,11 @@ class FileViewModel : ViewModel() {
         return mutableStateOf(renderer.render(document))
     }
 
-    /** Clear uiState. */
+    fun setReadOnly(readOnly: Boolean) {
+        uiState.value.readOnly.value = readOnly
+    }
+
+    /** Set uiState to default values */
     fun clearUiState() {
         uiState.value.content.value = ""
         uiState.value.contentConvertedToHtml.value = ""
@@ -156,5 +165,6 @@ class FileViewModel : ViewModel() {
         uiState.value.mimeType.value = ""
         uiState.value.name.value = ""
         uiState.value.uri.value = Uri.EMPTY
+        uiState.value.readOnly.value = true
     }
 }

@@ -28,7 +28,12 @@ class MainActivity : ComponentActivity() {
                 factory = PreferencesViewModel.SettingsViewModelFactory(dataStore)
             )
             val fileViewModel: FileViewModel = viewModel()
-            if (intent.action == Intent.ACTION_VIEW) {
+
+            if ((intent.action == Intent.ACTION_VIEW) or (intent.action == Intent.ACTION_EDIT)) {
+                val readOnly = intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION == 0
+
+                fileViewModel.setReadOnly(readOnly)
+
                 intent.data?.let { fileViewModel.setUri(it, LocalContext.current) }
             }
             val preferencesUiState by preferencesViewModel.uiState.collectAsState()
