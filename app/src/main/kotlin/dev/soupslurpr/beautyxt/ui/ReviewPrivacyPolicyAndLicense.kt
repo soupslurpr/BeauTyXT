@@ -7,9 +7,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,7 +36,7 @@ fun ReviewPrivacyPolicyAndLicense(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            LargeTopAppBar(
                 title = {
                     Text(text = stringResource(R.string.review_privacy_policy_and_license))
                 }
