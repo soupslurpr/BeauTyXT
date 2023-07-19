@@ -12,8 +12,8 @@ android {
         applicationId = "dev.soupslurpr.beautyxt"
         minSdk = 21
         targetSdk = 34
-        versionCode = 22
-        versionName = "0.6.4"
+        versionCode = 23
+        versionName = "0.7.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
