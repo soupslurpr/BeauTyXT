@@ -1,5 +1,6 @@
 package dev.soupslurpr.beautyxt.ui
 
+import android.net.Uri
 import android.webkit.WebView
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.navigation.NavController
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 
 /**
@@ -35,6 +37,7 @@ fun FileEditScreen(
     readOnly: Boolean,
     preferencesUiState: PreferencesUiState,
     fileViewModel: FileViewModel,
+    navController: NavController,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val textColor = colorScheme.onBackground
@@ -42,8 +45,15 @@ fun FileEditScreen(
     val textFieldVerticalScrollState = rememberScrollState()
     val textStyle = typography.bodyLarge
 
-    /** This is so markdown renders when enabling render markdown from settings */
     LaunchedEffect(key1 = Unit) {
+        /** Detect if fileViewModel was cleared (uri == Uri.EMPTY) and if so, go back to the
+         * previous screen.
+         */
+        if (fileViewModel.uiState.value.uri.value == Uri.EMPTY) {
+            navController.navigateUp()
+        }
+        /** This is so the markdown render updates when disabling render markdown, making a change,
+         * and then turning it on again. Or else it only updates after a character gets typed. */
         if (preferencesUiState.renderMarkdown.second.value) {
             fileViewModel.getMarkdownToHtml()
         }
