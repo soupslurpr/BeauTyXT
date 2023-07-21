@@ -45,10 +45,12 @@ fun FileEditScreen(
     val textFieldVerticalScrollState = rememberScrollState()
     val textStyle = typography.bodyLarge
 
-    LaunchedEffect(key1 = Unit) {
+    LaunchedEffect(key1 = previewMarkdownRenderedToHtmlFullscreen) {
         /** This is so the markdown render updates when disabling render markdown, making a change,
-         * and then turning it on again. Or else it only updates after a character gets typed. */
-        if (preferencesUiState.renderMarkdown.second.value) {
+         * and then turning it on again. Or else it only updates after a character gets typed.
+         * Its also for updating the html when previewing using the fullscreen markdown preview
+         * experimental feature while having render markdown at the bottom half of the screen off.*/
+        if (preferencesUiState.renderMarkdown.second.value or previewMarkdownRenderedToHtmlFullscreen) {
             fileViewModel.getMarkdownToHtml()
         }
     }
