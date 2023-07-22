@@ -1,5 +1,5 @@
 # BeauTyXT
-BeauTyXT is a beautiful, private, and minimalistic file editor.\
+BeauTyXT is a beautiful, private, and minimalistic text & markdown file editor.\
 Now supports editing and rendering Markdown (.md) files for even more BeauTy.\
 Implements Material Design 3 and dynamic color schemes – because that's what the cool kids do 😎
 
