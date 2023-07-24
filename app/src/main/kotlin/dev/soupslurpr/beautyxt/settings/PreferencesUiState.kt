@@ -29,7 +29,7 @@ data class PreferencesUiState(
      * a fullscreen view of the rendered markdown preview.
      */
     val experimentalFeaturePreviewRenderedMarkdownInFullscreen: Pair<Preferences.Key<Boolean>, MutableState<Boolean>> = Pair(
-        (booleanPreferencesKey("EXPERIMENTAL_FEATURES")),
+        (booleanPreferencesKey("EXPERIMENTAL_FEATURE_PREVIEW_RENDERED_MARKDOWN_IN_FULLSCREEN")),
         mutableStateOf(false)
     ),
 
