@@ -52,6 +52,10 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
                         uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first,
                         mutableStateOf(settings[uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first] ?: uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value)
                     ),
+                    experimentalFeatureOpenAnyFileType = Pair(
+                        uiState.value.experimentalFeatureOpenAnyFileType.first,
+                        mutableStateOf(settings[uiState.value.experimentalFeatureOpenAnyFileType.first] ?: uiState.value.experimentalFeatureOpenAnyFileType.second.value)
+                    )
                 )
             }
         }.collect()
@@ -67,6 +71,8 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
                 acceptedPrivacyPolicyAndLicense = if (uiState.value.acceptedPrivacyPolicyAndLicense.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.acceptedPrivacyPolicyAndLicense},
                 renderMarkdown = if (uiState.value.renderMarkdown.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.renderMarkdown},
                 experimentalFeaturePreviewRenderedMarkdownInFullscreen = if (uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen},
+                experimentalFeatureOpenAnyFileType = if (uiState.value.experimentalFeatureOpenAnyFileType.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.experimentalFeatureOpenAnyFileType},
+
             )
         }
         dataStore.edit { settings ->

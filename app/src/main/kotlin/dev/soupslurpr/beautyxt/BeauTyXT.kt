@@ -346,7 +346,8 @@ fun BeauTyXTApp(
                     onSettingsButtonClicked = {
                         navController.navigate(BeauTyXTScreens.Settings.name)
                     },
-                    fileViewModel = fileViewModel
+                    fileViewModel = fileViewModel,
+                    preferencesUiState = preferencesUiState,
                 )
             }
             composable(

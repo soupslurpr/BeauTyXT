@@ -32,4 +32,13 @@ data class PreferencesUiState(
         (booleanPreferencesKey("EXPERIMENTAL_FEATURES")),
         mutableStateOf(false)
     ),
+
+    /** Experimental feature that shows the open files of any type button. It is an experimental
+     * feature as it currently corrupts some files such as but not limited to .pdf's, .odt's, and
+     * probably more.
+     */
+    val experimentalFeatureOpenAnyFileType: Pair<Preferences.Key<Boolean>, MutableState<Boolean>> = Pair(
+        (booleanPreferencesKey("EXPERIMENTAL_FEATURE_OPEN_ANY_FILE_TYPE")),
+        mutableStateOf(false)
+    )
 )

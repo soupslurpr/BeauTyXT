@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
+import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 
 /**
  * Composable on startup that shows options like opening an existing file,
@@ -53,6 +54,7 @@ fun StartupScreen(
     onCreateMdButtonClicked: () -> Unit,
     onSettingsButtonClicked: () -> Unit,
     fileViewModel: FileViewModel,
+    preferencesUiState: PreferencesUiState,
 ) {
     var isOpenFileTypeAlertDialogShown by remember { mutableStateOf(false) }
     var isCreateFileTypeAlertDialogShown by remember { mutableStateOf(false) }
@@ -122,14 +124,16 @@ fun StartupScreen(
                 ) {
                     Text(text = stringResource(R.string.md))
                 }
-                FilledTonalButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        onOpenAnyButtonClicked()
-                        isOpenFileTypeAlertDialogShown = false
+                if (preferencesUiState.experimentalFeatureOpenAnyFileType.second.value) {
+                    FilledTonalButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            onOpenAnyButtonClicked()
+                            isOpenFileTypeAlertDialogShown = false
+                        }
+                    ) {
+                        Text(text = stringResource(R.string.any))
                     }
-                ) {
-                    Text(text = stringResource(R.string.any))
                 }
             }
         }
@@ -226,6 +230,7 @@ fun StartupPreview() {
         onCreateTxtButtonClicked = {},
         onCreateMdButtonClicked = {},
         onSettingsButtonClicked = {},
-        fileViewModel = FileViewModel()
+        fileViewModel = FileViewModel(),
+        preferencesUiState = PreferencesUiState()
     )
 }

@@ -92,6 +92,17 @@ fun SettingsScreen(
                     }
                 }
             )
+            SettingsItem(
+                name = stringResource(R.string.open_any_file_type_setting_name),
+                description = stringResource(R.string.open_any_file_type_setting_description),
+                hasSwitch = true,
+                checked = preferencesUiState.experimentalFeatureOpenAnyFileType.second.value,
+                onCheckedChange = {
+                    coroutineScope.launch {
+                        preferencesViewModel.setSetting(preferencesUiState.experimentalFeatureOpenAnyFileType.first, it)
+                    }
+                }
+            )
         }
 
         Column {
