@@ -1,35 +1,42 @@
 package dev.soupslurpr.beautyxt
 
+import android.content.Context
 import android.os.Build
+import android.print.PrintAttributes
+import android.print.PrintManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MaterialTheme.typography
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -43,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityOptionsCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -77,20 +85,40 @@ fun BeauTyXTAppBar(
     currentScreen: BeauTyXTScreens,
     canNavigateBack: Boolean,
     navigateUp: () -> Unit,
-    preferencesUiState: PreferencesUiState,
-    infoShown: Boolean,
-    onInfoDismissRequest: () -> Unit,
-    onFileInfoDropdownMenuItemClicked: () -> Unit,
-    infoDialogContent: @Composable () -> Unit,
+
     dropDownMenuShown: Boolean,
     onDropDownMenuButtonClicked: () -> Unit,
     onDropDownMenuDismissRequest: () -> Unit,
+
+    preferencesUiState: PreferencesUiState,
+    fileInfoShown: Boolean,
+    onFileInfoDialogDismissRequest: () -> Unit,
+    onFileInfoDropdownMenuItemClicked: () -> Unit,
+    fileInfoDialogContent: @Composable () -> Unit,
+    fileInfoDialogConfirmButton: @Composable () -> Unit,
+
     onSettingsDropdownMenuItemClicked: () -> Unit,
+
+    exportDropdownMenuShown: Boolean,
+    onExportDropdownMenuItemClicked: () -> Unit,
+    onExportDropdownMenuDismissRequest: () -> Unit,
+
+    saveAsShown: Boolean,
+    onSaveAsDialogDismissRequest: () -> Unit,
+    onSaveAsExportDropdownMenuItemClicked: () -> Unit,
+    saveAsDialogContent: @Composable () -> Unit,
+    saveAsDialogConfirmButton: @Composable () -> Unit,
+    saveAsDialogDismissButton: @Composable () -> Unit,
+
+    onPrintExportDropdownMenuItemClicked: () -> Unit,
+
     readOnly: Boolean,
     mimeType: String?,
     onPreviewMarkdownRenderedToFullscreenButtonClicked: () -> Unit,
     modifier: Modifier
 ) {
+    val dropDownMenuItemTextStyle = typography.bodyLarge
+
     TopAppBar(
         title = {
             Text(stringResource(currentScreen.title))
@@ -113,7 +141,6 @@ fun BeauTyXTAppBar(
                 }
                 if (mimeType == "text/markdown") {
                     if (preferencesUiState.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value) {
-                        /** TODO: Fix this resetting when rotating */
                         IconButton(
                             onClick = onPreviewMarkdownRenderedToFullscreenButtonClicked,
                             content = {
@@ -136,9 +163,8 @@ fun BeauTyXTAppBar(
                     expanded = dropDownMenuShown,
                     onDismissRequest = { onDropDownMenuDismissRequest() },
                     scrollState = rememberScrollState(),
-                    modifier = Modifier.width(200.dp)
+                    modifier = Modifier.width(225.dp)
                 ) {
-                    val dropDownMenuItemTextStyle = typography.bodyLarge
                     DropdownMenuItem(
                         text = {
                             Text(
@@ -154,6 +180,18 @@ fun BeauTyXTAppBar(
                     DropdownMenuItem(
                         text = {
                             Text(
+                                text = stringResource(R.string.export),
+                                style = dropDownMenuItemTextStyle
+                            )
+                        },
+                        onClick = { onExportDropdownMenuItemClicked() },
+                        leadingIcon = {
+                            Icon(painter = painterResource(R.drawable.baseline_output_24), contentDescription = null)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
                                 text = stringResource(R.string.settings),
                                 style = dropDownMenuItemTextStyle
                             )
@@ -164,30 +202,71 @@ fun BeauTyXTAppBar(
                         }
                     )
                 }
-                if (infoShown) {
-                    AlertDialog(
-                        onDismissRequest = onInfoDismissRequest,
-                    ) {
-                        Surface(
-                            modifier = Modifier
-                                .wrapContentWidth()
-                                .wrapContentHeight()
-                                .fillMaxWidth(0.95f),
-                            shape = MaterialTheme.shapes.large,
-                            tonalElevation = AlertDialogDefaults.TonalElevation
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .padding(16.dp)
-                                    .fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(16.dp),
-                                horizontalAlignment = Alignment.Start
-                            ) {
-                                Text(text = stringResource(R.string.file_info), style = typography.headlineSmall, modifier = Modifier.align(Alignment.CenterHorizontally))
-                                infoDialogContent()
+                DropdownMenu(
+                    expanded = exportDropdownMenuShown,
+                    onDismissRequest = { onExportDropdownMenuDismissRequest() },
+                    scrollState = rememberScrollState(),
+                    modifier = Modifier.width(225.dp)
+                ) {
+                    if (mimeType == "text/markdown") {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "Print",
+                                    style = dropDownMenuItemTextStyle
+                                )
+                            },
+                            onClick = { onPrintExportDropdownMenuItemClicked() },
+                            leadingIcon = {
+                                Icon(painter = painterResource(R.drawable.baseline_print_24), contentDescription = null)
                             }
-                        }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = stringResource(R.string.save_as),
+                                    style = dropDownMenuItemTextStyle
+                                )
+                            },
+                            onClick = { onSaveAsExportDropdownMenuItemClicked() },
+                            leadingIcon = {
+                                Icon(painter = painterResource(R.drawable.baseline_save_as_24), contentDescription = null)
+                            }
+                        )
                     }
+                }
+                if (saveAsShown) {
+                    AlertDialog(
+                        onDismissRequest = onSaveAsDialogDismissRequest,
+                        confirmButton = saveAsDialogConfirmButton,
+                        dismissButton = saveAsDialogDismissButton,
+                        title = {
+                            Text(
+                                text = stringResource(R.string.save_as),
+                                style = typography.headlineSmall,
+                                modifier = Modifier.align(Alignment.CenterVertically)
+                            )
+                        },
+                        text = {
+                            saveAsDialogContent()
+                        }
+                    )
+                }
+                if (fileInfoShown) {
+                    AlertDialog(
+                        onDismissRequest = onFileInfoDialogDismissRequest,
+                        confirmButton = fileInfoDialogConfirmButton,
+                        title = {
+                            Text(
+                                text = stringResource(R.string.file_info),
+                                style = typography.headlineSmall,
+                                modifier = Modifier.align(Alignment.CenterVertically)
+                            )
+                        },
+                        text = {
+                            fileInfoDialogContent()
+                        }
+                    )
                 }
             }
         }
@@ -195,10 +274,40 @@ fun BeauTyXTAppBar(
 }
 
 @Composable
-fun InfoDialogItem(info: String, value: String) {
+fun FileInfoDialogItem(info: String, value: String) {
     Text(
         text = "$info:\n$value",
+        style = typography.titleMedium
     )
+}
+
+@Composable
+fun SaveAsDialogItem(
+    fileTypeText: String,
+    selected: Boolean,
+    onClickRadioButton: () -> Unit
+) {
+    Row(
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
+                onClick = onClickRadioButton
+            )
+            .fillMaxWidth()
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = null
+        )
+        Spacer(modifier = Modifier.padding(4.dp))
+        Text(
+            text = fileTypeText,
+            style = typography.titleMedium
+        )
+    }
 }
 
 @Composable
@@ -245,40 +354,197 @@ fun BeauTyXTApp(
         }
     }
 
-    var infoShown by remember { mutableStateOf(false) }
+    var fileInfoDialogShown by remember { mutableStateOf(false) }
 
     var dropDownMenuShown by remember { mutableStateOf(false) }
+
+    var exportDropdownMenuShown by remember { mutableStateOf(false) }
+
+    var saveAsShown by remember { mutableStateOf(false) }
+
+    val mimeTypeHtml = "text/html"
+
+    val saveAsHtmlFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypeHtml)) {
+        if (it != null) {
+            fileViewModel.saveAsHtml(it, context)
+        }
+    }
 
     var previewMarkdownRenderedToFullscreen by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
+            var saveAsSelectedFileType by remember { mutableStateOf("") }
             BeauTyXTAppBar(
                 currentScreen = currentScreen,
                 canNavigateBack = navController.previousBackStackEntry != null,
                 navigateUp = { navController.navigateUp() },
                 preferencesUiState = preferencesUiState,
-                infoShown = infoShown,
-                onInfoDismissRequest = { infoShown = false },
-                onFileInfoDropdownMenuItemClicked = {
-                    infoShown = !infoShown
-                    dropDownMenuShown = false
-                },
-                infoDialogContent = {
-                    InfoDialogItem(info = stringResource(id = R.string.name), value = fileUiState.name.value)
-                    InfoDialogItem(info = stringResource(id = R.string.size), value = fileUiState.size.value.toString() + " " + stringResource(id = R.string.bytes))
-                    fileUiState.mimeType.value?.let {
-                        InfoDialogItem(info = stringResource(id = R.string.mime_type),
-                            it
-                        )
-                    }
-                },
+
                 dropDownMenuShown = dropDownMenuShown,
                 onDropDownMenuButtonClicked = { dropDownMenuShown = !dropDownMenuShown },
                 onDropDownMenuDismissRequest = { dropDownMenuShown = false },
+
+                fileInfoShown = fileInfoDialogShown,
+                onFileInfoDialogDismissRequest = { fileInfoDialogShown = false },
+                onFileInfoDropdownMenuItemClicked = {
+                    fileInfoDialogShown = !fileInfoDialogShown
+                    dropDownMenuShown = false
+                },
+                fileInfoDialogContent = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        FileInfoDialogItem(info = stringResource(id = R.string.name), value = fileUiState.name.value)
+                        FileInfoDialogItem(info = stringResource(id = R.string.size), value = fileUiState.size.value.toString() + " " + stringResource(id = R.string.bytes))
+                        fileUiState.mimeType.value?.let {
+                            FileInfoDialogItem(info = stringResource(id = R.string.mime_type),
+                                it
+                            )
+                        }
+                    }
+                },
+                fileInfoDialogConfirmButton = {
+                    TextButton(
+                        onClick = {
+                            fileInfoDialogShown = false
+                        },
+                        content = {
+                            Text(
+                                text = stringResource(R.string.confirm_)
+                            )
+                        }
+                    )
+                },
+
                 onSettingsDropdownMenuItemClicked = {
                     navController.navigate(BeauTyXTScreens.Settings.name)
                     dropDownMenuShown = false
+                },
+
+                exportDropdownMenuShown = exportDropdownMenuShown,
+                onExportDropdownMenuItemClicked = {
+                    dropDownMenuShown = !dropDownMenuShown
+                    exportDropdownMenuShown = !exportDropdownMenuShown
+                },
+                onExportDropdownMenuDismissRequest = { exportDropdownMenuShown = false },
+
+                saveAsShown = saveAsShown,
+                onSaveAsDialogDismissRequest = { saveAsShown = false },
+                onSaveAsExportDropdownMenuItemClicked = {
+                    saveAsShown = !saveAsShown
+                    dropDownMenuShown = false
+                    exportDropdownMenuShown = false
+                },
+                saveAsDialogContent = {
+                    Column(
+                        modifier = Modifier
+                            .selectableGroup()
+                            .fillMaxWidth()
+                    ) {
+                        SaveAsDialogItem(
+                            fileTypeText = stringResource(R.string.html),
+                            selected = saveAsSelectedFileType == mimeTypeHtml,
+                            onClickRadioButton = {
+                                saveAsSelectedFileType = mimeTypeHtml
+                            }
+                        )
+                    }
+
+                },
+                saveAsDialogConfirmButton = {
+                    TextButton(
+                        onClick = {
+                            when (saveAsSelectedFileType) {
+                                mimeTypeHtml -> saveAsHtmlFileLauncher.launch(
+                                    fileUiState.name.value.substringBeforeLast(".")
+                                )
+                            }
+                            saveAsShown = false
+                        },
+                        content = {
+                            Text(
+                                text = stringResource(R.string.confirm_)
+                            )
+                        }
+                    )
+                },
+                saveAsDialogDismissButton = {
+                    TextButton(
+                        onClick = {
+                            saveAsShown = false
+                        },
+                        content = {
+                            Text(
+                                text = stringResource(R.string.cancel)
+                            )
+                        }
+                    )
+                },
+
+                onPrintExportDropdownMenuItemClicked = {
+                    exportDropdownMenuShown = false
+                    var mWebView: WebView? = null
+
+                    // Create a WebView object specifically for printing
+                    val webView = WebView(context)
+                    webView.webViewClient = object : WebViewClient() {
+
+                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
+
+                        override fun onPageFinished(view: WebView, url: String) {
+                            createWebPrintJob(view)
+                            mWebView = null
+                        }
+                        fun createWebPrintJob(webView: WebView) {
+
+                            // Get a PrintManager instance
+                            (context.getSystemService(Context.PRINT_SERVICE) as? PrintManager)?.let { printManager ->
+
+                                val jobName = fileUiState.name.value.substringBeforeLast(".")
+
+                                // Get a print adapter instance
+                                val printAdapter = webView.createPrintDocumentAdapter(jobName)
+
+                                // Create a print job with name and adapter instance
+                                printManager.print(
+                                    jobName,
+                                    printAdapter,
+                                    PrintAttributes.Builder().build()
+                                )
+                            }
+                        }
+                    }
+
+                    // Generate an HTML document on the fly:
+                    val htmlDocument = """
+                                <!DOCTYPE html>
+                                <html>
+                                    <head>
+                                        <meta charset="utf-8"/>
+                                        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+                                        <style>
+                                            html {
+                                                overflow-wrap: anywhere;
+                                            }
+                                            table, th, td {
+                                                border: thin solid;
+                                            }
+                                        </style>
+                                    </head>
+                                    <body>
+                                        ${fileViewModel.getMarkdownToHtml().value}
+                                    </body>
+                                </html>
+                                """.trimIndent()
+                    webView.loadData(htmlDocument, "text/html", "UTF-8")
+
+                    // Keep a reference to WebView object until you pass the PrintDocumentAdapter
+                    // to the PrintManager
+                    mWebView = webView
                 },
 
                 readOnly = fileUiState.readOnly.value,

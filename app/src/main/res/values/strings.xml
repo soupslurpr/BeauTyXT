@@ -42,6 +42,11 @@
     <string name="markdown" tools:ignore="MissingTranslation">Markdown</string>
     <string name="render_markdown_setting_description" tools:ignore="MissingTranslation">Render Markdown (.md) files on the bottom side of the screen</string>
     <string name="md" tools:ignore="MissingTranslation">Markdown (.md)</string>
+    <string name="export" tools:ignore="MissingTranslation">Export</string>
+    <string name="save_as" tools:ignore="MissingTranslation">Save As</string>
+    <string name="cancel" tools:ignore="MissingTranslation">Cancel</string>
+    <string name="confirm_" tools:ignore="MissingTranslation">Confirm</string>
+    <string name="html" tools:ignore="MissingTranslation">HTML (.html)</string>
     <string name="read_only" tools:ignore="MissingTranslation">Read Only</string>
     <string name="rendered_markdown" tools:ignore="MissingTranslation">Rendered Markdown</string>
     <string name="preview_markdown_rendered_to_html" tools:ignore="MissingTranslation">Preview Markdown rendered to HTML</string>

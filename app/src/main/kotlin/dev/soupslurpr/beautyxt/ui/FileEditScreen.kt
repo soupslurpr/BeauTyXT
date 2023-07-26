@@ -164,7 +164,6 @@ fun FileEditScreen(
                                     <body>
                                         ${if (contentConvertedToHtml == "") {
                                             fileViewModel.getMarkdownToHtml().value
-
                                         } else {
                                             contentConvertedToHtml
                                         }}

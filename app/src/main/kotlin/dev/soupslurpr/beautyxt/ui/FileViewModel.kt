@@ -52,8 +52,6 @@ class FileViewModel : ViewModel() {
                 readOnly = uiState.value.readOnly,
             )
         }
-        // We need to do this to check if the file is readOnly from the start and not after typing a character.
-        setContentToUri(uri = uri, context = context)
     }
 
     private fun getNameFromUri(uri: Uri, context: Context): MutableState<String> {
@@ -166,5 +164,60 @@ class FileViewModel : ViewModel() {
         uiState.value.name.value = ""
         uiState.value.uri.value = Uri.EMPTY
         uiState.value.readOnly.value = true
+    }
+
+    fun saveAsHtml(uri: Uri, context: Context) {
+        val html = """
+                                <!DOCTYPE html>
+                                <html>
+                                    <head>
+                                        <meta charset="utf-8"/>
+                                        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+                                        <style>
+                                            html {
+                                                overflow-wrap: anywhere;
+                                            }
+                                            table, th, td {
+                                                border: thin solid;
+                                            }
+                                            body {
+                                                background: #ffffff;
+                                                color: #000000;
+                                            }
+                                            @media (prefers-color-scheme: dark) {
+                                              body {
+                                                  background: #121212;
+                                                  color: #FFFFFF;
+                                              }
+                                            }
+                                        </style>
+                                    </head>
+                                    <body>
+                                        ${getMarkdownToHtml().value}
+                                    </body>
+                                </html>
+                                """.trimIndent()
+        try {
+            val contentResolver = context.contentResolver
+            contentResolver.openFileDescriptor(uri, "wt")?.use {
+                FileOutputStream(it.fileDescriptor).use {
+                    it.write(
+                        (html)
+                            .toByteArray()
+                    )
+                }
+            }
+        } finally {
+
+        }
+//        } catch (e: UnsupportedOperationException) {
+//            e.printStackTrace()
+//        } catch (e: SecurityException) {
+//            e.printStackTrace()
+//        }
+        // TODO: Handle more exceptions
+//        } catch (e: IOException) {
+//            e.printStackTrace()
+//        }
     }
 }
