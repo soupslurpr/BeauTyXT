@@ -7,7 +7,7 @@
     <string name="open_existing_file">Bestehende Datei öffnen</string>
     <string name="file_editor">Datei Editor</string>
     <string name="view_source_code_setting_name">Quellcode</string>
-    <string name="view_source_code_setting_description">Siehe BeauTyXT\'s Quellcode auf der Github Webseite in deinem Webbrowser an</string>
+    <string name="view_source_code_setting_description">Siehe BeauTyXT\'s Quellcode auf der GitHub Webseite in deinem Webbrowser an</string>
     <string name="privacy_policy_setting_name">Datenschutzrichtlinie</string>
     <string name="privacy_policy_setting_description">Siehe BeauTyXT\'s Datenschutzrichtlinie in der App an</string>
     <string name="license">Lizenz</string>
