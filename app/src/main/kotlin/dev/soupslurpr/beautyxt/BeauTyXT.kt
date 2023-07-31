@@ -465,6 +465,7 @@ fun BeauTyXTApp(
                             }
                             saveAsShown = false
                         },
+                        enabled = saveAsSelectedFileType != "",
                         content = {
                             Text(
                                 text = stringResource(R.string.confirm_)
