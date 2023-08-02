@@ -2,6 +2,7 @@ package dev.soupslurpr.beautyxt.ui
 
 import android.webkit.WebView
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -112,6 +113,7 @@ fun FileEditScreen(
         when (mimeType) {
             "text/markdown" -> {
                 if (preferencesUiState.renderMarkdown.second.value or previewMarkdownRenderedToHtmlFullscreen) {
+                    Spacer(modifier = Modifier.padding(4.dp))
                     Text(
                         text = stringResource(R.string.rendered_markdown),
                         textAlign = TextAlign.Center,
