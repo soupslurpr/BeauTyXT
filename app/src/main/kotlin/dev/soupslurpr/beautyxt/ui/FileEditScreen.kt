@@ -113,7 +113,9 @@ fun FileEditScreen(
         when (mimeType) {
             "text/markdown" -> {
                 if (preferencesUiState.renderMarkdown.second.value or previewMarkdownRenderedToHtmlFullscreen) {
-                    Spacer(modifier = Modifier.padding(4.dp))
+                    if (previewMarkdownRenderedToHtmlFullscreen) {
+                        Spacer(modifier = Modifier.padding(4.dp))
+                    }
                     Text(
                         text = stringResource(R.string.rendered_markdown),
                         textAlign = TextAlign.Center,
