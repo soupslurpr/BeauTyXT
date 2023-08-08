@@ -5,7 +5,6 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import com.vladsch.flexmark.ext.gfm.strikethrough.StrikethroughExtension
@@ -112,7 +111,7 @@ class FileViewModel : ViewModel() {
             }
         }
         uiState.value.size.value = size
-        return mutableLongStateOf(size)
+        return mutableStateOf(size)
     }
 
     fun setContentToUri(uri: Uri, context: Context) {
