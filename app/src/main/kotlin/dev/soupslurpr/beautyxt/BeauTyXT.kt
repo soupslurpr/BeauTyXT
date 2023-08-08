@@ -11,14 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.annotation.StringRes
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
@@ -26,25 +19,10 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.*
 import androidx.compose.material3.MaterialTheme.typography
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -61,13 +39,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navDeepLink
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
-import dev.soupslurpr.beautyxt.ui.CreditsScreen
-import dev.soupslurpr.beautyxt.ui.FileEditScreen
-import dev.soupslurpr.beautyxt.ui.FileViewModel
-import dev.soupslurpr.beautyxt.ui.LicenseScreen
-import dev.soupslurpr.beautyxt.ui.PrivacyPolicyScreen
-import dev.soupslurpr.beautyxt.ui.SettingsScreen
-import dev.soupslurpr.beautyxt.ui.StartupScreen
+import dev.soupslurpr.beautyxt.ui.*
 import java.time.LocalDateTime
 
 enum class BeauTyXTScreens(@StringRes val title: Int) {
@@ -162,7 +134,7 @@ fun BeauTyXTAppBar(
                 DropdownMenu(
                     expanded = dropDownMenuShown,
                     onDismissRequest = { onDropDownMenuDismissRequest() },
-                    scrollState = rememberScrollState(),
+//                    scrollState = rememberScrollState(),
                     modifier = Modifier.width(225.dp)
                 ) {
                     DropdownMenuItem(
@@ -205,7 +177,7 @@ fun BeauTyXTAppBar(
                 DropdownMenu(
                     expanded = exportDropdownMenuShown,
                     onDismissRequest = { onExportDropdownMenuDismissRequest() },
-                    scrollState = rememberScrollState(),
+//                    scrollState = rememberScrollState(),
                     modifier = Modifier.width(225.dp)
                 ) {
                     if (mimeType == "text/markdown") {
