@@ -65,16 +65,6 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
      * Set a preference to a value and save to Preferences DataStore
      */
     suspend fun setSetting(key: Preferences.Key<Boolean>, value: Boolean) {
-        _uiState.update { currentState ->
-            currentState.copy(
-                pitchBlackBackground = if (uiState.value.pitchBlackBackground.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.pitchBlackBackground},
-                acceptedPrivacyPolicyAndLicense = if (uiState.value.acceptedPrivacyPolicyAndLicense.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.acceptedPrivacyPolicyAndLicense},
-                renderMarkdown = if (uiState.value.renderMarkdown.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.renderMarkdown},
-                experimentalFeaturePreviewRenderedMarkdownInFullscreen = if (uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen},
-                experimentalFeatureOpenAnyFileType = if (uiState.value.experimentalFeatureOpenAnyFileType.first.name == key.name) {Pair(key, mutableStateOf(value))} else {uiState.value.experimentalFeatureOpenAnyFileType},
-
-            )
-        }
         dataStore.edit { settings ->
             settings[key] = value
         }
