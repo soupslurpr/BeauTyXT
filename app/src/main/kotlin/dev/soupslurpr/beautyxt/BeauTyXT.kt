@@ -284,10 +284,11 @@ fun SaveAsDialogItem(
 
 @Composable
 fun BeauTyXTApp(
-    fileViewModel: FileViewModel = viewModel(),
-    preferencesViewModel: PreferencesViewModel = viewModel(),
+    preferencesViewModel: PreferencesViewModel,
     modifier: Modifier,
 ) {
+    val fileViewModel: FileViewModel = viewModel()
+
     val navController = rememberNavController()
 
     val backStackEntry by navController.currentBackStackEntryAsState()
