@@ -1,0 +1,7 @@
+[target.aarch64-linux-android]
+ar = "C:/Users/user/AppData/Local/Android/Sdk/ndk/26.0.10404224/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe"
+linker = "C:/Users/user/AppData/Local/Android/Sdk/ndk/26.0.10404224/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android21-clang.cmd"
+
+[target.x86_64-linux-android]
+ar = "C:/Users/user/AppData/Local/Android/Sdk/ndk/26.0.10404224/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe"
+linker = "C:/Users/user/AppData/Local/Android/Sdk/ndk/26.0.10404224/toolchains/llvm/prebuilt/windows-x86_64/bin/x86_64-linux-android21-clang.cmd"

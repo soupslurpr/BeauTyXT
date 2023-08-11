@@ -47,6 +47,7 @@ import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 @Composable
 fun StartupScreen(
     modifier: Modifier,
+    splashMessage: String,
     onOpenTxtButtonClicked: () -> Unit,
     onOpenMdButtonClicked: () -> Unit,
     onOpenAnyButtonClicked: () -> Unit,
@@ -74,7 +75,7 @@ fun StartupScreen(
     ) {
         Image(
             painter = painterResource(R.drawable.ic_launcher_foreground),
-            contentDescription = "BeauTyXT app icon",
+            contentDescription = null,
             modifier = modifier.size(200.dp)
         )
         Text(
@@ -82,9 +83,7 @@ fun StartupScreen(
             style = MaterialTheme.typography.headlineLarge
         )
         Text(
-            text = "Text, but beautiful.\n" +
-                    "\n" +
-                    "Now supports rendering Markdown (.md) files!",
+            text = splashMessage,
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center
         )
@@ -224,6 +223,7 @@ fun FileTypeSelectionDialog(
 fun StartupPreview() {
     StartupScreen(
         modifier = Modifier.fillMaxSize(),
+        splashMessage = "Now previewable!",
         onOpenAnyButtonClicked = {},
         onOpenTxtButtonClicked = {},
         onOpenMdButtonClicked = {},

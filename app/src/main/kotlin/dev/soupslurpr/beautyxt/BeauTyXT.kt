@@ -65,9 +65,11 @@ import dev.soupslurpr.beautyxt.ui.FileEditScreen
 import dev.soupslurpr.beautyxt.ui.FileViewModel
 import dev.soupslurpr.beautyxt.ui.LicenseScreen
 import dev.soupslurpr.beautyxt.ui.PrivacyPolicyScreen
+import dev.soupslurpr.beautyxt.ui.RustLibraryCreditsScreen
 import dev.soupslurpr.beautyxt.ui.SettingsScreen
 import dev.soupslurpr.beautyxt.ui.StartupScreen
 import java.time.LocalDateTime
+import kotlin.random.Random
 
 enum class BeauTyXTScreens(@StringRes val title: Int) {
     Start(title = R.string.app_name),
@@ -76,6 +78,7 @@ enum class BeauTyXTScreens(@StringRes val title: Int) {
     License(title = R.string.license),
     PrivacyPolicy(title = R.string.privacy_policy),
     Credits(title = R.string.credits),
+    RustLibraryCredits(title = R.string.rust_library_credits)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -372,6 +375,16 @@ fun BeauTyXTApp(
 
     var previewMarkdownRenderedToFullscreen by rememberSaveable { mutableStateOf(false) }
 
+    val randomValue = Random.nextInt(0, 10)
+    val splashMessage = rememberSaveable {
+        when (randomValue) {
+            0 -> "Text, but beautiful."
+            1 -> "TeXTacular!"
+            2 -> "In Rust We Trust."
+            else -> "Text, but beautiful."
+        }
+    }
+
     Scaffold(
         topBar = {
             var saveAsSelectedFileType by remember { mutableStateOf("") }
@@ -568,6 +581,7 @@ fun BeauTyXTApp(
             composable(route = BeauTyXTScreens.Start.name) {
                 StartupScreen(
                     modifier = modifier,
+                    splashMessage = splashMessage,
                     onOpenTxtButtonClicked = {
                         openFileLauncher.launch(
                             arrayOf("text/plain"),
@@ -676,7 +690,12 @@ fun BeauTyXTApp(
                 PrivacyPolicyScreen()
             }
             composable(route = BeauTyXTScreens.Credits.name) {
-                CreditsScreen()
+                CreditsScreen(onRustLibraryCreditsButtonClicked = {
+                    navController.navigate(BeauTyXTScreens.RustLibraryCredits.name)
+                })
+            }
+            composable(route = BeauTyXTScreens.RustLibraryCredits.name) {
+                RustLibraryCreditsScreen()
             }
         }
     }

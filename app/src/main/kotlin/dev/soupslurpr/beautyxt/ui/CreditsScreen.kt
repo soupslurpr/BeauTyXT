@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme.typography
@@ -15,8 +16,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import dev.soupslurpr.beautyxt.R
 
 const val APACHE2LICENSE = "\n" +
         "                                 Apache License\n" +
@@ -221,34 +224,10 @@ const val APACHE2LICENSE = "\n" +
         "   See the License for the specific language governing permissions and\n" +
         "   limitations under the License."
 
-const val FLEXMARKLICENSE = "Copyright (c) 2015-2016, Atlassian Pty Ltd\n" +
-        "All rights reserved.\n" +
-        "\n" +
-        "Copyright (c) 2016-2018, Vladimir Schneider,\n" +
-        "All rights reserved.\n" +
-        "\n" +
-        "Redistribution and use in source and binary forms, with or without\n" +
-        "modification, are permitted provided that the following conditions are met:\n" +
-        "\n" +
-        "* Redistributions of source code must retain the above copyright notice, this\n" +
-        "  list of conditions and the following disclaimer.\n" +
-        "\n" +
-        "* Redistributions in binary form must reproduce the above copyright notice,\n" +
-        "  this list of conditions and the following disclaimer in the documentation\n" +
-        "  and/or other materials provided with the distribution.\n" +
-        "\n" +
-        "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"\n" +
-        "AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE\n" +
-        "IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\n" +
-        "DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE\n" +
-        "FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\n" +
-        "DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR\n" +
-        "SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER\n" +
-        "CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,\n" +
-        "OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\n" +
-        "OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
 @Composable
-fun CreditsScreen() {
+fun CreditsScreen(
+    onRustLibraryCreditsButtonClicked: () -> Unit,
+) {
     LazyColumn(
         modifier = Modifier
     ) {
@@ -926,111 +905,6 @@ fun CreditsScreen() {
         }
         item {
             CreditsItem(
-                dependencyName = "Flexmark gfm strikethrough",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-ext-gfm-strikethrough",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark tables",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-ext-tables",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark Util",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-util",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark Util Format",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-format",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark Util AST",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-ast",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark Util Builder",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-builder",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark Util Dependency",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-dependency",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark Util HTML",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-html",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark Util Options",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-options",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark Util Sequence",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-sequence",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark Util Collection",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-collection",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark Util Data",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-data",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark Util Misc",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-misc",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
-                dependencyName = "Flexmark Util Visitor",
-                dependencyPackageName = "com.vladsch.flexmark:flexmark-util-visitor",
-                dependencyLicense = FLEXMARKLICENSE
-            )
-        }
-        item {
-            CreditsItem(
                 dependencyName = "grapheneos.org website",
                 dependencyPackageName = "",
                 dependencyLicense = "Copyright © 2014-2023 GrapheneOS\n" +
@@ -1059,6 +933,12 @@ fun CreditsScreen() {
                 dependencyName = "Material Symbols",
                 dependencyPackageName = "",
                 dependencyLicense = APACHE2LICENSE,
+            )
+        }
+        item {
+            Button(
+                onClick = { onRustLibraryCreditsButtonClicked() },
+                content = { Text(stringResource(R.string.view_credits_for_rust_library)) }
             )
         }
     }

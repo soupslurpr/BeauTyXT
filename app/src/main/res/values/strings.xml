@@ -55,4 +55,6 @@
     <string name="fullscreen_markdown_render_preview_setting_description" tools:ignore="MissingTranslation">Shows a button when a markdown file is open which will toggle a fullscreen view of the rendered markdown preview.\nExperimental because it has a few issues.</string>
     <string name="open_any_file_type_setting_name" tools:ignore="MissingTranslation">Open Any File Type</string>
     <string name="open_any_file_type_setting_description" tools:ignore="MissingTranslation">Shows Any file type option in the open an existing file dialog.\nWARNING PLEASE READ OR RISK LOSING DATA: This option currently corrupts some file types upon editing such as but not limited to pdf\'s, odt\'s, and probably others.</string>
+    <string name="rust_library_credits" tools:ignore="MissingTranslation">Rust Library Credits</string>
+    <string name="view_credits_for_rust_library" tools:ignore="MissingTranslation">View Credits for Rust library</string>
 </resources>

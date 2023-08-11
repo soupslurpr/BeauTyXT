@@ -1,0 +1,21 @@
+[package]
+name = "beautyxt_rs"
+version = "0.1.0"
+edition = "2021"
+license = "ISC"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+markdown = "1.0.0-alpha.11"
+uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "53d5ac7" }
+
+[build-dependencies]
+uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "53d5ac7", features = ["build"] }
+
+[lib]
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"

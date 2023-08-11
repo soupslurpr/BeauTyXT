@@ -1,0 +1,3 @@
+rm ./BeauTyXT-release.apks
+
+./bundletool* bundletool build-apks --bundle=./app-release.aab --output=./BeauTyXT-app-release.apks --ks=C:/Users/user/BeauTyXTkeystore.jks --ks-pass=pass:""
