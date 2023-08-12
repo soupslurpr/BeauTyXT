@@ -3,7 +3,7 @@
 
 @file:Suppress("NAME_SHADOWING")
 
-package dev.soupslurpr.beautyxt
+package dev.soupslurpr.beautyxt;
 
 // Common helper code.
 //
@@ -17,12 +17,13 @@ package dev.soupslurpr.beautyxt
 // compile the Rust component. The easiest way to ensure this is to bundle the Kotlin
 // helpers directly inline like we're doing here.
 
-import com.sun.jna.IntegerType
 import com.sun.jna.Library
+import com.sun.jna.IntegerType
 import com.sun.jna.Native
 import com.sun.jna.Pointer
 import com.sun.jna.Structure
-import com.sun.jna.ptr.ByReference
+import com.sun.jna.Callback
+import com.sun.jna.ptr.*
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.CharBuffer
@@ -35,26 +36,23 @@ import java.util.concurrent.ConcurrentHashMap
 
 @Structure.FieldOrder("capacity", "len", "data")
 open class RustBuffer : Structure() {
-    @JvmField
-    var capacity: Int = 0
-    @JvmField
-    var len: Int = 0
-    @JvmField
-    var data: Pointer? = null
+    @JvmField var capacity: Int = 0
+    @JvmField var len: Int = 0
+    @JvmField var data: Pointer? = null
 
-    class ByValue : RustBuffer(), Structure.ByValue
-    class ByReference : RustBuffer(), Structure.ByReference
+    class ByValue: RustBuffer(), Structure.ByValue
+    class ByReference: RustBuffer(), Structure.ByReference
 
     companion object {
-        internal fun alloc(size: Int = 0) = rustCall { status ->
+        internal fun alloc(size: Int = 0) = rustCall() { status ->
             _UniFFILib.INSTANCE.ffi_beautyxt_rs_rustbuffer_alloc(size, status).also {
-                if (it.data == null) {
-                    throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
-                }
+                if(it.data == null) {
+                   throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
+               }
             }
         }
 
-        internal fun free(buf: ByValue) = rustCall { status ->
+        internal fun free(buf: RustBuffer.ByValue) = rustCall() { status ->
             _UniFFILib.INSTANCE.ffi_beautyxt_rs_rustbuffer_free(buf, status)
         }
     }
@@ -78,7 +76,7 @@ class RustBufferByReference : ByReference(16) {
      */
     fun setValue(value: RustBuffer.ByValue) {
         // NOTE: The offsets are as they are in the C-like struct.
-        val pointer = pointer
+        val pointer = getPointer()
         pointer.setInt(0, value.capacity)
         pointer.setInt(4, value.len)
         pointer.setPointer(8, value.data)
@@ -88,7 +86,7 @@ class RustBufferByReference : ByReference(16) {
      * Get a `RustBuffer.ByValue` from this reference.
      */
     fun getValue(): RustBuffer.ByValue {
-        val pointer = pointer
+        val pointer = getPointer()
         val value = RustBuffer.ByValue()
         value.writeField("capacity", pointer.getInt(0))
         value.writeField("len", pointer.getInt(4))
@@ -106,19 +104,16 @@ class RustBufferByReference : ByReference(16) {
 
 @Structure.FieldOrder("len", "data")
 open class ForeignBytes : Structure() {
-    @JvmField
-    var len: Int = 0
-    @JvmField
-    var data: Pointer? = null
+    @JvmField var len: Int = 0
+    @JvmField var data: Pointer? = null
 
     class ByValue : ForeignBytes(), Structure.ByValue
 }
-
 // The FfiConverter interface handles converter types to and from the FFI
 //
 // All implementing objects should be public to support external types.  When a
 // type is external we need to import it's FfiConverter.
-interface FfiConverter<KotlinType, FfiType> {
+public interface FfiConverter<KotlinType, FfiType> {
     // Convert an FFI type to a Kotlin type
     fun lift(value: FfiType): KotlinType
 
@@ -169,11 +164,11 @@ interface FfiConverter<KotlinType, FfiType> {
     fun liftFromRustBuffer(rbuf: RustBuffer.ByValue): KotlinType {
         val byteBuf = rbuf.asByteBuffer()!!
         try {
-            val item = read(byteBuf)
-            if (byteBuf.hasRemaining()) {
-                throw RuntimeException("junk remaining in buffer after lifting, something is very wrong!!")
-            }
-            return item
+           val item = read(byteBuf)
+           if (byteBuf.hasRemaining()) {
+               throw RuntimeException("junk remaining in buffer after lifting, something is very wrong!!")
+           }
+           return item
         } finally {
             RustBuffer.free(rbuf)
         }
@@ -181,22 +176,19 @@ interface FfiConverter<KotlinType, FfiType> {
 }
 
 // FfiConverter that uses `RustBuffer` as the FfiType
-interface FfiConverterRustBuffer<KotlinType> : FfiConverter<KotlinType, RustBuffer.ByValue> {
+public interface FfiConverterRustBuffer<KotlinType>: FfiConverter<KotlinType, RustBuffer.ByValue> {
     override fun lift(value: RustBuffer.ByValue) = liftFromRustBuffer(value)
     override fun lower(value: KotlinType) = lowerIntoRustBuffer(value)
 }
-
 // A handful of classes and functions to support the generated data structures.
 // This would be a good candidate for isolating in its own ffi-support lib.
 // Error runtime.
 @Structure.FieldOrder("code", "error_buf")
 internal open class RustCallStatus : Structure() {
-    @JvmField
-    var code: Byte = 0
-    @JvmField
-    var error_buf: RustBuffer.ByValue = RustBuffer.ByValue()
+    @JvmField var code: Byte = 0
+    @JvmField var error_buf: RustBuffer.ByValue = RustBuffer.ByValue()
 
-    class ByValue : RustCallStatus(), Structure.ByValue
+    class ByValue: RustCallStatus(), Structure.ByValue
 
     fun isSuccess(): Boolean {
         return code == 0.toByte()
@@ -215,7 +207,7 @@ class InternalException(message: String) : Exception(message)
 
 // Each top-level error class has a companion object that can lift the error from the call status's rust buffer
 interface CallStatusErrorHandler<E> {
-    fun lift(error_buf: RustBuffer.ByValue): E
+    fun lift(error_buf: RustBuffer.ByValue): E;
 }
 
 // Helpers for calling Rust
@@ -223,18 +215,15 @@ interface CallStatusErrorHandler<E> {
 // synchronize itself
 
 // Call a rust function that returns a Result<>.  Pass in the Error class companion that corresponds to the Err
-private inline fun <U, E : Exception> rustCallWithError(
-    errorHandler: CallStatusErrorHandler<E>,
-    callback: (RustCallStatus) -> U
-): U {
-    var status = RustCallStatus()
+private inline fun <U, E: Exception> rustCallWithError(errorHandler: CallStatusErrorHandler<E>, callback: (RustCallStatus) -> U): U {
+    var status = RustCallStatus();
     val return_value = callback(status)
     checkCallStatus(errorHandler, status)
     return return_value
 }
 
 // Check RustCallStatus and throw an error if the call wasn't successful
-private fun <E : Exception> checkCallStatus(errorHandler: CallStatusErrorHandler<E>, status: RustCallStatus) {
+private fun<E: Exception> checkCallStatus(errorHandler: CallStatusErrorHandler<E>, status: RustCallStatus) {
     if (status.isSuccess()) {
         return
     } else if (status.isError()) {
@@ -254,7 +243,7 @@ private fun <E : Exception> checkCallStatus(errorHandler: CallStatusErrorHandler
 }
 
 // CallStatusErrorHandler implementation for times when we don't expect a CALL_ERROR
-object NullCallStatusErrorHandler : CallStatusErrorHandler<InternalException> {
+object NullCallStatusErrorHandler: CallStatusErrorHandler<InternalException> {
     override fun lift(error_buf: RustBuffer.ByValue): InternalException {
         RustBuffer.free(error_buf)
         return InternalException("Unexpected CALL_ERROR")
@@ -263,14 +252,13 @@ object NullCallStatusErrorHandler : CallStatusErrorHandler<InternalException> {
 
 // Call a rust function that returns a plain value
 private inline fun <U> rustCall(callback: (RustCallStatus) -> U): U {
-    return rustCallWithError(NullCallStatusErrorHandler, callback)
+    return rustCallWithError(NullCallStatusErrorHandler, callback);
 }
 
 // IntegerType that matches Rust's `usize` / C's `size_t`
-class USize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZE, value, true) {
+public class USize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZE, value, true) {
     // This is needed to fill in the gaps of IntegerType's implementation of Number for Kotlin.
     override fun toByte() = toInt().toByte()
-
     // Needed until https://youtrack.jetbrains.com/issue/KT-47902 is fixed.
     @Deprecated("`toInt().toChar()` is deprecated")
     override fun toChar() = toInt().toChar()
@@ -295,7 +283,7 @@ class USize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZE, value, true) {
         val size: Int
             get() = Native.SIZE_T_SIZE
 
-        fun readFromBuffer(buf: ByteBuffer): USize {
+        fun readFromBuffer(buf: ByteBuffer) : USize {
             // Make sure we always read usize integers using native byte-order, since they may be
             // casted from pointer values
             buf.order(ByteOrder.nativeOrder())
@@ -323,9 +311,8 @@ class USize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZE, value, true) {
 // Rust when it needs an opaque pointer.
 //
 // TODO: refactor callbacks to use this class
-internal class UniFfiHandleMap<T : Any> {
+internal class UniFfiHandleMap<T: Any> {
     private val map = ConcurrentHashMap<USize, T>()
-
     // Use AtomicInteger for our counter, since we may be on a 32-bit system.  4 billion possible
     // values seems like enough. If somehow we generate 4 billion handles, then this will wrap
     // around back to zero and we can assume the first handle generated will have been dropped by
@@ -374,39 +361,28 @@ internal interface _UniFFILib : Library {
     companion object {
         internal val INSTANCE: _UniFFILib by lazy {
             loadIndirect<_UniFFILib>(componentName = "beautyxt_rs")
-                .also { lib: _UniFFILib ->
-                    uniffiCheckContractApiVersion(lib)
-                    uniffiCheckApiChecksums(lib)
+            .also { lib: _UniFFILib ->
+                uniffiCheckContractApiVersion(lib)
+                uniffiCheckApiChecksums(lib)
                 }
         }
     }
 
-    fun uniffi_beautyxt_rs_fn_func_markdown_to_html(
-        `markdown`: RustBuffer.ByValue, _uniffi_out_err: RustCallStatus,
+    fun uniffi_beautyxt_rs_fn_func_markdown_to_html(`markdown`: RustBuffer.ByValue,_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
-
-    fun ffi_beautyxt_rs_rustbuffer_alloc(
-        `size`: Int, _uniffi_out_err: RustCallStatus,
+    fun ffi_beautyxt_rs_rustbuffer_alloc(`size`: Int,_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
-
-    fun ffi_beautyxt_rs_rustbuffer_from_bytes(
-        `bytes`: ForeignBytes.ByValue, _uniffi_out_err: RustCallStatus,
+    fun ffi_beautyxt_rs_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
-
-    fun ffi_beautyxt_rs_rustbuffer_free(
-        `buf`: RustBuffer.ByValue, _uniffi_out_err: RustCallStatus,
+    fun ffi_beautyxt_rs_rustbuffer_free(`buf`: RustBuffer.ByValue,_uniffi_out_err: RustCallStatus, 
     ): Unit
-
-    fun ffi_beautyxt_rs_rustbuffer_reserve(
-        `buf`: RustBuffer.ByValue, `additional`: Int, _uniffi_out_err: RustCallStatus,
+    fun ffi_beautyxt_rs_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
-
     fun uniffi_beautyxt_rs_checksum_func_markdown_to_html(
     ): Short
-
     fun ffi_beautyxt_rs_uniffi_contract_version(
     ): Int
-
+    
 }
 
 private fun uniffiCheckContractApiVersion(lib: _UniFFILib) {
@@ -429,7 +405,7 @@ private fun uniffiCheckApiChecksums(lib: _UniFFILib) {
 // Public interface members begin here.
 
 
-object FfiConverterString : FfiConverter<String, RustBuffer.ByValue> {
+public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     // Note: we don't inherit from FfiConverterRustBuffer, because we use a
     // special encoding when lowering/lifting.  We can use `RustBuffer.len` to
     // store our length and avoid writing it out to the buffer.
@@ -485,12 +461,9 @@ object FfiConverterString : FfiConverter<String, RustBuffer.ByValue> {
 
 fun `markdownToHtml`(`markdown`: String): String {
     return FfiConverterString.lift(
-        rustCall { _status ->
-            _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_markdown_to_html(
-                FfiConverterString.lower(`markdown`),
-                _status
-            )
-        })
+    rustCall() { _status ->
+    _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_markdown_to_html(FfiConverterString.lower(`markdown`),_status)
+})
 }
 
 
