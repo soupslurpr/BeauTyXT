@@ -1,3 +1,1 @@
-rm ./BeauTyXT-release.apks
-
-./bundletool* bundletool build-apks --bundle=./app-release.aab --output=./BeauTyXT-app-release.apks --ks=C:/Users/user/BeauTyXTkeystore.jks --ks-pass=pass:""
+java -jar ./bundletool-all-1.15.4.jar build-apks --bundle="./app-release.aab" --output="./BeauTyXT-app-release.apks" --overwrite --ks-key-alias="key0" --ks="/Users/user/BeauTyXTkeystore.jks" --ks-pass=pass:""
