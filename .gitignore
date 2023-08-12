@@ -19,3 +19,5 @@ local.properties
 /app/release/output-metadata.json
 /app/release/app-release.apk
 /app/release/bundletool-all-1.15.2.jar
+/app/release/BeauTyXT-app-release.apks
+/app/release/bundletool-all-1.15.4.jar
