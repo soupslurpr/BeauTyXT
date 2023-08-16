@@ -8,6 +8,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import dev.soupslurpr.beautyxt.data.FileUiState
+import dev.soupslurpr.beautyxt.markdownToDocx
 import dev.soupslurpr.beautyxt.markdownToHtml
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -198,14 +199,31 @@ class FileViewModel : ViewModel() {
         } finally {
 
         }
+        // TODO: Handle exceptions
 //        } catch (e: UnsupportedOperationException) {
 //            e.printStackTrace()
 //        } catch (e: SecurityException) {
 //            e.printStackTrace()
 //        }
-        // TODO: Handle more exceptions
 //        } catch (e: IOException) {
 //            e.printStackTrace()
 //        }
+    }
+
+    @OptIn(ExperimentalUnsignedTypes::class)
+    fun saveAsDocx(uri: Uri, context: Context) {
+        val docx = markdownToDocx(uiState.value.content.value)
+
+        try {
+            val contentResolver = context.contentResolver
+            contentResolver.openFileDescriptor(uri, "wt")?.use {
+                FileOutputStream(it.fileDescriptor).use {
+                    it.write(docx.toUByteArray().toByteArray())
+                }
+            }
+        } finally {
+
+        }
+        // TODO: Handle exceptions
     }
 }

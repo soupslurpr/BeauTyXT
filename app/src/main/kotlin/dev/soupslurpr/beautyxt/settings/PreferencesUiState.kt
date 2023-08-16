@@ -2,8 +2,8 @@ package dev.soupslurpr.beautyxt.settings
 
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
-import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 
 /** Preference pairs, the first is the preference key, and the second is the default value. */
 data class PreferencesUiState(
@@ -40,5 +40,13 @@ data class PreferencesUiState(
     val experimentalFeatureOpenAnyFileType: Pair<Preferences.Key<Boolean>, MutableState<Boolean>> = Pair(
         (booleanPreferencesKey("EXPERIMENTAL_FEATURE_OPEN_ANY_FILE_TYPE")),
         mutableStateOf(false)
-    )
+    ),
+
+    /** Experimental feature that shows an export option on markdown files to export to .docx.
+     * It does not support all markdown yet and will crash when trying to export a file with unsupported markdown.
+     */
+    val experimentalFeatureExportMarkdownToDocx: Pair<Preferences.Key<Boolean>, MutableState<Boolean>> = Pair(
+        (booleanPreferencesKey("EXPERIMENTAL_FEATURE_EXPORT_MARKDOWN_TO_DOCX")),
+        mutableStateOf(false)
+    ),
 )

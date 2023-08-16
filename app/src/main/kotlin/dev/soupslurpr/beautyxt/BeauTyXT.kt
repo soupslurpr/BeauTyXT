@@ -373,6 +373,13 @@ fun BeauTyXTApp(
         }
     }
 
+    val mimeTypeDocx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+    val saveAsDocxFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypeDocx)) {
+        if (it != null) {
+            fileViewModel.saveAsDocx(it, context)
+        }
+    }
     var previewMarkdownRenderedToFullscreen by rememberSaveable { mutableStateOf(false) }
 
     val randomValue = Random.nextInt(0, 10)
@@ -456,7 +463,8 @@ fun BeauTyXTApp(
                     Column(
                         modifier = Modifier
                             .selectableGroup()
-                            .fillMaxWidth()
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
                         SaveAsDialogItem(
                             fileTypeText = stringResource(R.string.html),
@@ -465,6 +473,15 @@ fun BeauTyXTApp(
                                 saveAsSelectedFileType = mimeTypeHtml
                             }
                         )
+                        if (preferencesUiState.experimentalFeatureExportMarkdownToDocx.second.value) {
+                            SaveAsDialogItem(
+                                fileTypeText = stringResource(R.string.docx),
+                                selected = saveAsSelectedFileType == mimeTypeDocx,
+                                onClickRadioButton = {
+                                    saveAsSelectedFileType = mimeTypeDocx
+                                }
+                            )
+                        }
                     }
 
                 },
@@ -473,6 +490,10 @@ fun BeauTyXTApp(
                         onClick = {
                             when (saveAsSelectedFileType) {
                                 mimeTypeHtml -> saveAsHtmlFileLauncher.launch(
+                                    fileUiState.name.value.substringBeforeLast(".")
+                                )
+
+                                mimeTypeDocx -> saveAsDocxFileLauncher.launch(
                                     fileUiState.name.value.substringBeforeLast(".")
                                 )
                             }

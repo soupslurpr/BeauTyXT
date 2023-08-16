@@ -38,23 +38,46 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
                 currentState.copy(
                     pitchBlackBackground = Pair(
                         uiState.value.pitchBlackBackground.first,
-                        mutableStateOf(settings[uiState.value.pitchBlackBackground.first] ?: uiState.value.pitchBlackBackground.second.value)
+                        mutableStateOf(
+                            settings[uiState.value.pitchBlackBackground.first] ?: uiState.value
+                                .pitchBlackBackground.second.value
+                        )
                     ),
                     acceptedPrivacyPolicyAndLicense = Pair(
                         uiState.value.acceptedPrivacyPolicyAndLicense.first,
-                        mutableStateOf(settings[uiState.value.acceptedPrivacyPolicyAndLicense.first] ?: uiState.value.acceptedPrivacyPolicyAndLicense.second.value)
+                        mutableStateOf(
+                            settings[uiState.value.acceptedPrivacyPolicyAndLicense.first] ?: uiState.value
+                                .acceptedPrivacyPolicyAndLicense.second.value
+                        )
                     ),
                     renderMarkdown = Pair(
                         uiState.value.renderMarkdown.first,
-                        mutableStateOf(settings[uiState.value.renderMarkdown.first] ?: uiState.value.renderMarkdown.second.value)
+                        mutableStateOf(
+                            settings[uiState.value.renderMarkdown.first] ?: uiState.value.renderMarkdown
+                                .second.value
+                        )
                     ),
                     experimentalFeaturePreviewRenderedMarkdownInFullscreen = Pair(
                         uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first,
-                        mutableStateOf(settings[uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first] ?: uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value)
+                        mutableStateOf(
+                            settings[uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen
+                                .first]
+                                ?: uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value
+                        )
                     ),
                     experimentalFeatureOpenAnyFileType = Pair(
                         uiState.value.experimentalFeatureOpenAnyFileType.first,
-                        mutableStateOf(settings[uiState.value.experimentalFeatureOpenAnyFileType.first] ?: uiState.value.experimentalFeatureOpenAnyFileType.second.value)
+                        mutableStateOf(
+                            settings[uiState.value.experimentalFeatureOpenAnyFileType.first] ?: uiState
+                                .value.experimentalFeatureOpenAnyFileType.second.value
+                        )
+                    ),
+                    experimentalFeatureExportMarkdownToDocx = Pair(
+                        uiState.value.experimentalFeatureExportMarkdownToDocx.first,
+                        mutableStateOf(
+                            settings[uiState.value.experimentalFeatureExportMarkdownToDocx.first]
+                                ?: uiState.value.experimentalFeatureExportMarkdownToDocx.second.value
+                        )
                     )
                 )
             }

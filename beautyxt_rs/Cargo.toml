@@ -2,12 +2,15 @@
 name = "beautyxt_rs"
 version = "0.1.0"
 edition = "2021"
-license = "ISC"
+license-file = "./LICENSE.txt"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+docx-rs = "0.4.7"
+ego-tree = "0.6.2"
 markdown = "1.0.0-alpha.11"
+scraper = "0.17.1"
 uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "5598e0b6070eabc74cc1a3c8cafedd592e4a569f" }
 
 [build-dependencies]
@@ -24,3 +27,4 @@ path = "uniffi-bindgen.rs"
 strip = true
 lto = true
 codegen-units = 1
+

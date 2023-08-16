@@ -57,4 +57,11 @@
     <string name="open_any_file_type_setting_description" tools:ignore="MissingTranslation">Shows Any file type option in the open an existing file dialog.\nWARNING PLEASE READ OR RISK LOSING DATA: This option currently corrupts some file types upon editing such as but not limited to pdf\'s, odt\'s, and probably others.</string>
     <string name="rust_library_credits" tools:ignore="MissingTranslation">Rust Library Credits</string>
     <string name="view_credits_for_rust_library" tools:ignore="MissingTranslation">View Credits for Rust library</string>
+    <string name="docx" tools:ignore="MissingTranslation">Office Open XML (.docx)</string>
+    <string name="export_markdown_to_docx_setting_name" tools:ignore="MissingTranslation">Export %1$s to %2$s</string>
+    <string name="export_markdown_to_docx_setting_description" tools:ignore="MissingTranslation">Adds an export
+        option for Markdown (.md) files to export to Office Open XML (.docx).\nNot all Markdown is supported for
+        conversion yet, BeauTyXT will crash when trying to export a Markdown (.md) file using unsupported
+        functionality.\nCurrently only Break, Emphasis, Strong, and &lt;div style="text-align: center"&gt;text
+        here&lt;/div&gt; (center, left, right) are supported.</string>
 </resources>

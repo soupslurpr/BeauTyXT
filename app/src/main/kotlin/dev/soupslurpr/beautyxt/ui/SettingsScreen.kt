@@ -88,7 +88,10 @@ fun SettingsScreen(
                 checked = preferencesUiState.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value,
                 onCheckedChange = {
                     coroutineScope.launch {
-                        preferencesViewModel.setSetting(preferencesUiState.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first, it)
+                        preferencesViewModel.setSetting(
+                            preferencesUiState
+                                .experimentalFeaturePreviewRenderedMarkdownInFullscreen.first, it
+                        )
                     }
                 }
             )
@@ -100,6 +103,24 @@ fun SettingsScreen(
                 onCheckedChange = {
                     coroutineScope.launch {
                         preferencesViewModel.setSetting(preferencesUiState.experimentalFeatureOpenAnyFileType.first, it)
+                    }
+                }
+            )
+            SettingsItem(
+                name = stringResource(
+                    R.string.export_markdown_to_docx_setting_name,
+                    stringResource(R.string.md),
+                    stringResource(R.string.docx)
+                ),
+                description = stringResource(R.string.export_markdown_to_docx_setting_description),
+                hasSwitch = true,
+                checked = preferencesUiState.experimentalFeatureExportMarkdownToDocx.second.value,
+                onCheckedChange = {
+                    coroutineScope.launch {
+                        preferencesViewModel.setSetting(
+                            preferencesUiState.experimentalFeatureExportMarkdownToDocx
+                                .first, it
+                        )
                     }
                 }
             )
