@@ -905,6 +905,20 @@ fun CreditsScreen(
         }
         item {
             CreditsItem(
+                dependencyName = "Jetpack Compose BOM",
+                dependencyPackageName = "androidx.compose:compose-bom",
+                dependencyLicense = APACHE2LICENSE,
+            )
+        }
+        item {
+            CreditsItem(
+                dependencyName = "Java Native Access (JNA)",
+                dependencyPackageName = "net.java.dev.jna:jna",
+                dependencyLicense = APACHE2LICENSE,
+            )
+        }
+        item {
+            CreditsItem(
                 dependencyName = "grapheneos.org website",
                 dependencyPackageName = "",
                 dependencyLicense = "Copyright © 2014-2023 GrapheneOS\n" +
