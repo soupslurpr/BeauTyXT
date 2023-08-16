@@ -260,9 +260,7 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
             Node::Definition(_) => todo!(),
             Node::Paragraph(_) => {
                 if let Some(children) = node.children() {
-                    if paragraph.is_none() {
-                        *paragraph = Some(docx_rs::Paragraph::new());
-                    }
+                    *paragraph = Some(docx_rs::Paragraph::new());
 
                     let mut runs: Vec<Option<Run>> = Vec::new();
                     for child in children {
