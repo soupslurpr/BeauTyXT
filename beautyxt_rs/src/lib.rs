@@ -215,7 +215,7 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
             }
             Node::Text(_) => {
                 if let Some(run_ref) = run.as_mut() {
-                    *run = Some(run_ref.clone().add_text(node.to_string()))
+                    *run = Some(run_ref.clone().add_text(node.to_string().replace("\n", " ")))
                 }
             }
             Node::Code(_) => todo!(),
