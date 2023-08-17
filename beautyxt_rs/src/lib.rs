@@ -1,7 +1,7 @@
-use std::io::Cursor;
 use docx_rs::{Docx, Run};
 use markdown::{mdast::Node, CompileOptions, Constructs, Options, ParseOptions};
 use scraper::ElementRef;
+use std::io::Cursor;
 
 uniffi::setup_scaffolding!();
 
@@ -74,7 +74,39 @@ pub fn markdown_to_html(markdown: String) -> String {
 pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
     let tree = markdown::to_mdast(&markdown, &PARSE_OPTIONS).unwrap();
 
-    let mut docx = Docx::new();
+    let mut docx = Docx::new()
+        // Add styles for headings.
+        // The actual font size is this divided by 2 for some reason
+        .add_style(
+            Style::new("Heading1", StyleType::Paragraph)
+                .name("Heading 1")
+                .size(48),
+        )
+        .add_style(
+            Style::new("Heading2", StyleType::Paragraph)
+                .name("Heading 2")
+                .size(36),
+        )
+        .add_style(
+            Style::new("Heading3", StyleType::Paragraph)
+                .name("Heading 3")
+                .size(28),
+        )
+        .add_style(
+            Style::new("Heading4", StyleType::Paragraph)
+                .name("Heading 4")
+                .size(24),
+        )
+        .add_style(
+            Style::new("Heading5", StyleType::Paragraph)
+                .name("Heading 5")
+                .size(20),
+        )
+        .add_style(
+            Style::new("Heading6", StyleType::Paragraph)
+                .name("Heading 6")
+                .size(16),
+        );
 
     fn process_node(
         node: &Node,
@@ -110,14 +142,14 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
             Node::InlineCode(_) => todo!(),
             Node::InlineMath(_) => todo!(),
             Node::Delete(_) => todo!(),
-                // if let Some(run_ref) = run.as_mut() {
-                //     *run = Some(run_ref.clone().strike())
-                // }
-                // if let Some(children) = node.children() {
-                //     for child in children {
-                //         process_node(child, run, paragraph, paragraphs)
-                //     }
-                // }
+            // if let Some(run_ref) = run.as_mut() {
+            //     *run = Some(run_ref.clone().strike())
+            // }
+            // if let Some(children) = node.children() {
+            //     for child in children {
+            //         process_node(child, run, paragraph, paragraphs)
+            //     }
+            // }
             Node::Emphasis(_) => {
                 if let Some(run_ref) = run.as_mut() {
                     *run = Some(run_ref.clone().italic())
@@ -147,8 +179,11 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                         scraper::Node::Comment(_) => todo!(),
                         scraper::Node::Text(_) => {
                             process_node(
-                                &markdown::to_mdast(node.value().as_text().unwrap(), &PARSE_OPTIONS)
-                                    .unwrap(),
+                                &markdown::to_mdast(
+                                    node.value().as_text().unwrap(),
+                                    &PARSE_OPTIONS,
+                                )
+                                .unwrap(),
                                 run,
                                 paragraph,
                                 paragraphs,
@@ -215,7 +250,11 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
             }
             Node::Text(_) => {
                 if let Some(run_ref) = run.as_mut() {
-                    *run = Some(run_ref.clone().add_text(node.to_string().replace("\n", " ")))
+                    *run = Some(
+                        run_ref
+                            .clone()
+                            .add_text(node.to_string().replace("\n", " ")),
+                    )
                 }
             }
             Node::Code(_) => todo!(),
@@ -223,18 +262,18 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
             Node::MdxFlowExpression(_) => todo!(),
             Node::Heading(heading) => {
                 let style = match heading.depth {
-                    1 => "Heading 1",
-                    2 => "Heading 2",
-                    3 => "Heading 3",
-                    4 => "Heading 4",
-                    5 => "Heading 5",
-                    6 => "Heading 6",
+                    1 => "Heading1",
+                    2 => "Heading2",
+                    3 => "Heading3",
+                    4 => "Heading4",
+                    5 => "Heading5",
+                    6 => "Heading6",
                     _ => todo!(),
                 };
 
                 if let Some(children) = node.children() {
-                    *paragraph = Some(docx_rs::Paragraph::new());
-                
+                    *paragraph = Some(docx_rs::Paragraph::new().style(style));
+
                     // if let Some(paragraph)
                     let mut runs: Vec<Option<Run>> = Vec::new();
                     for child in children {
@@ -251,7 +290,7 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                     }
                     paragraphs.push(paragraph.clone().unwrap());
                 }
-            },
+            }
             Node::Table(_) => todo!(),
             Node::ThematicBreak(_) => todo!(),
             Node::TableRow(_) => todo!(),
