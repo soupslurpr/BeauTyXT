@@ -1,4 +1,4 @@
-use docx_rs::{Docx, Run};
+use docx_rs::{Docx, Run, Style, StyleType};
 use markdown::{mdast::Node, CompileOptions, Constructs, Options, ParseOptions};
 use scraper::ElementRef;
 use std::io::Cursor;
