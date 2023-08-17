@@ -62,6 +62,6 @@
     <string name="export_markdown_to_docx_setting_description" tools:ignore="MissingTranslation">Adds an export
         option for Markdown (.md) files to export to Office Open XML (.docx).\nNot all Markdown is supported for
         conversion yet, BeauTyXT will crash when trying to export a Markdown (.md) file using unsupported
-        functionality.\nCurrently only Break, Emphasis, Strong, and &lt;div style="text-align: center"&gt;text
-        here&lt;/div&gt; (center, left, right) are supported.</string>
+        functionality.\nCurrently only Heading, Break, Emphasis, Strong, and alignment with &lt;div style="text-align:
+        center"&gt;text here&lt;/div&gt; (center, left, right) are supported.</string>
 </resources>
