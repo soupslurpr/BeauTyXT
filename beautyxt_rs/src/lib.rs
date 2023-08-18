@@ -274,9 +274,10 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                 };
 
                 if let Some(children) = node.children() {
-                    *paragraph = Some(docx_rs::Paragraph::new().style(style));
+                    if paragraph.is_none() {
+                        *paragraph = Some(docx_rs::Paragraph::new());
+                    }
 
-                    // if let Some(paragraph)
                     let mut runs: Vec<Option<Run>> = Vec::new();
                     for child in children {
                         let mut run = Some(docx_rs::Run::new().style(style));
@@ -291,6 +292,7 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                         }
                     }
                     paragraphs.push(paragraph.clone().unwrap());
+                    *paragraph = Some(docx_rs::Paragraph::new());
                 }
             }
             Node::Table(_) => todo!(),
