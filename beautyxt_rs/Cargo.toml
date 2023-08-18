@@ -25,6 +25,6 @@ path = "uniffi-bindgen.rs"
 
 [profile.release]
 strip = true
-lto = true
+lto = "fat"
 codegen-units = 1
 
