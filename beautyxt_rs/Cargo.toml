@@ -9,12 +9,12 @@ license-file = "./LICENSE.txt"
 [dependencies]
 docx-rs = "0.4.7"
 ego-tree = "0.6.2"
-markdown = "1.0.0-alpha.11"
+markdown = "1.0.0-alpha.12"
 scraper = "0.17.1"
-uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "5598e0b6070eabc74cc1a3c8cafedd592e4a569f" }
+uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "e20b9c2b72144ef51a381c6b321ac810a4fbfdbe" }
 
 [build-dependencies]
-uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "5598e0b6070eabc74cc1a3c8cafedd592e4a569f", features = ["build"] }
+uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "e20b9c2b72144ef51a381c6b321ac810a4fbfdbe", features = ["build"] }
 
 [lib]
 crate-type = ["cdylib"]
