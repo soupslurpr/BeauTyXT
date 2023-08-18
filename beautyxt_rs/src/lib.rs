@@ -206,9 +206,6 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                             match element.value().name.local.as_ref() {
                                 "div" => {
                                     for child in node.children() {
-                                        *paragraph = Some(docx_rs::Paragraph::new());
-                                        *run = Some(docx_rs::Run::new());
-
                                         if center {
                                             if let Some(paragraph_ref) = paragraph.as_mut() {
                                                 *paragraph = Some(
@@ -228,9 +225,14 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                 }
 
                 for child in root_element.children() {
-                    *paragraph = Some(docx_rs::Paragraph::new());
-                    *run = Some(docx_rs::Run::new());
+                    // TODO: Change this to maybe not make a new paragraph on each child and 
+                    // instead only a paragraph on divs and children get new runs only?
+                    // Only would be needed if we decide to implement more HTML than just <div>.
+                    if paragraph.is_none() {
+                        *paragraph = Some(docx_rs::Paragraph::new());
+                    }
                     process_html(child, run, paragraph, paragraphs);
+                    *paragraph = None;
                 }
             }
             Node::Image(_) => todo!(),
@@ -299,7 +301,9 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
             Node::Definition(_) => todo!(),
             Node::Paragraph(_) => {
                 if let Some(children) = node.children() {
-                    *paragraph = Some(docx_rs::Paragraph::new());
+                    if paragraph.is_none() {
+                        *paragraph = Some(docx_rs::Paragraph::new());
+                    }
 
                     let mut runs: Vec<Option<Run>> = Vec::new();
                     for child in children {
@@ -315,6 +319,7 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                         }
                     }
                     paragraphs.push(paragraph.clone().unwrap());
+                    *paragraph = Some(docx_rs::Paragraph::new());
                 }
             }
         }
