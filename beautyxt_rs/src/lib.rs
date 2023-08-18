@@ -64,6 +64,7 @@ pub fn markdown_to_html(markdown: String) -> String {
                 gfm_footnote_label_attributes: Default::default(),
                 gfm_footnote_back_label: Default::default(),
                 gfm_footnote_clobber_prefix: Some("".to_owned()),
+                gfm_task_list_item_checkable: false,
             },
         },
     )
@@ -225,7 +226,7 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                 }
 
                 for child in root_element.children() {
-                    // TODO: Change this to maybe not make a new paragraph on each child and 
+                    // TODO: Change this to maybe not make a new paragraph on each child and
                     // instead only a paragraph on divs and children get new runs only?
                     // Only would be needed if we decide to implement more HTML than just <div>.
                     if paragraph.is_none() {
