@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.soupslurpr.beautyxt.R
+import dev.soupslurpr.beautyxt.data.FileUiState
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 
 /**
@@ -38,6 +39,7 @@ fun FileEditScreen(
     readOnly: Boolean,
     preferencesUiState: PreferencesUiState,
     fileViewModel: FileViewModel,
+    fileUiState: FileUiState,
     previewMarkdownRenderedToHtmlFullscreen: Boolean,
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -52,7 +54,7 @@ fun FileEditScreen(
          * Its also for updating the html when previewing using the fullscreen markdown preview
          * experimental feature while having render markdown at the bottom half of the screen off.*/
         if (preferencesUiState.renderMarkdown.second.value or previewMarkdownRenderedToHtmlFullscreen) {
-            fileViewModel.getMarkdownToHtml()
+            fileViewModel.setMarkdownToHtml()
         }
     }
 
@@ -147,6 +149,7 @@ fun FileEditScreen(
                                  * The default text color is set to the current colorScheme's onBackground color
                                  * to match the TextField's text color.
                                  */
+                                fileViewModel.setMarkdownToHtml()
                                 val html = """
                                 <!DOCTYPE html>
                                 <html>
@@ -167,7 +170,7 @@ fun FileEditScreen(
                                     </head>
                                     <body>
                                         ${if (contentConvertedToHtml == "") {
-                                            fileViewModel.getMarkdownToHtml().value
+                                    fileUiState.contentConvertedToHtml.value
                                         } else {
                                             contentConvertedToHtml
                                         }}

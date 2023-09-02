@@ -2,6 +2,7 @@ package dev.soupslurpr.beautyxt.data
 
 import android.net.Uri
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 
 data class FileUiState(
@@ -14,9 +15,13 @@ data class FileUiState(
     /** mimeType of file */
     val mimeType: MutableState<String?> = mutableStateOf(""),
     /** size of file */
-    val size: MutableState<Long> = mutableStateOf(0L),
+    val size: MutableState<Long> = mutableLongStateOf(0L),
     /** Content (markdown) converted to HTML */
     val contentConvertedToHtml: MutableState<String> = mutableStateOf(""),
     /** whether the file is read only or not */
     val readOnly: MutableState<Boolean> = mutableStateOf(true),
+    /** word count */
+    val wordCount: MutableState<Long> = mutableLongStateOf(0L),
+    /** character count */
+    val characterCount: MutableState<Long> = mutableLongStateOf(0L),
 )

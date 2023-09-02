@@ -30,14 +30,26 @@ class FileViewModel : ViewModel() {
      * Set the uri for this file and update the content
      */
     fun setUri(uri: Uri, context: Context) {
+        getContentFromUri(uri = uri, context)
         _uiState.update { currentState ->
             currentState.copy(
                 uri = mutableStateOf(uri),
                 name = getNameFromUri(uri = uri, context),
-                content = getContentFromUri(uri = uri, context),
+                content = uiState.value.content,
                 mimeType = getMimeTypeFromUri(uri = uri, context),
-                size = getSizeFromUri(uri = uri, context),
+                size = run {
+                    setSizeFromUri(uri = uri, context)
+                    uiState.value.size
+                },
                 readOnly = uiState.value.readOnly,
+                wordCount = run {
+                    setWordCount()
+                    uiState.value.wordCount
+                },
+                characterCount = run {
+                    setCharacterCount()
+                    uiState.value.characterCount
+                }
             )
         }
     }
@@ -76,31 +88,33 @@ class FileViewModel : ViewModel() {
                 }
             }
         }
-        return mutableStateOf(stringBuilder.toString())
+        val content = stringBuilder.toString()
+        _uiState.value.content.value = content
+        return mutableStateOf(content)
     }
 
     private fun getMimeTypeFromUri(uri: Uri, context: Context): MutableState<String?> {
         return mutableStateOf(context.contentResolver.getType(uri))
     }
 
-    fun getSizeFromUri(uri: Uri, context: Context): MutableState<Long> {
+    fun setSizeFromUri(uri: Uri, context: Context) {
         var size = 0L
         val contentResolver = context.contentResolver
-        // The query, because it only applies to a single document, returns only
-        // one row. There's no need to filter, sort, or select fields,
-        // because we want all fields for one document.
         val cursor: Cursor? = contentResolver.query(
-            uri, null, null, null, null, null)
+            uri,
+            null,
+            null,
+            null,
+            null,
+            null
+        )
 
         cursor?.use {
-            // moveToFirst() returns false if the cursor has 0 rows. Very handy for
-            // "if there's anything to look at, look at it" conditionals.
             if (it.moveToFirst()) {
                 size = it.getLong(it.getColumnIndexOrThrow(OpenableColumns.SIZE))
             }
         }
-        uiState.value.size.value = size
-        return mutableStateOf(size)
+        _uiState.value.size.value = size
     }
 
     fun setContentToUri(uri: Uri, context: Context) {
@@ -126,36 +140,35 @@ class FileViewModel : ViewModel() {
     }
 
     fun updateContent(content: String) {
-        uiState.value.content.value = content
+        _uiState.value.content.value = content
     }
 
-    fun getMarkdownToHtml(): MutableState<String> {
-//        val parser = Parser.builder(options).build()
-//        val renderer = HtmlRenderer.builder(options).build()
-//
-//        val document = parser.parse(uiState.value.content.value)
-        val html = markdownToHtml(uiState.value.content.value)
-
-        uiState.value.contentConvertedToHtml.value = html
-        return mutableStateOf(html)
+    fun setMarkdownToHtml() {
+        _uiState.value.contentConvertedToHtml.value = markdownToHtml(uiState.value.content.value)
     }
 
     fun setReadOnly(readOnly: Boolean) {
-        uiState.value.readOnly.value = readOnly
+        _uiState.value.readOnly.value = readOnly
+    }
+
+    fun setWordCount() {
+        val wordCount = uiState.value.content.value.split("\\s+".toRegex()).filter { it.isNotEmpty() }.size.toLong()
+        _uiState.value.wordCount.value = wordCount
+
+    }
+
+    fun setCharacterCount() {
+        val characterCount = uiState.value.content.value.count().toLong()
+        _uiState.value.characterCount.value = characterCount
     }
 
     /** Set uiState to default values */
     fun clearUiState() {
-        uiState.value.content.value = ""
-        uiState.value.contentConvertedToHtml.value = ""
-        uiState.value.size.value = 0L
-        uiState.value.mimeType.value = ""
-        uiState.value.name.value = ""
-        uiState.value.uri.value = Uri.EMPTY
-        uiState.value.readOnly.value = true
+        _uiState.value = FileUiState()
     }
 
     fun saveAsHtml(uri: Uri, context: Context) {
+        setMarkdownToHtml()
         val html = """
                                 <!DOCTYPE html>
                                 <html>
@@ -182,7 +195,7 @@ class FileViewModel : ViewModel() {
                                         </style>
                                     </head>
                                     <body>
-                                        ${getMarkdownToHtml().value}
+                                        ${uiState.value.contentConvertedToHtml.value}
                                     </body>
                                 </html>
                                 """.trimIndent()
@@ -225,5 +238,10 @@ class FileViewModel : ViewModel() {
 
         }
         // TODO: Handle exceptions
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        clearUiState()
     }
 }

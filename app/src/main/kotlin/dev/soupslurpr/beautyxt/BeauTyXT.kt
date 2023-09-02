@@ -18,8 +18,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.DropdownMenu
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
@@ -207,7 +210,7 @@ fun BeauTyXTAppBar(
                 DropdownMenu(
                     expanded = exportDropdownMenuShown,
                     onDismissRequest = { onExportDropdownMenuDismissRequest() },
-//                    scrollState = rememberScrollState(),
+                    scrollState = rememberScrollState(),
                     modifier = Modifier.width(225.dp)
                 ) {
                     if (mimeType == "text/markdown") {
@@ -414,7 +417,8 @@ fun BeauTyXTApp(
                 fileInfoDialogContent = {
                     Column(
                         modifier = Modifier
-                            .fillMaxWidth(),
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         horizontalAlignment = Alignment.Start
                     ) {
@@ -425,6 +429,8 @@ fun BeauTyXTApp(
                                 it
                             )
                         }
+                        FileInfoDialogItem(info = "Words", value = fileUiState.wordCount.value.toString())
+                        FileInfoDialogItem(info = "Characters", value = fileUiState.characterCount.value.toString())
                     }
                 },
                 fileInfoDialogConfirmButton = {
@@ -554,7 +560,7 @@ fun BeauTyXTApp(
                         }
                     }
 
-                    // Generate an HTML document on the fly:
+                    fileViewModel.setMarkdownToHtml()
                     val htmlDocument = """
                                 <!DOCTYPE html>
                                 <html>
@@ -571,7 +577,7 @@ fun BeauTyXTApp(
                                         </style>
                                     </head>
                                     <body>
-                                        ${fileViewModel.getMarkdownToHtml().value}
+                                        ${fileUiState.contentConvertedToHtml.value}
                                     </body>
                                 </html>
                                 """.trimIndent()
@@ -676,10 +682,12 @@ fun BeauTyXTApp(
                         fileViewModel.setContentToUri(uri = fileUiState.uri.value, context = context)
                         when (fileUiState.mimeType.value) {
                             "text/markdown" -> if (preferencesUiState.renderMarkdown.second.value) {
-                                fileViewModel.getMarkdownToHtml()
+                                fileViewModel.setMarkdownToHtml()
                             }
                         }
-                        fileViewModel.getSizeFromUri(uri = fileUiState.uri.value, context = context)
+                        fileViewModel.setSizeFromUri(uri = fileUiState.uri.value, context = context)
+                        fileViewModel.setWordCount()
+                        fileViewModel.setCharacterCount()
                     },
                     content = fileUiState.content.value,
                     mimeType = fileUiState.mimeType.value!!,
@@ -687,6 +695,7 @@ fun BeauTyXTApp(
                     readOnly = fileUiState.readOnly.value,
                     preferencesUiState = preferencesUiState,
                     fileViewModel = fileViewModel,
+                    fileUiState = fileUiState,
                     previewMarkdownRenderedToHtmlFullscreen = previewMarkdownRenderedToFullscreen,
                 )
             }
