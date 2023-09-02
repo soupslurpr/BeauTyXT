@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
                     ReviewPrivacyPolicyAndLicense(preferencesViewModel = preferencesViewModel)
                 } else if (preferencesUiState.acceptedPrivacyPolicyAndLicense.second.value) {
                     BeauTyXTApp(
+                        fileViewModel = fileViewModel,
                         preferencesViewModel = preferencesViewModel,
                         modifier = Modifier
                     )

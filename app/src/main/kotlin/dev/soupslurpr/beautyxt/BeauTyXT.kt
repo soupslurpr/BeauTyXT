@@ -54,7 +54,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityOptionsCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -316,11 +315,10 @@ fun SaveAsDialogItem(
 
 @Composable
 fun BeauTyXTApp(
+    fileViewModel: FileViewModel,
     preferencesViewModel: PreferencesViewModel,
     modifier: Modifier,
 ) {
-    val fileViewModel: FileViewModel = viewModel()
-
     val navController = rememberNavController()
 
     val backStackEntry by navController.currentBackStackEntryAsState()
