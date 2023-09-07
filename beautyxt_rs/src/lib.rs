@@ -193,26 +193,21 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                         scraper::Node::Element(_) => {
                             let element = ElementRef::wrap(node).unwrap();
                             let style = element.value().attr("style").unwrap_or("");
-                            let center = style.contains("text-align: center");
-                            let alignment_type = if style.contains("text-align: left") {
-                                docx_rs::AlignmentType::Left
-                            } else if style.contains("text-align: center") {
-                                docx_rs::AlignmentType::Center
-                            } else if style.contains("text-align: right") {
-                                docx_rs::AlignmentType::Right
-                            } else {
-                                docx_rs::AlignmentType::Start
+
+                            let alignment_type = match style {
+                                style if style.contains("text-align: left") => docx_rs::AlignmentType::Left,
+                                style if style.contains("text-align: center") => docx_rs::AlignmentType::Center,
+                                style if style.contains("text-align: right") => docx_rs::AlignmentType::Right,
+                                _ => docx_rs::AlignmentType::Start,
                             };
 
                             match element.value().name.local.as_ref() {
                                 "div" => {
                                     for child in node.children() {
-                                        if center {
-                                            if let Some(paragraph_ref) = paragraph.as_mut() {
-                                                *paragraph = Some(
-                                                    paragraph_ref.clone().align(alignment_type),
-                                                )
-                                            }
+                                        if let Some(paragraph_ref) = paragraph.as_mut() {
+                                            *paragraph = Some(
+                                                paragraph_ref.clone().align(alignment_type),
+                                            )
                                         }
 
                                         process_html(child, run, paragraph, paragraphs)
