@@ -200,13 +200,28 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                                 style if style.contains("text-align: right") => docx_rs::AlignmentType::Right,
                                 _ => docx_rs::AlignmentType::Start,
                             };
+                            
+                            let font_size = if style.contains("font-size:") {
+                                let index = style.find("font-size:").unwrap();
+                                    
+                                let remaining = &style[index + "font-size:".len()..];
+
+                                let fontsize = remaining
+                                    .split(|c: char| !c.is_numeric())
+                                    .next()
+                                    .unwrap_or("");
+
+                                fontsize.parse::<usize>().unwrap_or(11)
+                            } else {
+                                11
+                            };
 
                             match element.value().name.local.as_ref() {
                                 "div" => {
                                     for child in node.children() {
                                         if let Some(paragraph_ref) = paragraph.as_mut() {
                                             *paragraph = Some(
-                                                paragraph_ref.clone().align(alignment_type),
+                                                paragraph_ref.clone().align(alignment_type).size(font_size),
                                             )
                                         }
 
