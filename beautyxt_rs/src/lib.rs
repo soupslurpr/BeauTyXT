@@ -195,15 +195,21 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                             let style = element.value().attr("style").unwrap_or("");
 
                             let alignment_type = match style {
-                                style if style.contains("text-align: left") => docx_rs::AlignmentType::Left,
-                                style if style.contains("text-align: center") => docx_rs::AlignmentType::Center,
-                                style if style.contains("text-align: right") => docx_rs::AlignmentType::Right,
+                                style if style.contains("text-align: left") => {
+                                    docx_rs::AlignmentType::Left
+                                }
+                                style if style.contains("text-align: center") => {
+                                    docx_rs::AlignmentType::Center
+                                }
+                                style if style.contains("text-align: right") => {
+                                    docx_rs::AlignmentType::Right
+                                }
                                 _ => docx_rs::AlignmentType::Start,
                             };
-                            
+
                             let font_size = if style.contains("font-size:") {
                                 let index = style.find("font-size:").unwrap();
-                                    
+
                                 let remaining = &style[index + "font-size:".len()..];
 
                                 let fontsize = remaining
@@ -221,7 +227,10 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                                     for child in node.children() {
                                         if let Some(paragraph_ref) = paragraph.as_mut() {
                                             *paragraph = Some(
-                                                paragraph_ref.clone().align(alignment_type).size(font_size),
+                                                paragraph_ref
+                                                    .clone()
+                                                    .align(alignment_type)
+                                                    .size(font_size),
                                             )
                                         }
 
