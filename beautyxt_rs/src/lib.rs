@@ -207,10 +207,11 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                                 _ => docx_rs::AlignmentType::Start,
                             };
 
-                            let font_size = if style.contains("font-size:") {
-                                let index = style.find("font-size:").unwrap();
+                            let font_size_css = "font-size:";
+                            let font_size = if style.contains(font_size_css) {
+                                let index = style.find(font_size_css).unwrap();
 
-                                let remaining = &style[index + "font-size:".len()..];
+                                let remaining = &style[index + &font_size_css.len()..].trim();
 
                                 let fontsize = remaining
                                     .split(|c: char| !c.is_numeric())
