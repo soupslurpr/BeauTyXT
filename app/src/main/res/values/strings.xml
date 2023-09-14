@@ -64,4 +64,7 @@
         conversion yet, BeauTyXT will crash when trying to export a Markdown (.md) file using unsupported
         functionality.\nCurrently only Heading, Break, Emphasis, Strong, and alignment with &lt;div style="text-align:
         center"&gt;text here&lt;/div&gt; (center, left, right) are supported.</string>
+    <string name="print" tools:ignore="MissingTranslation">Print</string>
+    <string name="words" tools:ignore="MissingTranslation">Words</string>
+    <string name="characters" tools:ignore="MissingTranslation">Characters</string>
 </resources>

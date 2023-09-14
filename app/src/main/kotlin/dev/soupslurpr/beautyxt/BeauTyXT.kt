@@ -213,7 +213,7 @@ fun BeauTyXTAppBar(
                         DropdownMenuItem(
                             text = {
                                 Text(
-                                    text = "Print",
+                                    text = stringResource(R.string.print),
                                     style = dropDownMenuItemTextStyle
                                 )
                             },
@@ -424,8 +424,14 @@ fun BeauTyXTApp(
                                 it
                             )
                         }
-                        FileInfoDialogItem(info = "Words", value = fileUiState.wordCount.value.toString())
-                        FileInfoDialogItem(info = "Characters", value = fileUiState.characterCount.value.toString())
+                        FileInfoDialogItem(
+                            info = stringResource(R.string.words),
+                            value = fileUiState.wordCount.value.toString()
+                        )
+                        FileInfoDialogItem(
+                            info = stringResource(R.string.characters),
+                            value = fileUiState.characterCount.value.toString()
+                        )
                     }
                 },
                 fileInfoDialogConfirmButton = {
