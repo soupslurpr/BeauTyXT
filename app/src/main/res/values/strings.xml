@@ -41,7 +41,7 @@
     <string name="render_markdown_setting_name" tools:ignore="MissingTranslation">Render Markdown</string>
     <string name="markdown" tools:ignore="MissingTranslation">Markdown</string>
     <string name="render_markdown_setting_description" tools:ignore="MissingTranslation">Render Markdown (.md) files on the bottom side of the screen</string>
-    <string name="md" tools:ignore="MissingTranslation">Markdown (.md & .markdown)</string>
+    <string name="md" tools:ignore="MissingTranslation">Markdown (.md &amp; .markdown)</string>
     <string name="export" tools:ignore="MissingTranslation">Export</string>
     <string name="save_as" tools:ignore="MissingTranslation">Save As</string>
     <string name="cancel" tools:ignore="MissingTranslation">Cancel</string>
