@@ -412,26 +412,6 @@ private fun uniffiCheckApiChecksums(lib: _UniFFILib) {
 // Public interface members begin here.
 
 
-public object FfiConverterUByte: FfiConverter<UByte, Byte> {
-    override fun lift(value: Byte): UByte {
-        return value.toUByte()
-    }
-
-    override fun read(buf: ByteBuffer): UByte {
-        return lift(buf.get())
-    }
-
-    override fun lower(value: UByte): Byte {
-        return value.toByte()
-    }
-
-    override fun allocationSize(value: UByte) = 1
-
-    override fun write(value: UByte, buf: ByteBuffer) {
-        buf.put(value.toByte())
-    }
-}
-
 public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     // Note: we don't inherit from FfiConverterRustBuffer, because we use a
     // special encoding when lowering/lifting.  We can use `RustBuffer.len` to
@@ -486,33 +466,24 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     }
 }
 
-
-
-
-public object FfiConverterSequenceUByte: FfiConverterRustBuffer<List<UByte>> {
-    override fun read(buf: ByteBuffer): List<UByte> {
+public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
+    override fun read(buf: ByteBuffer): ByteArray {
         val len = buf.getInt()
-        return List<UByte>(len) {
-            FfiConverterUByte.read(buf)
-        }
+        val byteArr = ByteArray(len)
+        buf.get(byteArr)
+        return byteArr
     }
-
-    override fun allocationSize(value: List<UByte>): Int {
-        val sizeForLength = 4
-        val sizeForItems = value.map { FfiConverterUByte.allocationSize(it) }.sum()
-        return sizeForLength + sizeForItems
+    override fun allocationSize(value: ByteArray): Int {
+        return 4 + value.size
     }
-
-    override fun write(value: List<UByte>, buf: ByteBuffer) {
+    override fun write(value: ByteArray, buf: ByteBuffer) {
         buf.putInt(value.size)
-        value.forEach {
-            FfiConverterUByte.write(it, buf)
-        }
+        buf.put(value)
     }
 }
 
-fun `markdownToDocx`(`markdown`: String): List<UByte> {
-    return FfiConverterSequenceUByte.lift(
+fun `markdownToDocx`(`markdown`: String): ByteArray {
+    return FfiConverterByteArray.lift(
     rustCall() { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_markdown_to_docx(FfiConverterString.lower(`markdown`),_status)
 })
