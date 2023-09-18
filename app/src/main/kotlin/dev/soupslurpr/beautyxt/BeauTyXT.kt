@@ -606,6 +606,7 @@ ${
                                     .replace("&", "&amp;")
                                     .replace("<", "&lt;")
                                     .replace(">", "&gt;")
+                                    .replace("#", "%23")
                             }
                                     </body>
                                 </html>
