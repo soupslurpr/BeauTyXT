@@ -209,19 +209,19 @@ fun BeauTyXTAppBar(
                     onDismissRequest = { onExportDropdownMenuDismissRequest() },
                     modifier = Modifier.width(225.dp)
                 ) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.print),
+                                style = dropDownMenuItemTextStyle
+                            )
+                        },
+                        onClick = { onPrintExportDropdownMenuItemClicked() },
+                        leadingIcon = {
+                            Icon(painter = painterResource(R.drawable.baseline_print_24), contentDescription = null)
+                        }
+                    )
                     if (mimeType == "text/markdown") {
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = stringResource(R.string.print),
-                                    style = dropDownMenuItemTextStyle
-                                )
-                            },
-                            onClick = { onPrintExportDropdownMenuItemClicked() },
-                            leadingIcon = {
-                                Icon(painter = painterResource(R.drawable.baseline_print_24), contentDescription = null)
-                            }
-                        )
                         DropdownMenuItem(
                             text = {
                                 Text(
@@ -561,8 +561,10 @@ fun BeauTyXTApp(
                         }
                     }
 
-                    fileViewModel.setMarkdownToHtml()
-                    val htmlDocument = """
+                    when (fileUiState.mimeType.value) {
+                        "text/markdown" -> {
+                            fileViewModel.setMarkdownToHtml()
+                            val htmlDocument = """
                                 <!DOCTYPE html>
                                 <html>
                                     <head>
@@ -581,8 +583,36 @@ fun BeauTyXTApp(
                                         ${fileUiState.contentConvertedToHtml.value}
                                     </body>
                                 </html>
-                                """.trimIndent()
-                    webView.loadData(htmlDocument, "text/html", "UTF-8")
+                            """.trimIndent()
+                            webView.loadData(htmlDocument, "text/html", "UTF-8")
+                        }
+                        else -> {
+                            val htmlDocument = """
+                                <!DOCTYPE html>
+                                <html>
+                                    <head>
+                                        <meta charset="utf-8"/>
+                                        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+                                        <style>
+                                            html {
+                                                overflow-wrap: anywhere;
+                                                white-space: pre-wrap;
+                                            }
+                                        </style>
+                                    </head>
+                                    <body>
+${
+                                fileUiState.content.value
+                                    .replace("&", "&amp;")
+                                    .replace("<", "&lt;")
+                                    .replace(">", "&gt;")
+                            }
+                                    </body>
+                                </html>
+                            """.trimIndent()
+                            webView.loadData(htmlDocument, "text/html", "UTF-8")
+                        }
+                    }
 
                     // Keep a reference to WebView object until you pass the PrintDocumentAdapter
                     // to the PrintManager
