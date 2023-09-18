@@ -10,7 +10,6 @@ import androidx.lifecycle.ViewModel
 import dev.soupslurpr.beautyxt.data.FileUiState
 import dev.soupslurpr.beautyxt.markdownToDocx
 import dev.soupslurpr.beautyxt.markdownToHtml
-import dev.soupslurpr.beautyxt.sanitizeText
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -239,10 +238,6 @@ class FileViewModel : ViewModel() {
 
         }
         // TODO: Handle exceptions
-    }
-
-    fun getSanitizedContent(): String {
-        return sanitizeText(uiState.value.content.value)
     }
 
     override fun onCleared() {

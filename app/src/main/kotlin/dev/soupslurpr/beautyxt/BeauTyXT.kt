@@ -601,7 +601,12 @@ fun BeauTyXTApp(
                                         </style>
                                     </head>
                                     <body>
-                                        ${fileViewModel.getSanitizedContent()}
+${
+                                fileUiState.content.value
+                                    .replace("&", "&amp;")
+                                    .replace("<", "&lt;")
+                                    .replace(">", "&gt;")
+                            }
                                     </body>
                                 </html>
                             """.trimIndent()
