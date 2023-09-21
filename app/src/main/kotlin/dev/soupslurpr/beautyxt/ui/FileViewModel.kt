@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import dev.soupslurpr.beautyxt.data.FileUiState
 import dev.soupslurpr.beautyxt.markdownToDocx
 import dev.soupslurpr.beautyxt.markdownToHtml
+import dev.soupslurpr.beautyxt.plainTextToDocx
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -225,7 +226,15 @@ class FileViewModel : ViewModel() {
 
     @OptIn(ExperimentalUnsignedTypes::class)
     fun saveAsDocx(uri: Uri, context: Context) {
-        val docx = markdownToDocx(uiState.value.content.value)
+        val docx = when (uiState.value.mimeType.value) {
+            "text/markdown" -> {
+                markdownToDocx(uiState.value.content.value)
+            }
+
+            else -> {
+                plainTextToDocx(uiState.value.content.value)
+            }
+        }
 
         try {
             val contentResolver = context.contentResolver
