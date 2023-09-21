@@ -471,14 +471,19 @@ fun BeauTyXTApp(
                             .fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
-                        SaveAsDialogItem(
-                            fileTypeText = stringResource(R.string.html),
-                            selected = saveAsSelectedFileType == mimeTypeHtml,
-                            onClickRadioButton = {
-                                saveAsSelectedFileType = mimeTypeHtml
-                            }
-                        )
-                        if (preferencesUiState.experimentalFeatureExportMarkdownToDocx.second.value) {
+                        if (fileUiState.mimeType.value == mimeTypeMarkdown) {
+                            SaveAsDialogItem(
+                                fileTypeText = stringResource(R.string.html),
+                                selected = saveAsSelectedFileType == mimeTypeHtml,
+                                onClickRadioButton = {
+                                    saveAsSelectedFileType = mimeTypeHtml
+                                }
+                            )
+                        }
+                        if ((preferencesUiState.experimentalFeatureExportMarkdownToDocx.second.value and
+                                    (fileUiState.mimeType.value == mimeTypeMarkdown)) or
+                            (fileUiState.mimeType.value != mimeTypeMarkdown)
+                        ) {
                             SaveAsDialogItem(
                                 fileTypeText = stringResource(R.string.docx),
                                 selected = saveAsSelectedFileType == mimeTypeDocx,
