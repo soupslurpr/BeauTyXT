@@ -362,3 +362,15 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
 
     buffer.into_inner()
 }
+
+#[uniffi::export]
+pub fn plain_text_to_docx(plain_text: String) -> Vec<u8> {
+    let docx = Docx::new()
+        .add_paragraph(docx_rs::Paragraph::new().add_run(Run::new().add_text(plain_text)));
+
+    let mut buffer = Cursor::new(Vec::new());
+
+    docx.build().pack(&mut buffer).unwrap();
+
+    buffer.into_inner()
+}
