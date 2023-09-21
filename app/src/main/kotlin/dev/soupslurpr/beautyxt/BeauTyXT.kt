@@ -221,20 +221,18 @@ fun BeauTyXTAppBar(
                             Icon(painter = painterResource(R.drawable.baseline_print_24), contentDescription = null)
                         }
                     )
-                    if (mimeType == "text/markdown") {
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = stringResource(R.string.save_as),
-                                    style = dropDownMenuItemTextStyle
-                                )
-                            },
-                            onClick = { onSaveAsExportDropdownMenuItemClicked() },
-                            leadingIcon = {
-                                Icon(painter = painterResource(R.drawable.baseline_save_as_24), contentDescription = null)
-                            }
-                        )
-                    }
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.save_as),
+                                style = dropDownMenuItemTextStyle
+                            )
+                        },
+                        onClick = { onSaveAsExportDropdownMenuItemClicked() },
+                        leadingIcon = {
+                            Icon(painter = painterResource(R.drawable.baseline_save_as_24), contentDescription = null)
+                        }
+                    )
                 }
                 if (saveAsShown) {
                     AlertDialog(
