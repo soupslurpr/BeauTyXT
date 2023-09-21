@@ -5,7 +5,7 @@ use std::io::Cursor;
 
 uniffi::setup_scaffolding!();
 
-const PARSE_OPTIONS: ParseOptions = ParseOptions {
+const MARKDOWN_PARSE_OPTIONS: ParseOptions = ParseOptions {
     constructs: Constructs {
         attention: true,
         autolink: true,
@@ -53,7 +53,7 @@ pub fn markdown_to_html(markdown: String) -> String {
     markdown::to_html_with_options(
         &markdown,
         &Options {
-            parse: PARSE_OPTIONS,
+            parse: MARKDOWN_PARSE_OPTIONS,
             compile: CompileOptions {
                 allow_dangerous_html: true,
                 allow_dangerous_protocol: true,
@@ -73,7 +73,7 @@ pub fn markdown_to_html(markdown: String) -> String {
 
 #[uniffi::export]
 pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
-    let tree = markdown::to_mdast(&markdown, &PARSE_OPTIONS).unwrap();
+    let tree = markdown::to_mdast(&markdown, &MARKDOWN_PARSE_OPTIONS).unwrap();
 
     let mut docx = Docx::new()
         // Add styles for headings.
@@ -182,7 +182,7 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                             process_node(
                                 &markdown::to_mdast(
                                     node.value().as_text().unwrap(),
-                                    &PARSE_OPTIONS,
+                                    &MARKDOWN_PARSE_OPTIONS,
                                 )
                                 .unwrap(),
                                 run,
