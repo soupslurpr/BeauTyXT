@@ -7,6 +7,7 @@ import android.provider.OpenableColumns
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
+import dev.soupslurpr.beautyxt.constants.mimeTypeMarkdown
 import dev.soupslurpr.beautyxt.data.FileUiState
 import dev.soupslurpr.beautyxt.markdownToDocx
 import dev.soupslurpr.beautyxt.markdownToHtml
@@ -227,7 +228,7 @@ class FileViewModel : ViewModel() {
     @OptIn(ExperimentalUnsignedTypes::class)
     fun saveAsDocx(uri: Uri, context: Context) {
         val docx = when (uiState.value.mimeType.value) {
-            "text/markdown" -> {
+            mimeTypeMarkdown -> {
                 markdownToDocx(uiState.value.content.value)
             }
 
