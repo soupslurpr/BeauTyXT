@@ -241,7 +241,7 @@ class FileViewModel : ViewModel() {
             val contentResolver = context.contentResolver
             contentResolver.openFileDescriptor(uri, "wt")?.use {
                 FileOutputStream(it.fileDescriptor).use {
-                    it.write(docx.toUByteArray().toByteArray())
+                    it.write(docx)
                 }
             }
         } finally {
