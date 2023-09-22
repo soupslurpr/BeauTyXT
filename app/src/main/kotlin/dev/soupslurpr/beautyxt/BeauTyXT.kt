@@ -460,6 +460,7 @@ fun BeauTyXTApp(
                 saveAsShown = saveAsShown,
                 onSaveAsDialogDismissRequest = { saveAsShown = false },
                 onSaveAsExportDropdownMenuItemClicked = {
+                    saveAsSelectedFileType = ""
                     saveAsShown = !saveAsShown
                     dropDownMenuShown = false
                     exportDropdownMenuShown = false
