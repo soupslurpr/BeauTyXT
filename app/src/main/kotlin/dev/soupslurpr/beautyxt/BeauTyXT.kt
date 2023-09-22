@@ -59,6 +59,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navDeepLink
+import dev.soupslurpr.beautyxt.constants.mimeTypeDocx
+import dev.soupslurpr.beautyxt.constants.mimeTypeHtml
+import dev.soupslurpr.beautyxt.constants.mimeTypeMarkdown
+import dev.soupslurpr.beautyxt.constants.mimeTypePlainText
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
 import dev.soupslurpr.beautyxt.ui.CreditsScreen
@@ -142,7 +146,7 @@ fun BeauTyXTAppBar(
                 if (readOnly) {
                     Text(text = stringResource(R.string.read_only))
                 }
-                if (mimeType == "text/markdown") {
+                if (mimeType == mimeTypeMarkdown) {
                     if (preferencesUiState.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value) {
                         IconButton(
                             onClick = onPreviewMarkdownRenderedToFullscreenButtonClicked,
@@ -221,20 +225,18 @@ fun BeauTyXTAppBar(
                             Icon(painter = painterResource(R.drawable.baseline_print_24), contentDescription = null)
                         }
                     )
-                    if (mimeType == "text/markdown") {
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = stringResource(R.string.save_as),
-                                    style = dropDownMenuItemTextStyle
-                                )
-                            },
-                            onClick = { onSaveAsExportDropdownMenuItemClicked() },
-                            leadingIcon = {
-                                Icon(painter = painterResource(R.drawable.baseline_save_as_24), contentDescription = null)
-                            }
-                        )
-                    }
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.save_as),
+                                style = dropDownMenuItemTextStyle
+                            )
+                        },
+                        onClick = { onSaveAsExportDropdownMenuItemClicked() },
+                        leadingIcon = {
+                            Icon(painter = painterResource(R.drawable.baseline_save_as_24), contentDescription = null)
+                        }
+                    )
                 }
                 if (saveAsShown) {
                     AlertDialog(
@@ -339,7 +341,7 @@ fun BeauTyXTApp(
         }
     }
 
-    val createTxtFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument("text/plain")) {
+    val createTxtFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypePlainText)) {
         if (it != null) {
             fileViewModel.setReadOnly(false)
             fileViewModel.setUri(it, context)
@@ -347,7 +349,7 @@ fun BeauTyXTApp(
         }
     }
 
-    val createMdFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument("text/markdown")) {
+    val createMdFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypeMarkdown)) {
         if (it != null) {
             fileViewModel.setReadOnly(false)
             fileViewModel.setUri(it, context)
@@ -363,15 +365,11 @@ fun BeauTyXTApp(
 
     var saveAsShown by remember { mutableStateOf(false) }
 
-    val mimeTypeHtml = "text/html"
-
     val saveAsHtmlFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypeHtml)) {
         if (it != null) {
             fileViewModel.saveAsHtml(it, context)
         }
     }
-
-    val mimeTypeDocx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
     val saveAsDocxFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypeDocx)) {
         if (it != null) {
@@ -473,14 +471,19 @@ fun BeauTyXTApp(
                             .fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
-                        SaveAsDialogItem(
-                            fileTypeText = stringResource(R.string.html),
-                            selected = saveAsSelectedFileType == mimeTypeHtml,
-                            onClickRadioButton = {
-                                saveAsSelectedFileType = mimeTypeHtml
-                            }
-                        )
-                        if (preferencesUiState.experimentalFeatureExportMarkdownToDocx.second.value) {
+                        if (fileUiState.mimeType.value == mimeTypeMarkdown) {
+                            SaveAsDialogItem(
+                                fileTypeText = stringResource(R.string.html),
+                                selected = saveAsSelectedFileType == mimeTypeHtml,
+                                onClickRadioButton = {
+                                    saveAsSelectedFileType = mimeTypeHtml
+                                }
+                            )
+                        }
+                        if ((preferencesUiState.experimentalFeatureExportMarkdownToDocx.second.value and
+                                    (fileUiState.mimeType.value == mimeTypeMarkdown)) or
+                            (fileUiState.mimeType.value != mimeTypeMarkdown)
+                        ) {
                             SaveAsDialogItem(
                                 fileTypeText = stringResource(R.string.docx),
                                 selected = saveAsSelectedFileType == mimeTypeDocx,
@@ -562,7 +565,7 @@ fun BeauTyXTApp(
                     }
 
                     when (fileUiState.mimeType.value) {
-                        "text/markdown" -> {
+                        mimeTypeMarkdown -> {
                             fileViewModel.setMarkdownToHtml()
                             val htmlDocument = """
                                 <!DOCTYPE html>
@@ -584,7 +587,7 @@ fun BeauTyXTApp(
                                     </body>
                                 </html>
                             """.trimIndent()
-                            webView.loadData(htmlDocument, "text/html", "UTF-8")
+                            webView.loadData(htmlDocument, mimeTypeHtml, "UTF-8")
                         }
                         else -> {
                             val htmlDocument = """
@@ -612,7 +615,7 @@ ${
                                     </body>
                                 </html>
                             """.trimIndent()
-                            webView.loadData(htmlDocument, "text/html", "UTF-8")
+                            webView.loadData(htmlDocument, mimeTypeHtml, "UTF-8")
                         }
                     }
 
@@ -644,13 +647,13 @@ ${
                     splashMessage = splashMessage,
                     onOpenTxtButtonClicked = {
                         openFileLauncher.launch(
-                            arrayOf("text/plain"),
+                            arrayOf(mimeTypePlainText),
                             ActivityOptionsCompat.makeBasic(),
                         )
                     },
                     onOpenMdButtonClicked = {
                         openFileLauncher.launch(
-                            arrayOf("text/markdown"),
+                            arrayOf(mimeTypeMarkdown),
                             ActivityOptionsCompat.makeBasic(),
                         )
                     },
@@ -695,7 +698,7 @@ ${
                 route = BeauTyXTScreens.FileEdit.name,
                 deepLinks = listOf(
                     navDeepLink {
-                        mimeType = "text/plain"
+                        mimeType = mimeTypePlainText
                     },
                     navDeepLink {
                         mimeType = "application/json"
@@ -704,7 +707,7 @@ ${
                         mimeType = "application/xml"
                     },
                     navDeepLink {
-                        mimeType = "text/markdown"
+                        mimeType = mimeTypeMarkdown
                     }
                 ),
             ) {
@@ -714,7 +717,7 @@ ${
                         fileViewModel.updateContent(content)
                         fileViewModel.setContentToUri(uri = fileUiState.uri.value, context = context)
                         when (fileUiState.mimeType.value) {
-                            "text/markdown" -> if (preferencesUiState.renderMarkdown.second.value) {
+                            mimeTypeMarkdown -> if (preferencesUiState.renderMarkdown.second.value) {
                                 fileViewModel.setMarkdownToHtml()
                             }
                         }
