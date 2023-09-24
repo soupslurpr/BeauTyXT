@@ -87,13 +87,13 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
     /**
      * Set a preference to a value and save to Preferences DataStore
      */
-    suspend fun setSetting(key: Preferences.Key<Boolean>, value: Boolean) {
-        dataStore.edit { settings ->
-            settings[key] = value
+    suspend fun setPreference(key: Preferences.Key<Boolean>, value: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[key] = value
         }
     }
 
-    class SettingsViewModelFactory(private val dataStore: DataStore<Preferences>) : ViewModelProvider.Factory {
+    class PreferencesViewModelFactory(private val dataStore: DataStore<Preferences>) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(PreferencesViewModel::class.java)) {
                 @Suppress("UNCHECKED_CAST")

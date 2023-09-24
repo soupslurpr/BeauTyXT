@@ -65,7 +65,10 @@ fun ReviewPrivacyPolicyAndLicense(
             Button(
                 onClick = {
                     coroutineScope.launch {
-                        preferencesViewModel.setSetting(preferencesUiState.acceptedPrivacyPolicyAndLicense.first, checked)
+                        preferencesViewModel.setPreference(
+                            preferencesUiState.acceptedPrivacyPolicyAndLicense.first,
+                            checked
+                        )
                     }
                 },
                 enabled = checked

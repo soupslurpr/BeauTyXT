@@ -58,7 +58,7 @@ fun SettingsScreen(
                 checked = preferencesUiState.pitchBlackBackground.second.value,
                 onCheckedChange = {
                     coroutineScope.launch {
-                        preferencesViewModel.setSetting(preferencesUiState.pitchBlackBackground.first, it)
+                        preferencesViewModel.setPreference(preferencesUiState.pitchBlackBackground.first, it)
                     }
                 }
             )
@@ -73,7 +73,7 @@ fun SettingsScreen(
                 checked = preferencesUiState.renderMarkdown.second.value,
                 onCheckedChange = {
                     coroutineScope.launch {
-                        preferencesViewModel.setSetting(preferencesUiState.renderMarkdown.first, it)
+                        preferencesViewModel.setPreference(preferencesUiState.renderMarkdown.first, it)
                     }
                 }
             )
@@ -88,7 +88,7 @@ fun SettingsScreen(
                 checked = preferencesUiState.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value,
                 onCheckedChange = {
                     coroutineScope.launch {
-                        preferencesViewModel.setSetting(
+                        preferencesViewModel.setPreference(
                             preferencesUiState
                                 .experimentalFeaturePreviewRenderedMarkdownInFullscreen.first, it
                         )
@@ -102,7 +102,10 @@ fun SettingsScreen(
                 checked = preferencesUiState.experimentalFeatureOpenAnyFileType.second.value,
                 onCheckedChange = {
                     coroutineScope.launch {
-                        preferencesViewModel.setSetting(preferencesUiState.experimentalFeatureOpenAnyFileType.first, it)
+                        preferencesViewModel.setPreference(
+                            preferencesUiState.experimentalFeatureOpenAnyFileType.first,
+                            it
+                        )
                     }
                 }
             )
@@ -117,7 +120,7 @@ fun SettingsScreen(
                 checked = preferencesUiState.experimentalFeatureExportMarkdownToDocx.second.value,
                 onCheckedChange = {
                     coroutineScope.launch {
-                        preferencesViewModel.setSetting(
+                        preferencesViewModel.setPreference(
                             preferencesUiState.experimentalFeatureExportMarkdownToDocx
                                 .first, it
                         )

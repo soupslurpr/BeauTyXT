@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val preferencesViewModel: PreferencesViewModel = viewModel(
-                factory = PreferencesViewModel.SettingsViewModelFactory(dataStore)
+                factory = PreferencesViewModel.PreferencesViewModelFactory(dataStore)
             )
             val fileViewModel: FileViewModel = viewModel()
 
