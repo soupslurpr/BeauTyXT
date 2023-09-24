@@ -734,6 +734,7 @@ ${
                     fileViewModel = fileViewModel,
                     fileUiState = fileUiState,
                     previewMarkdownRenderedToHtmlFullscreen = previewMarkdownRenderedToFullscreen,
+                    navigateUp = { navController.navigateUp() }
                 )
             }
             composable(route = BeauTyXTScreens.Settings.name) {

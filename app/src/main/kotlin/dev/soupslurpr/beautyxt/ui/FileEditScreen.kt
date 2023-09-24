@@ -1,5 +1,6 @@
 package dev.soupslurpr.beautyxt.ui
 
+import android.net.Uri
 import android.webkit.WebView
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -32,7 +33,7 @@ import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 @Composable
 fun FileEditScreen(
     name: String,
-    onContentChanged: (String) -> Unit = {},
+    onContentChanged: (String) -> Unit,
     content: String,
     mimeType: String,
     contentConvertedToHtml: String,
@@ -41,6 +42,7 @@ fun FileEditScreen(
     fileViewModel: FileViewModel,
     fileUiState: FileUiState,
     previewMarkdownRenderedToHtmlFullscreen: Boolean,
+    navigateUp: () -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val textColor = colorScheme.onBackground
@@ -55,6 +57,15 @@ fun FileEditScreen(
          * experimental feature while having render markdown at the bottom half of the screen off.*/
         if (preferencesUiState.renderMarkdown.second.value or previewMarkdownRenderedToHtmlFullscreen) {
             fileViewModel.setMarkdownToHtml()
+        }
+    }
+
+    /** This is needed in the event that the FileViewModel or FileUiState is destroyed or cleared so that it
+     * automatically goes to the last screen or start screen instead of viewing a blank "read only" non-existent "file"
+     */
+    LaunchedEffect(null) {
+        if (fileUiState.uri.value == Uri.EMPTY) {
+            navigateUp()
         }
     }
 
