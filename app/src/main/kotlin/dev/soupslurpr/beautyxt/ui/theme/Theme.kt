@@ -12,7 +12,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
 
 /**
@@ -51,7 +50,6 @@ fun BeauTyXTTheme(
     preferencesViewModel: PreferencesViewModel,
     content: @Composable () -> Unit
 ) {
-
     val settingsUiState by preferencesViewModel.uiState.collectAsState()
 
     val pitchBlackBackground = settingsUiState.pitchBlackBackground.second.value and darkTheme
@@ -83,27 +81,6 @@ fun BeauTyXTTheme(
             }
         }
         else -> LightColorScheme
-    }
-
-    val systemUiController = rememberSystemUiController()
-
-    /**
-     * Set the status bar and navigation bar colors to the background color of the app.
-     */
-    if (darkTheme) {
-        systemUiController.setSystemBarsColor(
-            color = colorScheme.background
-        )
-        systemUiController.setNavigationBarColor(
-            color = colorScheme.background
-        )
-    } else {
-        systemUiController.setSystemBarsColor(
-            color = colorScheme.background
-        )
-        systemUiController.setNavigationBarColor(
-            color = colorScheme.background
-        )
     }
 
     MaterialTheme(
