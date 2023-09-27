@@ -13,7 +13,7 @@ data class FileUiState(
     /** content of file */
     val content: MutableState<String> = mutableStateOf(""),
     /** mimeType of file */
-    val mimeType: MutableState<String?> = mutableStateOf(""),
+    val mimeType: MutableState<String> = mutableStateOf(""),
     /** size of file */
     val size: MutableState<Long> = mutableLongStateOf(0L),
     /** Content (markdown) converted to HTML */

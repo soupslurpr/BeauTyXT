@@ -95,8 +95,8 @@ class FileViewModel : ViewModel() {
         return mutableStateOf(content)
     }
 
-    private fun getMimeTypeFromUri(uri: Uri, context: Context): MutableState<String?> {
-        return mutableStateOf(context.contentResolver.getType(uri))
+    private fun getMimeTypeFromUri(uri: Uri, context: Context): MutableState<String> {
+        return mutableStateOf(context.contentResolver.getType(uri).orEmpty())
     }
 
     fun setSizeFromUri(uri: Uri, context: Context) {
