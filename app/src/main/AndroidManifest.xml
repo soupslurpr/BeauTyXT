@@ -14,7 +14,6 @@
         tools:targetApi="34">
         <activity
             android:name="dev.soupslurpr.beautyxt.MainActivity"
-            android:windowSoftInputMode="adjustResize"
             android:exported="true"
             android:theme="@style/Theme.beautyxt">
             <intent-filter>
