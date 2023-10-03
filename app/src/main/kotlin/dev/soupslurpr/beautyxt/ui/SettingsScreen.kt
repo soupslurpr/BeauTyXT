@@ -136,7 +136,7 @@ fun SettingsScreen(
                 description = stringResource(id = R.string.open_beautyxt_website_setting_description),
                 hasIcon = true,
                 onClickIconSetting = {
-                    localUriHandler.openUri("https://beautyxt.soupslurpr.dev")
+                    localUriHandler.openUri("https://beautyxt.app")
                 },
                 icon = {
                     Icon(
