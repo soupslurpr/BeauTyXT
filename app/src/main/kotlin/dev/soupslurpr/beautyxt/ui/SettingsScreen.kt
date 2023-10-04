@@ -80,56 +80,6 @@ fun SettingsScreen(
         }
 
         Column {
-            SettingsCategoryText(category = stringResource(R.string.experimental_features))
-            SettingsItem(
-                name = stringResource(R.string.fullscreen_markdown_render_preview_setting_name),
-                description = stringResource(R.string.fullscreen_markdown_render_preview_setting_description),
-                hasSwitch = true,
-                checked = preferencesUiState.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value,
-                onCheckedChange = {
-                    coroutineScope.launch {
-                        preferencesViewModel.setPreference(
-                            preferencesUiState
-                                .experimentalFeaturePreviewRenderedMarkdownInFullscreen.first, it
-                        )
-                    }
-                }
-            )
-            SettingsItem(
-                name = stringResource(R.string.open_any_file_type_setting_name),
-                description = stringResource(R.string.open_any_file_type_setting_description),
-                hasSwitch = true,
-                checked = preferencesUiState.experimentalFeatureOpenAnyFileType.second.value,
-                onCheckedChange = {
-                    coroutineScope.launch {
-                        preferencesViewModel.setPreference(
-                            preferencesUiState.experimentalFeatureOpenAnyFileType.first,
-                            it
-                        )
-                    }
-                }
-            )
-            SettingsItem(
-                name = stringResource(
-                    R.string.export_markdown_to_docx_setting_name,
-                    stringResource(R.string.md),
-                    stringResource(R.string.docx)
-                ),
-                description = stringResource(R.string.export_markdown_to_docx_setting_description),
-                hasSwitch = true,
-                checked = preferencesUiState.experimentalFeatureExportMarkdownToDocx.second.value,
-                onCheckedChange = {
-                    coroutineScope.launch {
-                        preferencesViewModel.setPreference(
-                            preferencesUiState.experimentalFeatureExportMarkdownToDocx
-                                .first, it
-                        )
-                    }
-                }
-            )
-        }
-
-        Column {
             SettingsCategoryText(category = stringResource(id = R.string.about))
             SettingsItem(
                 name = stringResource(id = R.string.open_beautyxt_website_setting_name),
@@ -193,6 +143,56 @@ fun SettingsScreen(
                         imageVector = Icons.Filled.Info,
                         contentDescription = null
                     )
+                }
+            )
+        }
+
+        Column {
+            SettingsCategoryText(category = stringResource(R.string.experimental_features))
+            SettingsItem(
+                name = stringResource(R.string.fullscreen_markdown_render_preview_setting_name),
+                description = stringResource(R.string.fullscreen_markdown_render_preview_setting_description),
+                hasSwitch = true,
+                checked = preferencesUiState.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value,
+                onCheckedChange = {
+                    coroutineScope.launch {
+                        preferencesViewModel.setPreference(
+                            preferencesUiState
+                                .experimentalFeaturePreviewRenderedMarkdownInFullscreen.first, it
+                        )
+                    }
+                }
+            )
+            SettingsItem(
+                name = stringResource(R.string.open_any_file_type_setting_name),
+                description = stringResource(R.string.open_any_file_type_setting_description),
+                hasSwitch = true,
+                checked = preferencesUiState.experimentalFeatureOpenAnyFileType.second.value,
+                onCheckedChange = {
+                    coroutineScope.launch {
+                        preferencesViewModel.setPreference(
+                            preferencesUiState.experimentalFeatureOpenAnyFileType.first,
+                            it
+                        )
+                    }
+                }
+            )
+            SettingsItem(
+                name = stringResource(
+                    R.string.export_markdown_to_docx_setting_name,
+                    stringResource(R.string.md),
+                    stringResource(R.string.docx)
+                ),
+                description = stringResource(R.string.export_markdown_to_docx_setting_description),
+                hasSwitch = true,
+                checked = preferencesUiState.experimentalFeatureExportMarkdownToDocx.second.value,
+                onCheckedChange = {
+                    coroutineScope.launch {
+                        preferencesViewModel.setPreference(
+                            preferencesUiState.experimentalFeatureExportMarkdownToDocx
+                                .first, it
+                        )
+                    }
                 }
             )
         }
