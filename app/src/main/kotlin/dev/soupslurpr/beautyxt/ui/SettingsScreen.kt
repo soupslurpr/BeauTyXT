@@ -65,10 +65,15 @@ fun SettingsScreen(
         }
 
         Column {
-            SettingsCategoryText(category = stringResource(id = R.string.markdown))
+            SettingsCategoryText(category = stringResource(id = R.string.md))
             SettingsItem(
                 name = stringResource(id = R.string.render_markdown_setting_name),
-                description = stringResource(id = R.string.render_markdown_setting_description),
+                description = stringResource(
+                    id = R.string.render_markdown_setting_description, stringResource(
+                        R.string
+                            .md
+                    )
+                ),
                 hasSwitch = true,
                 checked = preferencesUiState.renderMarkdown.second.value,
                 onCheckedChange = {
@@ -183,7 +188,13 @@ fun SettingsScreen(
                     stringResource(R.string.md),
                     stringResource(R.string.docx)
                 ),
-                description = stringResource(R.string.export_markdown_to_docx_setting_description),
+                description = stringResource(
+                    R.string.export_markdown_to_docx_setting_description, stringResource(
+                        R
+                            .string.md
+                    ),
+                    stringResource(R.string.docx)
+                ),
                 hasSwitch = true,
                 checked = preferencesUiState.experimentalFeatureExportMarkdownToDocx.second.value,
                 onCheckedChange = {
