@@ -82,6 +82,5 @@ dependencies {
     implementation("androidx.compose.material3:material3")
 
     implementation("androidx.datastore:datastore-preferences:1.0.0")
-    implementation("androidx.datastore:datastore-preferences:1.0.0")
     implementation("net.java.dev.jna:jna:5.13.0@aar")
 }
