@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -34,6 +35,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme.typography
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -43,7 +45,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityOptionsCompat
 import androidx.navigation.compose.NavHost
@@ -98,6 +100,7 @@ fun BeauTyXTAppBar(
     onDropDownMenuDismissRequest: () -> Unit,
 
     preferencesUiState: PreferencesUiState,
+
     fileInfoShown: Boolean,
     onFileInfoDialogDismissRequest: () -> Unit,
     onFileInfoDropdownMenuItemClicked: () -> Unit,
@@ -117,7 +120,12 @@ fun BeauTyXTAppBar(
     saveAsDialogConfirmButton: @Composable () -> Unit,
     saveAsDialogDismissButton: @Composable () -> Unit,
 
-    onPrintExportDropdownMenuItemClicked: () -> Unit,
+    printOptionsDialogShown: Boolean,
+    onPrintOptionsDialogDismissRequest: () -> Unit,
+    onPrintOptionsExportDropdownMenuItemClicked: () -> Unit,
+    printOptionsDialogContent: @Composable () -> Unit,
+    printOptionsDialogConfirmButton: @Composable () -> Unit,
+    printOptionsDialogDismissButton: @Composable () -> Unit,
 
     readOnly: Boolean,
     mimeType: String?,
@@ -220,7 +228,7 @@ fun BeauTyXTAppBar(
                                 style = dropDownMenuItemTextStyle
                             )
                         },
-                        onClick = { onPrintExportDropdownMenuItemClicked() },
+                        onClick = { onPrintOptionsExportDropdownMenuItemClicked() },
                         leadingIcon = {
                             Icon(painter = painterResource(R.drawable.baseline_print_24), contentDescription = null)
                         }
@@ -268,6 +276,23 @@ fun BeauTyXTAppBar(
                         },
                         text = {
                             fileInfoDialogContent()
+                        }
+                    )
+                }
+                if (printOptionsDialogShown) {
+                    AlertDialog(
+                        onDismissRequest = onPrintOptionsDialogDismissRequest,
+                        confirmButton = printOptionsDialogConfirmButton,
+                        dismissButton = printOptionsDialogDismissButton,
+                        title = {
+                            Text(
+                                text = stringResource(R.string.print_options),
+                                style = typography.headlineSmall,
+                                modifier = Modifier.align(Alignment.CenterVertically)
+                            )
+                        },
+                        text = {
+                            printOptionsDialogContent()
                         }
                     )
                 }
@@ -357,13 +382,15 @@ fun BeauTyXTApp(
         }
     }
 
-    var fileInfoDialogShown by remember { mutableStateOf(false) }
+    var fileInfoDialogShown by rememberSaveable { mutableStateOf(false) }
 
-    var dropDownMenuShown by remember { mutableStateOf(false) }
+    var dropDownMenuShown by rememberSaveable { mutableStateOf(false) }
 
-    var exportDropdownMenuShown by remember { mutableStateOf(false) }
+    var exportDropdownMenuShown by rememberSaveable { mutableStateOf(false) }
 
-    var saveAsShown by remember { mutableStateOf(false) }
+    var saveAsShown by rememberSaveable { mutableStateOf(false) }
+
+    var printOptionsDialogShown by rememberSaveable { mutableStateOf(false) }
 
     val saveAsHtmlFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypeHtml)) {
         if (it != null) {
@@ -390,7 +417,23 @@ fun BeauTyXTApp(
 
     Scaffold(
         topBar = {
-            var saveAsSelectedFileType by remember { mutableStateOf("") }
+            var saveAsSelectedFileType by rememberSaveable { mutableStateOf("") }
+
+            var marginLeft by rememberSaveable { mutableStateOf("1") }
+            val isLeftMarginError = marginLeft.toFloatOrNull() == null
+
+            var marginRight by rememberSaveable { mutableStateOf("1") }
+            val isRightMarginError = marginRight.toFloatOrNull() == null
+
+            var marginTop by rememberSaveable { mutableStateOf("1") }
+            val isTopMarginError = marginTop.toFloatOrNull() == null
+
+            var marginBottom by rememberSaveable { mutableStateOf("1") }
+            val isBottomMarginError = marginBottom.toFloatOrNull() == null
+
+            val isPrintOptionsConfirmButtonEnabled = !isLeftMarginError and !isRightMarginError and !isTopMarginError
+                .and(!isBottomMarginError)
+
             BeauTyXTAppBar(
                 currentScreen = currentScreen,
                 canNavigateBack = navController.previousBackStackEntry != null,
@@ -417,7 +460,7 @@ fun BeauTyXTApp(
                     ) {
                         FileInfoDialogItem(info = stringResource(id = R.string.name), value = fileUiState.name.value)
                         FileInfoDialogItem(info = stringResource(id = R.string.size), value = fileUiState.size.value.toString() + " " + stringResource(id = R.string.bytes))
-                        fileUiState.mimeType.value?.let {
+                        fileUiState.mimeType.value.let {
                             FileInfoDialogItem(info = stringResource(id = R.string.mime_type),
                                 it
                             )
@@ -531,44 +574,152 @@ fun BeauTyXTApp(
                     )
                 },
 
-                onPrintExportDropdownMenuItemClicked = {
+                printOptionsDialogShown = printOptionsDialogShown,
+                onPrintOptionsDialogDismissRequest = { printOptionsDialogShown = false },
+                onPrintOptionsExportDropdownMenuItemClicked = {
+                    printOptionsDialogShown = !printOptionsDialogShown
+                    dropDownMenuShown = false
                     exportDropdownMenuShown = false
-                    var mWebView: WebView? = null
-
-                    // Create a WebView object specifically for printing
-                    val webView = WebView(context)
-                    webView.webViewClient = object : WebViewClient() {
-
-                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
-
-                        override fun onPageFinished(view: WebView, url: String) {
-                            createWebPrintJob(view)
-                            mWebView = null
-                        }
-                        fun createWebPrintJob(webView: WebView) {
-
-                            // Get a PrintManager instance
-                            (context.getSystemService(Context.PRINT_SERVICE) as? PrintManager)?.let { printManager ->
-
-                                val jobName = fileUiState.name.value.substringBeforeLast(".")
-
-                                // Get a print adapter instance
-                                val printAdapter = webView.createPrintDocumentAdapter(jobName)
-
-                                // Create a print job with name and adapter instance
-                                printManager.print(
-                                    jobName,
-                                    printAdapter,
-                                    PrintAttributes.Builder().build()
+                },
+                printOptionsDialogContent = {
+                    Column(
+                        modifier = Modifier
+                            .selectableGroup()
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = marginLeft,
+                            onValueChange = {
+                                marginLeft = it.trim()
+                            },
+                            label = {
+                                Text(
+                                    text = stringResource(R.string.left_margin) + if (isLeftMarginError) {
+                                        " " + stringResource(R.string.invalid_size)
+                                    } else {
+                                        ""
+                                    }
                                 )
-                            }
-                        }
+                            },
+                            prefix = {
+                                Text(
+                                    text = stringResource(R.string.inches) + ":"
+                                )
+                            },
+                            isError = isLeftMarginError,
+                            keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
+                        )
+                        OutlinedTextField(
+                            value = marginRight,
+                            onValueChange = {
+                                marginRight = it.trim()
+                            },
+                            label = {
+                                Text(
+                                    text = stringResource(R.string.right_margin) + if (isRightMarginError) {
+                                        " " + stringResource(R.string.invalid_size)
+                                    } else {
+                                        ""
+                                    }
+                                )
+                            },
+                            prefix = {
+                                Text(
+                                    text = stringResource(R.string.inches) + ":"
+                                )
+                            },
+                            isError = isRightMarginError,
+                            keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number)
+                        )
+                        OutlinedTextField(
+                            value = marginTop,
+                            onValueChange = {
+                                marginTop = it.trim()
+                            },
+                            label = {
+                                Text(
+                                    text = stringResource(R.string.top_margin) + if (isTopMarginError) {
+                                        " " + stringResource(R.string.invalid_size)
+                                    } else {
+                                        ""
+                                    }
+                                )
+                            },
+                            prefix = {
+                                Text(
+                                    text = stringResource(R.string.inches) + ":"
+                                )
+                            },
+                            isError = isTopMarginError,
+                            keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number)
+                        )
+                        OutlinedTextField(
+                            value = marginBottom,
+                            onValueChange = {
+                                marginBottom = it.trim()
+                            },
+                            label = {
+                                Text(
+                                    text = stringResource(R.string.bottom_margin) + if (isBottomMarginError) {
+                                        " " + stringResource(R.string.invalid_size)
+                                    } else {
+                                        ""
+                                    }
+                                )
+                            },
+                            prefix = {
+                                Text(
+                                    text = stringResource(R.string.inches) + ":"
+                                )
+                            },
+                            isError = isBottomMarginError,
+                            keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number)
+                        )
                     }
+                },
+                printOptionsDialogConfirmButton = {
+                    TextButton(
+                        onClick = {
+                            var mWebView: WebView? = null
 
-                    when (fileUiState.mimeType.value) {
-                        mimeTypeMarkdown -> {
-                            fileViewModel.setMarkdownToHtml()
-                            val htmlDocument = """
+                            // Create a WebView object specifically for printing
+                            val webView = WebView(context)
+                            webView.webViewClient = object : WebViewClient() {
+
+                                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) =
+                                    false
+
+                                override fun onPageFinished(view: WebView, url: String) {
+                                    createWebPrintJob(view)
+                                    mWebView = null
+                                }
+
+                                fun createWebPrintJob(webView: WebView) {
+
+                                    // Get a PrintManager instance
+                                    (context.getSystemService(Context.PRINT_SERVICE) as? PrintManager)?.let { printManager ->
+
+                                        val jobName = fileUiState.name.value.substringBeforeLast(".")
+
+                                        // Get a print adapter instance
+                                        val printAdapter = webView.createPrintDocumentAdapter(jobName)
+
+                                        // Create a print job with name and adapter instance
+                                        printManager.print(
+                                            jobName,
+                                            printAdapter,
+                                            PrintAttributes.Builder().build()
+                                        )
+                                    }
+                                }
+                            }
+
+                            when (fileUiState.mimeType.value) {
+                                mimeTypeMarkdown -> {
+                                    fileViewModel.setMarkdownToHtml()
+                                    val htmlDocument = """
                                 <!DOCTYPE html>
                                 <html>
                                     <head>
@@ -581,6 +732,12 @@ fun BeauTyXTApp(
                                             table, th, td {
                                                 border: thin solid;
                                             }
+                                            @page {
+                                                margin-left: ${marginLeft}in;
+                                                margin-right: ${marginRight}in;
+                                                margin-top: ${marginTop}in;
+                                                margin-bottom: ${marginBottom}in;
+                                            }
                                         </style>
                                     </head>
                                     <body>
@@ -588,10 +745,11 @@ fun BeauTyXTApp(
                                     </body>
                                 </html>
                             """.trimIndent()
-                            webView.loadData(htmlDocument, mimeTypeHtml, "UTF-8")
-                        }
-                        else -> {
-                            val htmlDocument = """
+                                    webView.loadData(htmlDocument, mimeTypeHtml, "UTF-8")
+                                }
+
+                                else -> {
+                                    val htmlDocument = """
                                 <!DOCTYPE html>
                                 <html>
                                     <head>
@@ -600,29 +758,56 @@ fun BeauTyXTApp(
                                         <style>
                                             html {
                                                 overflow-wrap: anywhere;
-                                                white-space: pre-wrap;
+                                            }
+                                            @page {
+                                                margin-left: ${marginLeft}in;
+                                                margin-right: ${marginRight}in;
+                                                margin-top: ${marginTop}in;
+                                                margin-bottom: ${marginBottom}in;
                                             }
                                         </style>
                                     </head>
                                     <body>
 ${
-                                fileUiState.content.value
-                                    .replace("&", "&amp;")
-                                    .replace("<", "&lt;")
-                                    .replace(">", "&gt;")
-                                    .replace("%", "%25")
-                                    .replace("#", "%23")
-                            }
+                                        fileUiState.content.value
+                                            .replace("&", "&amp;")
+                                            .replace("<", "&lt;")
+                                            .replace(">", "&gt;")
+                                            .replace("%", "%25")
+                                            .replace("#", "%23")
+                                            .replace("\n", "<br>")
+                                    }
                                     </body>
                                 </html>
                             """.trimIndent()
-                            webView.loadData(htmlDocument, mimeTypeHtml, "UTF-8")
-                        }
-                    }
+                                    webView.loadData(htmlDocument, mimeTypeHtml, "UTF-8")
+                                }
+                            }
 
-                    // Keep a reference to WebView object until you pass the PrintDocumentAdapter
-                    // to the PrintManager
-                    mWebView = webView
+                            // Keep a reference to WebView object until you pass the PrintDocumentAdapter
+                            // to the PrintManager
+                            mWebView = webView
+                            printOptionsDialogShown = false
+                        },
+                        enabled = isPrintOptionsConfirmButtonEnabled,
+                        content = {
+                            Text(
+                                text = stringResource(R.string.confirm_)
+                            )
+                        }
+                    )
+                },
+                printOptionsDialogDismissButton = {
+                    TextButton(
+                        onClick = {
+                            printOptionsDialogShown = false
+                        },
+                        content = {
+                            Text(
+                                text = stringResource(R.string.cancel)
+                            )
+                        }
+                    )
                 },
 
                 readOnly = fileUiState.readOnly.value,
@@ -727,7 +912,7 @@ ${
                         fileViewModel.setCharacterCount()
                     },
                     content = fileUiState.content.value,
-                    mimeType = fileUiState.mimeType.value!!,
+                    mimeType = fileUiState.mimeType.value,
                     contentConvertedToHtml = fileUiState.contentConvertedToHtml.value,
                     readOnly = fileUiState.readOnly.value,
                     preferencesUiState = preferencesUiState,

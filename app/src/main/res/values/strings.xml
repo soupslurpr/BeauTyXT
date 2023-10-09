@@ -66,4 +66,11 @@
     <string name="print" tools:ignore="MissingTranslation">Print</string>
     <string name="words" tools:ignore="MissingTranslation">Words</string>
     <string name="characters" tools:ignore="MissingTranslation">Characters</string>
+    <string name="print_options" tools:ignore="MissingTranslation">Print Options</string>
+    <string name="left_margin" tools:ignore="MissingTranslation">Left Margin</string>
+    <string name="invalid_size" tools:ignore="MissingTranslation">INVALID SIZE</string>
+    <string name="inches" tools:ignore="MissingTranslation">Inches</string>
+    <string name="right_margin" tools:ignore="MissingTranslation">Right Margin</string>
+    <string name="top_margin" tools:ignore="MissingTranslation">Top Margin</string>
+    <string name="bottom_margin" tools:ignore="MissingTranslation">Bottom Margin</string>
 </resources>
