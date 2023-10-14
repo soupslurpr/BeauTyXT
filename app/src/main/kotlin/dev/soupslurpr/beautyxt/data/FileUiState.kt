@@ -16,7 +16,7 @@ data class FileUiState(
     val mimeType: MutableState<String> = mutableStateOf(""),
     /** size of file */
     val size: MutableState<Long> = mutableLongStateOf(0L),
-    /** Content (markdown) converted to HTML */
+    /** content converted to HTML */
     val contentConvertedToHtml: MutableState<String> = mutableStateOf(""),
     /** whether the file is read only or not */
     val readOnly: MutableState<Boolean> = mutableStateOf(true),
