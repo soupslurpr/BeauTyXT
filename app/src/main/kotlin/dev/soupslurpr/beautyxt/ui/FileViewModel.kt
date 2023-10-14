@@ -127,7 +127,7 @@ class FileViewModel : ViewModel() {
                 FileOutputStream(it.fileDescriptor).use {
                     it.write(
                         (uiState.value.content.value)
-                            .toByteArray()
+                            .toByteArray(charset = Charsets.UTF_8)
                     )
                 }
             }
@@ -216,7 +216,7 @@ class FileViewModel : ViewModel() {
                 FileOutputStream(it.fileDescriptor).use {
                     it.write(
                         (html)
-                            .toByteArray()
+                            .toByteArray(charset = Charsets.UTF_8)
                     )
                 }
             }
