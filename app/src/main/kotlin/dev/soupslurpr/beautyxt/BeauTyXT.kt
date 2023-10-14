@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
@@ -53,6 +54,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityOptionsCompat
@@ -126,6 +128,13 @@ fun BeauTyXTAppBar(
     printOptionsDialogContent: @Composable () -> Unit,
     printOptionsDialogConfirmButton: @Composable () -> Unit,
     printOptionsDialogDismissButton: @Composable () -> Unit,
+
+    deleteFileDialogShown: Boolean,
+    onDeleteFileDialogDismissRequest: () -> Unit,
+    onDeleteFileDropdownMenuItemClicked: () -> Unit,
+    deleteFileDialogContent: @Composable () -> Unit,
+    deleteFileDialogConfirmButton: @Composable () -> Unit,
+    deleteFileDialogDismissButton: @Composable () -> Unit,
 
     readOnly: Boolean,
     mimeType: String?,
@@ -202,6 +211,19 @@ fun BeauTyXTAppBar(
                         leadingIcon = {
                             Icon(painter = painterResource(R.drawable.baseline_output_24), contentDescription = null)
                         }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.delete_file),
+                                style = dropDownMenuItemTextStyle
+                            )
+                        },
+                        onClick = { onDeleteFileDropdownMenuItemClicked() },
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Filled.Delete, contentDescription = null)
+                        },
+                        enabled = !readOnly,
                     )
                     DropdownMenuItem(
                         text = {
@@ -293,6 +315,23 @@ fun BeauTyXTAppBar(
                         },
                         text = {
                             printOptionsDialogContent()
+                        }
+                    )
+                }
+                if (deleteFileDialogShown) {
+                    AlertDialog(
+                        onDismissRequest = onDeleteFileDialogDismissRequest,
+                        confirmButton = deleteFileDialogConfirmButton,
+                        dismissButton = deleteFileDialogDismissButton,
+                        title = {
+                            Text(
+                                text = stringResource(R.string.delete_file),
+                                style = typography.headlineSmall,
+                                modifier = Modifier.align(Alignment.CenterVertically)
+                            )
+                        },
+                        text = {
+                            deleteFileDialogContent()
                         }
                     )
                 }
@@ -391,6 +430,8 @@ fun BeauTyXTApp(
     var saveAsShown by rememberSaveable { mutableStateOf(false) }
 
     var printOptionsDialogShown by rememberSaveable { mutableStateOf(false) }
+
+    var deleteFileDialogShown by rememberSaveable { mutableStateOf(false) }
 
     val saveAsHtmlFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypeHtml)) {
         if (it != null) {
@@ -801,6 +842,49 @@ ${
                     TextButton(
                         onClick = {
                             printOptionsDialogShown = false
+                        },
+                        content = {
+                            Text(
+                                text = stringResource(R.string.cancel)
+                            )
+                        }
+                    )
+                },
+
+                deleteFileDialogShown = deleteFileDialogShown,
+                onDeleteFileDialogDismissRequest = { deleteFileDialogShown = false },
+                onDeleteFileDropdownMenuItemClicked = {
+                    deleteFileDialogShown = !deleteFileDialogShown
+                    dropDownMenuShown = false
+                    exportDropdownMenuShown = false
+                },
+                deleteFileDialogContent = {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = stringResource(R.string.delete_file_dialog_text),
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                },
+                deleteFileDialogConfirmButton = {
+                    TextButton(
+                        onClick = {
+                            fileViewModel.deleteFile(context = context)
+                            deleteFileDialogShown = false
+                        },
+                        content = {
+                            Text(
+                                text = stringResource(R.string.confirm_)
+                            )
+                        }
+                    )
+                },
+                deleteFileDialogDismissButton = {
+                    TextButton(
+                        onClick = {
+                            deleteFileDialogShown = false
                         },
                         content = {
                             Text(

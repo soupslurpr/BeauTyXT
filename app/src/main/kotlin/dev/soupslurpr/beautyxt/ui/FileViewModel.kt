@@ -3,6 +3,7 @@ package dev.soupslurpr.beautyxt.ui
 import android.content.Context
 import android.database.Cursor
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -164,6 +165,14 @@ class FileViewModel : ViewModel() {
         _uiState.value.characterCount.value = characterCount
     }
 
+    /** Delete the currently open file */
+    fun deleteFile(context: Context) {
+        // Set it to read only first so that there is no chance of the user trying to edit the file after its deleted.
+        setReadOnly(true)
+        DocumentsContract.deleteDocument(context.contentResolver, uiState.value.uri.value)
+        clearUiState()
+    }
+
     /** Set uiState to default values */
     fun clearUiState() {
         _uiState.value = FileUiState()
@@ -225,7 +234,6 @@ class FileViewModel : ViewModel() {
 //        }
     }
 
-    @OptIn(ExperimentalUnsignedTypes::class)
     fun saveAsDocx(uri: Uri, context: Context) {
         val docx = when (uiState.value.mimeType.value) {
             mimeTypeMarkdown -> {

@@ -64,7 +64,7 @@ fun FileEditScreen(
     /** This is needed in the event that the FileViewModel or FileUiState is destroyed or cleared so that it
      * automatically goes to the last screen or start screen instead of viewing a blank "read only" non-existent "file"
      */
-    LaunchedEffect(null) {
+    LaunchedEffect(fileUiState.uri.value) {
         if (fileUiState.uri.value == Uri.EMPTY) {
             navigateUp()
         }
