@@ -11,10 +11,10 @@ docx-rs = "0.4.7"
 ego-tree = "0.6.2"
 markdown = "1.0.0-alpha.14"
 scraper = "0.17.1"
-uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "eb8ab92b53084ddd05fc6658d057b38e31a1c4c7" }
+uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "48b1f51f6e5406cab20f502f535b30a589a5b140" }
 
 [build-dependencies]
-uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "eb8ab92b53084ddd05fc6658d057b38e31a1c4c7", features = ["build"] }
+uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "48b1f51f6e5406cab20f502f535b30a589a5b140", features = ["build"] }
 
 [lib]
 crate-type = ["cdylib"]
