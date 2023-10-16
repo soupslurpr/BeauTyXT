@@ -115,19 +115,19 @@ fun BeauTyXTAppBar(
     onExportDropdownMenuItemClicked: () -> Unit,
     onExportDropdownMenuDismissRequest: () -> Unit,
 
-    saveAsShown: Boolean,
-    onSaveAsDialogDismissRequest: () -> Unit,
-    onSaveAsExportDropdownMenuItemClicked: () -> Unit,
-    saveAsDialogContent: @Composable () -> Unit,
-    saveAsDialogConfirmButton: @Composable () -> Unit,
-    saveAsDialogDismissButton: @Composable () -> Unit,
-
     printOptionsDialogShown: Boolean,
     onPrintOptionsDialogDismissRequest: () -> Unit,
     onPrintOptionsExportDropdownMenuItemClicked: () -> Unit,
     printOptionsDialogContent: @Composable () -> Unit,
     printOptionsDialogConfirmButton: @Composable () -> Unit,
     printOptionsDialogDismissButton: @Composable () -> Unit,
+
+    saveAsShown: Boolean,
+    onSaveAsDialogDismissRequest: () -> Unit,
+    onSaveAsExportDropdownMenuItemClicked: () -> Unit,
+    saveAsDialogContent: @Composable () -> Unit,
+    saveAsDialogConfirmButton: @Composable () -> Unit,
+    saveAsDialogDismissButton: @Composable () -> Unit,
 
     deleteFileDialogShown: Boolean,
     onDeleteFileDialogDismissRequest: () -> Unit,
@@ -137,7 +137,7 @@ fun BeauTyXTAppBar(
     deleteFileDialogDismissButton: @Composable () -> Unit,
 
     readOnly: Boolean,
-    mimeType: String?,
+    mimeType: String,
     onPreviewMarkdownRenderedToFullscreenButtonClicked: () -> Unit,
     modifier: Modifier
 ) {
@@ -349,7 +349,7 @@ fun FileInfoDialogItem(info: String, value: String) {
 }
 
 @Composable
-fun SaveAsDialogItem(
+fun FileTypeSelectionDialogItem(
     fileTypeText: String,
     selected: Boolean,
     onClickRadioButton: () -> Unit
@@ -540,80 +540,6 @@ fun BeauTyXTApp(
                     exportDropdownMenuShown = !exportDropdownMenuShown
                 },
                 onExportDropdownMenuDismissRequest = { exportDropdownMenuShown = false },
-
-                saveAsShown = saveAsShown,
-                onSaveAsDialogDismissRequest = { saveAsShown = false },
-                onSaveAsExportDropdownMenuItemClicked = {
-                    saveAsSelectedFileType = ""
-                    saveAsShown = !saveAsShown
-                    dropDownMenuShown = false
-                    exportDropdownMenuShown = false
-                },
-                saveAsDialogContent = {
-                    Column(
-                        modifier = Modifier
-                            .selectableGroup()
-                            .fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(24.dp)
-                    ) {
-                        if (fileUiState.mimeType.value == mimeTypeMarkdown) {
-                            SaveAsDialogItem(
-                                fileTypeText = stringResource(R.string.html),
-                                selected = saveAsSelectedFileType == mimeTypeHtml,
-                                onClickRadioButton = {
-                                    saveAsSelectedFileType = mimeTypeHtml
-                                }
-                            )
-                        }
-                        if ((preferencesUiState.experimentalFeatureExportMarkdownToDocx.second.value and
-                                    (fileUiState.mimeType.value == mimeTypeMarkdown)) or
-                            (fileUiState.mimeType.value != mimeTypeMarkdown)
-                        ) {
-                            SaveAsDialogItem(
-                                fileTypeText = stringResource(R.string.docx),
-                                selected = saveAsSelectedFileType == mimeTypeDocx,
-                                onClickRadioButton = {
-                                    saveAsSelectedFileType = mimeTypeDocx
-                                }
-                            )
-                        }
-                    }
-
-                },
-                saveAsDialogConfirmButton = {
-                    TextButton(
-                        onClick = {
-                            when (saveAsSelectedFileType) {
-                                mimeTypeHtml -> saveAsHtmlFileLauncher.launch(
-                                    fileUiState.name.value.substringBeforeLast(".")
-                                )
-
-                                mimeTypeDocx -> saveAsDocxFileLauncher.launch(
-                                    fileUiState.name.value.substringBeforeLast(".")
-                                )
-                            }
-                            saveAsShown = false
-                        },
-                        enabled = saveAsSelectedFileType != "",
-                        content = {
-                            Text(
-                                text = stringResource(R.string.confirm_)
-                            )
-                        }
-                    )
-                },
-                saveAsDialogDismissButton = {
-                    TextButton(
-                        onClick = {
-                            saveAsShown = false
-                        },
-                        content = {
-                            Text(
-                                text = stringResource(R.string.cancel)
-                            )
-                        }
-                    )
-                },
 
                 printOptionsDialogShown = printOptionsDialogShown,
                 onPrintOptionsDialogDismissRequest = { printOptionsDialogShown = false },
@@ -842,6 +768,80 @@ ${
                     TextButton(
                         onClick = {
                             printOptionsDialogShown = false
+                        },
+                        content = {
+                            Text(
+                                text = stringResource(R.string.cancel)
+                            )
+                        }
+                    )
+                },
+
+                saveAsShown = saveAsShown,
+                onSaveAsDialogDismissRequest = { saveAsShown = false },
+                onSaveAsExportDropdownMenuItemClicked = {
+                    saveAsSelectedFileType = ""
+                    saveAsShown = !saveAsShown
+                    dropDownMenuShown = false
+                    exportDropdownMenuShown = false
+                },
+                saveAsDialogContent = {
+                    Column(
+                        modifier = Modifier
+                            .selectableGroup()
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(24.dp)
+                    ) {
+                        if (fileUiState.mimeType.value == mimeTypeMarkdown) {
+                            FileTypeSelectionDialogItem(
+                                fileTypeText = stringResource(R.string.html),
+                                selected = saveAsSelectedFileType == mimeTypeHtml,
+                                onClickRadioButton = {
+                                    saveAsSelectedFileType = mimeTypeHtml
+                                }
+                            )
+                        }
+                        if ((preferencesUiState.experimentalFeatureExportMarkdownToDocx.second.value and
+                                    (fileUiState.mimeType.value == mimeTypeMarkdown)) or
+                            (fileUiState.mimeType.value != mimeTypeMarkdown)
+                        ) {
+                            FileTypeSelectionDialogItem(
+                                fileTypeText = stringResource(R.string.docx),
+                                selected = saveAsSelectedFileType == mimeTypeDocx,
+                                onClickRadioButton = {
+                                    saveAsSelectedFileType = mimeTypeDocx
+                                }
+                            )
+                        }
+                    }
+
+                },
+                saveAsDialogConfirmButton = {
+                    TextButton(
+                        onClick = {
+                            when (saveAsSelectedFileType) {
+                                mimeTypeHtml -> saveAsHtmlFileLauncher.launch(
+                                    fileUiState.name.value.substringBeforeLast(".")
+                                )
+
+                                mimeTypeDocx -> saveAsDocxFileLauncher.launch(
+                                    fileUiState.name.value.substringBeforeLast(".")
+                                )
+                            }
+                            saveAsShown = false
+                        },
+                        enabled = saveAsSelectedFileType != "",
+                        content = {
+                            Text(
+                                text = stringResource(R.string.confirm_)
+                            )
+                        }
+                    )
+                },
+                saveAsDialogDismissButton = {
+                    TextButton(
+                        onClick = {
+                            saveAsShown = false
                         },
                         content = {
                             Text(
