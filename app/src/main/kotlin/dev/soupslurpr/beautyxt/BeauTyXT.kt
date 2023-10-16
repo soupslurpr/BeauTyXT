@@ -134,6 +134,13 @@ fun BeauTyXTAppBar(
 
     onShareExportDropdownMenuItemClicked: () -> Unit,
 
+    shareAsDialogShown: Boolean,
+    onShareAsDialogDismissRequest: () -> Unit,
+    onShareAsExportDropdownMenuItemClicked: () -> Unit,
+    shareAsDialogContent: @Composable () -> Unit,
+    shareAsDialogConfirmButton: @Composable () -> Unit,
+    shareAsDialogDismissButton: @Composable () -> Unit,
+
     deleteFileDialogShown: Boolean,
     onDeleteFileDialogDismissRequest: () -> Unit,
     onDeleteFileDropdownMenuItemClicked: () -> Unit,
@@ -284,6 +291,18 @@ fun BeauTyXTAppBar(
                             Icon(imageVector = Icons.Filled.Share, contentDescription = null)
                         }
                     )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.share_as),
+                                style = dropDownMenuItemTextStyle
+                            )
+                        },
+                        onClick = { onShareAsExportDropdownMenuItemClicked() },
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Filled.Share, contentDescription = null)
+                        }
+                    )
                 }
                 if (fileInfoShown) {
                     AlertDialog(
@@ -332,6 +351,23 @@ fun BeauTyXTAppBar(
                         },
                         text = {
                             saveAsDialogContent()
+                        }
+                    )
+                }
+                if (shareAsDialogShown) {
+                    AlertDialog(
+                        onDismissRequest = onShareAsDialogDismissRequest,
+                        confirmButton = shareAsDialogConfirmButton,
+                        dismissButton = shareAsDialogDismissButton,
+                        title = {
+                            Text(
+                                text = stringResource(R.string.share_as),
+                                style = typography.headlineSmall,
+                                modifier = Modifier.align(Alignment.CenterVertically)
+                            )
+                        },
+                        text = {
+                            shareAsDialogContent()
                         }
                     )
                 }
@@ -446,7 +482,9 @@ fun BeauTyXTApp(
 
     var printOptionsDialogShown by rememberSaveable { mutableStateOf(false) }
 
-    var saveAsShown by rememberSaveable { mutableStateOf(false) }
+    var saveAsDialogShown by rememberSaveable { mutableStateOf(false) }
+
+    var shareAsDialogShown by rememberSaveable { mutableStateOf(false) }
 
     var deleteFileDialogShown by rememberSaveable { mutableStateOf(false) }
 
@@ -476,6 +514,8 @@ fun BeauTyXTApp(
     Scaffold(
         topBar = {
             var saveAsSelectedFileType by rememberSaveable { mutableStateOf("") }
+
+            var shareAsSelectedFileType by rememberSaveable { mutableStateOf("") }
 
             var marginLeft by rememberSaveable { mutableStateOf("1") }
             val isLeftMarginError = marginLeft.toFloatOrNull() == null
@@ -794,11 +834,13 @@ ${
                     )
                 },
 
-                saveAsDialogShown = saveAsShown,
-                onSaveAsDialogDismissRequest = { saveAsShown = false },
-                onSaveAsExportDropdownMenuItemClicked = {
+                saveAsDialogShown = saveAsDialogShown,
+                onSaveAsDialogDismissRequest = {
+                    saveAsDialogShown = false
                     saveAsSelectedFileType = ""
-                    saveAsShown = !saveAsShown
+                },
+                onSaveAsExportDropdownMenuItemClicked = {
+                    saveAsDialogShown = !saveAsDialogShown
                     dropDownMenuShown = false
                     exportDropdownMenuShown = false
                 },
@@ -844,7 +886,8 @@ ${
                                     fileUiState.name.value.substringBeforeLast(".")
                                 )
                             }
-                            saveAsShown = false
+                            saveAsDialogShown = false
+                            saveAsSelectedFileType = ""
                         },
                         enabled = saveAsSelectedFileType != "",
                         content = {
@@ -857,7 +900,8 @@ ${
                 saveAsDialogDismissButton = {
                     TextButton(
                         onClick = {
-                            saveAsShown = false
+                            saveAsDialogShown = false
+                            saveAsSelectedFileType = ""
                         },
                         content = {
                             Text(
@@ -903,6 +947,115 @@ ${
 
                     dropDownMenuShown = false
                     exportDropdownMenuShown = false
+                },
+
+                shareAsDialogShown = shareAsDialogShown,
+                onShareAsDialogDismissRequest = {
+                    shareAsDialogShown = false
+                    shareAsSelectedFileType = ""
+                },
+                onShareAsExportDropdownMenuItemClicked = {
+                    shareAsDialogShown = !shareAsDialogShown
+                    dropDownMenuShown = false
+                    exportDropdownMenuShown = false
+                },
+                shareAsDialogContent = {
+                    Column(
+                        modifier = Modifier
+                            .selectableGroup()
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(24.dp)
+                    ) {
+                        when (fileUiState.mimeType.value) {
+                            mimeTypePlainText -> {
+                                FileTypeSelectionDialogItem(
+                                    fileTypeText = stringResource(R.string.txt),
+                                    selected = shareAsSelectedFileType == mimeTypePlainText,
+                                    onClickRadioButton = {
+                                        shareAsSelectedFileType = mimeTypePlainText
+                                    }
+                                )
+                            }
+
+                            mimeTypeMarkdown -> {
+                                FileTypeSelectionDialogItem(
+                                    fileTypeText = stringResource(R.string.md),
+                                    selected = shareAsSelectedFileType == mimeTypeMarkdown,
+                                    onClickRadioButton = {
+                                        shareAsSelectedFileType = mimeTypeMarkdown
+                                    }
+                                )
+                            }
+
+                            else -> {
+                                FileTypeSelectionDialogItem(
+                                    fileTypeText = fileUiState.mimeType.value,
+                                    selected = shareAsSelectedFileType == fileUiState.mimeType.value,
+                                    onClickRadioButton = {
+                                        shareAsSelectedFileType = fileUiState.mimeType.value
+                                    }
+                                )
+                            }
+                        }
+                    }
+                },
+                shareAsDialogConfirmButton = {
+                    TextButton(
+                        onClick = {
+                            var sendIntent = Intent()
+
+                            sendIntent = when (fileUiState.mimeType.value) {
+                                mimeTypePlainText -> {
+                                    sendIntent.apply {
+                                        action = Intent.ACTION_SEND
+                                        putExtra(Intent.EXTRA_STREAM, fileUiState.uri.value)
+                                        type = mimeTypePlainText
+                                    }
+                                }
+
+                                mimeTypeMarkdown -> {
+                                    sendIntent.apply {
+                                        action = Intent.ACTION_SEND
+                                        putExtra(Intent.EXTRA_STREAM, fileUiState.uri.value)
+                                        type = mimeTypeMarkdown
+                                    }
+                                }
+
+                                else -> {
+                                    sendIntent.apply {
+                                        action = Intent.ACTION_SEND
+                                        putExtra(Intent.EXTRA_STREAM, fileUiState.uri.value)
+                                        type = fileUiState.mimeType.value
+                                    }
+                                }
+                            }
+
+                            val shareIntent = Intent.createChooser(sendIntent, null)
+                            startActivity(context, shareIntent, ActivityOptionsCompat.makeBasic().toBundle())
+
+                            shareAsDialogShown = false
+                            shareAsSelectedFileType = ""
+                        },
+                        enabled = shareAsSelectedFileType != "",
+                        content = {
+                            Text(
+                                text = stringResource(R.string.confirm_)
+                            )
+                        }
+                    )
+                },
+                shareAsDialogDismissButton = {
+                    TextButton(
+                        onClick = {
+                            shareAsDialogShown = false
+                            shareAsSelectedFileType = ""
+                        },
+                        content = {
+                            Text(
+                                text = stringResource(R.string.cancel)
+                            )
+                        }
+                    )
                 },
 
                 deleteFileDialogShown = deleteFileDialogShown,
