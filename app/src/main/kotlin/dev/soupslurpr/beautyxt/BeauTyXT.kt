@@ -122,7 +122,7 @@ fun BeauTyXTAppBar(
     printOptionsDialogConfirmButton: @Composable () -> Unit,
     printOptionsDialogDismissButton: @Composable () -> Unit,
 
-    saveAsShown: Boolean,
+    saveAsDialogShown: Boolean,
     onSaveAsDialogDismissRequest: () -> Unit,
     onSaveAsExportDropdownMenuItemClicked: () -> Unit,
     saveAsDialogContent: @Composable () -> Unit,
@@ -268,7 +268,7 @@ fun BeauTyXTAppBar(
                         }
                     )
                 }
-                if (saveAsShown) {
+                if (saveAsDialogShown) {
                     AlertDialog(
                         onDismissRequest = onSaveAsDialogDismissRequest,
                         confirmButton = saveAsDialogConfirmButton,
@@ -777,7 +777,7 @@ ${
                     )
                 },
 
-                saveAsShown = saveAsShown,
+                saveAsDialogShown = saveAsShown,
                 onSaveAsDialogDismissRequest = { saveAsShown = false },
                 onSaveAsExportDropdownMenuItemClicked = {
                     saveAsSelectedFileType = ""
