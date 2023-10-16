@@ -1,6 +1,7 @@
 package dev.soupslurpr.beautyxt
 
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.print.PrintAttributes
 import android.print.PrintManager
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -58,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityOptionsCompat
+import androidx.core.content.ContextCompat.startActivity
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -128,6 +131,8 @@ fun BeauTyXTAppBar(
     saveAsDialogContent: @Composable () -> Unit,
     saveAsDialogConfirmButton: @Composable () -> Unit,
     saveAsDialogDismissButton: @Composable () -> Unit,
+
+    onShareExportDropdownMenuItemClicked: () -> Unit,
 
     deleteFileDialogShown: Boolean,
     onDeleteFileDialogDismissRequest: () -> Unit,
@@ -267,21 +272,16 @@ fun BeauTyXTAppBar(
                             Icon(painter = painterResource(R.drawable.baseline_save_as_24), contentDescription = null)
                         }
                     )
-                }
-                if (saveAsDialogShown) {
-                    AlertDialog(
-                        onDismissRequest = onSaveAsDialogDismissRequest,
-                        confirmButton = saveAsDialogConfirmButton,
-                        dismissButton = saveAsDialogDismissButton,
-                        title = {
+                    DropdownMenuItem(
+                        text = {
                             Text(
-                                text = stringResource(R.string.save_as),
-                                style = typography.headlineSmall,
-                                modifier = Modifier.align(Alignment.CenterVertically)
+                                text = stringResource(R.string.share),
+                                style = dropDownMenuItemTextStyle
                             )
                         },
-                        text = {
-                            saveAsDialogContent()
+                        onClick = { onShareExportDropdownMenuItemClicked() },
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Filled.Share, contentDescription = null)
                         }
                     )
                 }
@@ -315,6 +315,23 @@ fun BeauTyXTAppBar(
                         },
                         text = {
                             printOptionsDialogContent()
+                        }
+                    )
+                }
+                if (saveAsDialogShown) {
+                    AlertDialog(
+                        onDismissRequest = onSaveAsDialogDismissRequest,
+                        confirmButton = saveAsDialogConfirmButton,
+                        dismissButton = saveAsDialogDismissButton,
+                        title = {
+                            Text(
+                                text = stringResource(R.string.save_as),
+                                style = typography.headlineSmall,
+                                modifier = Modifier.align(Alignment.CenterVertically)
+                            )
+                        },
+                        text = {
+                            saveAsDialogContent()
                         }
                     )
                 }
@@ -427,9 +444,9 @@ fun BeauTyXTApp(
 
     var exportDropdownMenuShown by rememberSaveable { mutableStateOf(false) }
 
-    var saveAsShown by rememberSaveable { mutableStateOf(false) }
-
     var printOptionsDialogShown by rememberSaveable { mutableStateOf(false) }
+
+    var saveAsShown by rememberSaveable { mutableStateOf(false) }
 
     var deleteFileDialogShown by rememberSaveable { mutableStateOf(false) }
 
@@ -814,7 +831,6 @@ ${
                             )
                         }
                     }
-
                 },
                 saveAsDialogConfirmButton = {
                     TextButton(
@@ -849,6 +865,44 @@ ${
                             )
                         }
                     )
+                },
+
+                onShareExportDropdownMenuItemClicked = {
+                    var sendIntent = Intent()
+
+                    sendIntent = when (fileUiState.mimeType.value) {
+                        mimeTypePlainText -> {
+                            sendIntent.apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, fileUiState.content.value)
+                                type = mimeTypePlainText
+                            }
+                        }
+
+                        mimeTypeMarkdown -> {
+                            sendIntent.apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, fileUiState.content.value)
+                                fileViewModel.setMarkdownToHtml()
+                                putExtra(Intent.EXTRA_HTML_TEXT, fileUiState.contentConvertedToHtml.value)
+                                type = mimeTypeMarkdown
+                            }
+                        }
+
+                        else -> {
+                            sendIntent.apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, fileUiState.content.value)
+                                type = fileUiState.mimeType.value
+                            }
+                        }
+                    }
+
+                    val shareIntent = Intent.createChooser(sendIntent, null)
+                    startActivity(context, shareIntent, ActivityOptionsCompat.makeBasic().toBundle())
+
+                    dropDownMenuShown = false
+                    exportDropdownMenuShown = false
                 },
 
                 deleteFileDialogShown = deleteFileDialogShown,

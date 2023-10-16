@@ -79,4 +79,5 @@
     <string name="delete_file" tools:ignore="MissingTranslation">Delete File</string>
     <string name="delete_file_dialog_text" tools:ignore="MissingTranslation">Are you really sure you want to do
         this?\nDeleted files are irrecoverable (gone forever!)</string>
+    <string name="share" tools:ignore="MissingTranslation">Share</string>
 </resources>
