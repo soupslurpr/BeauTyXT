@@ -178,7 +178,7 @@ class FileViewModel : ViewModel() {
         _uiState.value = FileUiState()
     }
 
-    fun saveAsHtml(uri: Uri, context: Context) {
+    fun exportAsHtml(uri: Uri, context: Context) {
         setMarkdownToHtml()
         val html = """
                                 <!DOCTYPE html>
@@ -234,7 +234,7 @@ class FileViewModel : ViewModel() {
 //        }
     }
 
-    fun saveAsDocx(uri: Uri, context: Context) {
+    fun exportAsDocx(uri: Uri, context: Context) {
         val docx = when (uiState.value.mimeType.value) {
             mimeTypeMarkdown -> {
                 markdownToDocx(uiState.value.content.value)

@@ -125,12 +125,12 @@ fun BeauTyXTAppBar(
     printOptionsDialogConfirmButton: @Composable () -> Unit,
     printOptionsDialogDismissButton: @Composable () -> Unit,
 
-    saveAsDialogShown: Boolean,
-    onSaveAsDialogDismissRequest: () -> Unit,
-    onSaveAsExportDropdownMenuItemClicked: () -> Unit,
-    saveAsDialogContent: @Composable () -> Unit,
-    saveAsDialogConfirmButton: @Composable () -> Unit,
-    saveAsDialogDismissButton: @Composable () -> Unit,
+    exportAsDialogShown: Boolean,
+    onExportAsDialogDismissRequest: () -> Unit,
+    onExportAsExportDropdownMenuItemClicked: () -> Unit,
+    exportAsDialogContent: @Composable () -> Unit,
+    exportAsDialogConfirmButton: @Composable () -> Unit,
+    exportAsDialogDismissButton: @Composable () -> Unit,
 
     onShareExportDropdownMenuItemClicked: () -> Unit,
 
@@ -221,7 +221,10 @@ fun BeauTyXTAppBar(
                         },
                         onClick = { onExportDropdownMenuItemClicked() },
                         leadingIcon = {
-                            Icon(painter = painterResource(R.drawable.baseline_output_24), contentDescription = null)
+                            Icon(
+                                painter = painterResource(R.drawable.baseline_export_notes_24),
+                                contentDescription = null
+                            )
                         }
                     )
                     DropdownMenuItem(
@@ -270,11 +273,11 @@ fun BeauTyXTAppBar(
                     DropdownMenuItem(
                         text = {
                             Text(
-                                text = stringResource(R.string.save_as),
+                                text = stringResource(R.string.export_as),
                                 style = dropDownMenuItemTextStyle
                             )
                         },
-                        onClick = { onSaveAsExportDropdownMenuItemClicked() },
+                        onClick = { onExportAsExportDropdownMenuItemClicked() },
                         leadingIcon = {
                             Icon(painter = painterResource(R.drawable.baseline_save_as_24), contentDescription = null)
                         }
@@ -337,20 +340,20 @@ fun BeauTyXTAppBar(
                         }
                     )
                 }
-                if (saveAsDialogShown) {
+                if (exportAsDialogShown) {
                     AlertDialog(
-                        onDismissRequest = onSaveAsDialogDismissRequest,
-                        confirmButton = saveAsDialogConfirmButton,
-                        dismissButton = saveAsDialogDismissButton,
+                        onDismissRequest = onExportAsDialogDismissRequest,
+                        confirmButton = exportAsDialogConfirmButton,
+                        dismissButton = exportAsDialogDismissButton,
                         title = {
                             Text(
-                                text = stringResource(R.string.save_as),
+                                text = stringResource(R.string.export_as),
                                 style = typography.headlineSmall,
                                 modifier = Modifier.align(Alignment.CenterVertically)
                             )
                         },
                         text = {
-                            saveAsDialogContent()
+                            exportAsDialogContent()
                         }
                     )
                 }
@@ -482,21 +485,21 @@ fun BeauTyXTApp(
 
     var printOptionsDialogShown by rememberSaveable { mutableStateOf(false) }
 
-    var saveAsDialogShown by rememberSaveable { mutableStateOf(false) }
+    var exportAsDialogShown by rememberSaveable { mutableStateOf(false) }
 
     var shareAsDialogShown by rememberSaveable { mutableStateOf(false) }
 
     var deleteFileDialogShown by rememberSaveable { mutableStateOf(false) }
 
-    val saveAsHtmlFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypeHtml)) {
+    val exportAsHtmlFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypeHtml)) {
         if (it != null) {
-            fileViewModel.saveAsHtml(it, context)
+            fileViewModel.exportAsHtml(it, context)
         }
     }
 
-    val saveAsDocxFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypeDocx)) {
+    val exportAsDocxFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypeDocx)) {
         if (it != null) {
-            fileViewModel.saveAsDocx(it, context)
+            fileViewModel.exportAsDocx(it, context)
         }
     }
     var previewMarkdownRenderedToFullscreen by rememberSaveable { mutableStateOf(false) }
@@ -513,7 +516,7 @@ fun BeauTyXTApp(
 
     Scaffold(
         topBar = {
-            var saveAsSelectedFileType by rememberSaveable { mutableStateOf("") }
+            var exportAsSelectedFileType by rememberSaveable { mutableStateOf("") }
 
             var shareAsSelectedFileType by rememberSaveable { mutableStateOf("") }
 
@@ -834,17 +837,17 @@ ${
                     )
                 },
 
-                saveAsDialogShown = saveAsDialogShown,
-                onSaveAsDialogDismissRequest = {
-                    saveAsDialogShown = false
-                    saveAsSelectedFileType = ""
+                exportAsDialogShown = exportAsDialogShown,
+                onExportAsDialogDismissRequest = {
+                    exportAsDialogShown = false
+                    exportAsSelectedFileType = ""
                 },
-                onSaveAsExportDropdownMenuItemClicked = {
-                    saveAsDialogShown = !saveAsDialogShown
+                onExportAsExportDropdownMenuItemClicked = {
+                    exportAsDialogShown = !exportAsDialogShown
                     dropDownMenuShown = false
                     exportDropdownMenuShown = false
                 },
-                saveAsDialogContent = {
+                exportAsDialogContent = {
                     Column(
                         modifier = Modifier
                             .selectableGroup()
@@ -854,9 +857,9 @@ ${
                         if (fileUiState.mimeType.value == mimeTypeMarkdown) {
                             FileTypeSelectionDialogItem(
                                 fileTypeText = stringResource(R.string.html),
-                                selected = saveAsSelectedFileType == mimeTypeHtml,
+                                selected = exportAsSelectedFileType == mimeTypeHtml,
                                 onClickRadioButton = {
-                                    saveAsSelectedFileType = mimeTypeHtml
+                                    exportAsSelectedFileType = mimeTypeHtml
                                 }
                             )
                         }
@@ -866,30 +869,30 @@ ${
                         ) {
                             FileTypeSelectionDialogItem(
                                 fileTypeText = stringResource(R.string.docx),
-                                selected = saveAsSelectedFileType == mimeTypeDocx,
+                                selected = exportAsSelectedFileType == mimeTypeDocx,
                                 onClickRadioButton = {
-                                    saveAsSelectedFileType = mimeTypeDocx
+                                    exportAsSelectedFileType = mimeTypeDocx
                                 }
                             )
                         }
                     }
                 },
-                saveAsDialogConfirmButton = {
+                exportAsDialogConfirmButton = {
                     TextButton(
                         onClick = {
-                            when (saveAsSelectedFileType) {
-                                mimeTypeHtml -> saveAsHtmlFileLauncher.launch(
+                            when (exportAsSelectedFileType) {
+                                mimeTypeHtml -> exportAsHtmlFileLauncher.launch(
                                     fileUiState.name.value.substringBeforeLast(".")
                                 )
 
-                                mimeTypeDocx -> saveAsDocxFileLauncher.launch(
+                                mimeTypeDocx -> exportAsDocxFileLauncher.launch(
                                     fileUiState.name.value.substringBeforeLast(".")
                                 )
                             }
-                            saveAsDialogShown = false
-                            saveAsSelectedFileType = ""
+                            exportAsDialogShown = false
+                            exportAsSelectedFileType = ""
                         },
-                        enabled = saveAsSelectedFileType != "",
+                        enabled = exportAsSelectedFileType != "",
                         content = {
                             Text(
                                 text = stringResource(R.string.confirm_)
@@ -897,11 +900,11 @@ ${
                         }
                     )
                 },
-                saveAsDialogDismissButton = {
+                exportAsDialogDismissButton = {
                     TextButton(
                         onClick = {
-                            saveAsDialogShown = false
-                            saveAsSelectedFileType = ""
+                            exportAsDialogShown = false
+                            exportAsSelectedFileType = ""
                         },
                         content = {
                             Text(

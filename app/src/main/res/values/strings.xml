@@ -42,7 +42,7 @@
     <string name="render_markdown_setting_description" tools:ignore="MissingTranslation">Render %1$s files on the bottom side of the screen</string>
     <string name="md" tools:ignore="MissingTranslation">Markdown (.md &amp; .markdown)</string>
     <string name="export" tools:ignore="MissingTranslation">Export</string>
-    <string name="save_as" tools:ignore="MissingTranslation">Save As</string>
+    <string name="export_as" tools:ignore="MissingTranslation">Export As</string>
     <string name="cancel" tools:ignore="MissingTranslation">Cancel</string>
     <string name="confirm_" tools:ignore="MissingTranslation">Confirm</string>
     <string name="html" tools:ignore="MissingTranslation">HTML (.html)</string>
