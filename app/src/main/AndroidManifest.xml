@@ -52,5 +52,9 @@
                 <data android:mimeType="text/markdown"/>
             </intent-filter>
         </activity>
+
+        <meta-data
+            android:name="android.webkit.WebView.MetricsOptOut"
+            android:value="true" />
     </application>
 </manifest>
