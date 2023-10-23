@@ -51,14 +51,14 @@ version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a0fc7dcf8bd4ead96b1d36b41df47c14beedf7b0301fc543d8f2384e66a2ec0"
 dependencies = [
-    "askama_parser",
+ "askama_parser",
  "basic-toml",
  "mime",
  "mime_guess",
  "proc-macro2",
  "quote",
  "serde",
-    "syn 2.0.38",
+ "syn 2.0.38",
 ]
 
 [[package]]
@@ -73,7 +73,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c268a96e01a4c47c8c5c2472aaa570707e006a875ea63e819f75474ceedaf7b4"
 dependencies = [
-    "nom",
+ "nom",
 ]
 
 [[package]]
@@ -238,7 +238,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13b588ba4ac1a99f7f2964d24b3d896ddc6bf847ee3855dbd4366f058cfcd331"
 dependencies = [
  "quote",
-    "syn 2.0.38",
+ "syn 2.0.38",
 ]
 
 [[package]]
@@ -724,7 +724,7 @@ dependencies = [
  "phf_shared 0.11.2",
  "proc-macro2",
  "quote",
-    "syn 2.0.38",
+ "syn 2.0.38",
 ]
 
 [[package]]
@@ -853,8 +853,8 @@ checksum = "aaac441002f822bc9705a681810a4dd2963094b9ca0ddc41cb963a4c189189ea"
 dependencies = [
  "aho-corasick",
  "memchr",
-    "regex-automata 0.4.2",
-    "regex-syntax 0.8.2",
+ "regex-automata 0.4.2",
+ "regex-syntax 0.8.2",
 ]
 
 [[package]]
@@ -874,7 +874,7 @@ checksum = "5011c7e263a695dc8ca064cddb722af1be54e517a280b12a5356f98366899e5d"
 dependencies = [
  "aho-corasick",
  "memchr",
-    "regex-syntax 0.8.2",
+ "regex-syntax 0.8.2",
 ]
 
 [[package]]
@@ -947,7 +947,7 @@ checksum = "1db149f81d46d2deba7cd3c50772474707729550221e69588478ebf9ada425ae"
 dependencies = [
  "proc-macro2",
  "quote",
-    "syn 2.0.38",
+ "syn 2.0.38",
 ]
 
 [[package]]
@@ -995,7 +995,7 @@ checksum = "1e48d1f918009ce3145511378cf68d613e3b3d9137d67272562080d68a2b32d5"
 dependencies = [
  "proc-macro2",
  "quote",
-    "syn 2.0.38",
+ "syn 2.0.38",
 ]
 
 [[package]]
@@ -1133,7 +1133,7 @@ checksum = "10712f02019e9288794769fba95cd6847df9874d49d871d062172f9dd41bc4cc"
 dependencies = [
  "proc-macro2",
  "quote",
-    "syn 2.0.38",
+ "syn 2.0.38",
 ]
 
 [[package]]
@@ -1185,7 +1185,7 @@ checksum = "34704c8d6ebcbc939824180af020566b01a7c01f80641264eba0999f6c2b6be7"
 dependencies = [
  "proc-macro2",
  "quote",
-    "syn 2.0.38",
+ "syn 2.0.38",
 ]
 
 [[package]]
@@ -1303,7 +1303,7 @@ version = "0.24.3"
 source = "git+https://github.com/mozilla/uniffi-rs?rev=48b1f51f6e5406cab20f502f535b30a589a5b140#48b1f51f6e5406cab20f502f535b30a589a5b140"
 dependencies = [
  "quote",
-    "syn 2.0.38",
+ "syn 2.0.38",
 ]
 
 [[package]]
@@ -1315,7 +1315,7 @@ dependencies = [
  "bytes",
  "camino",
  "log",
-    "once_cell",
+ "once_cell",
  "oneshot",
  "paste",
  "static_assertions",
@@ -1333,7 +1333,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
-    "syn 2.0.38",
+ "syn 2.0.38",
  "toml",
  "uniffi_build",
  "uniffi_meta",
