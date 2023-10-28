@@ -17,12 +17,13 @@ package dev.soupslurpr.beautyxt
 // compile the Rust component. The easiest way to ensure this is to bundle the Kotlin
 // helpers directly inline like we're doing here.
 
-import com.sun.jna.IntegerType
 import com.sun.jna.Library
+import com.sun.jna.IntegerType
 import com.sun.jna.Native
 import com.sun.jna.Pointer
 import com.sun.jna.Structure
-import com.sun.jna.ptr.ByReference
+import com.sun.jna.Callback
+import com.sun.jna.ptr.*
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.CharBuffer
@@ -175,7 +176,7 @@ interface FfiConverter<KotlinType, FfiType> {
 }
 
 // FfiConverter that uses `RustBuffer` as the FfiType
-interface FfiConverterRustBuffer<KotlinType>: FfiConverter<KotlinType, RustBuffer.ByValue> {
+interface FfiConverterRustBuffer<KotlinType> : FfiConverter<KotlinType, RustBuffer.ByValue> {
     override fun lift(value: RustBuffer.ByValue) = liftFromRustBuffer(value)
     override fun lower(value: KotlinType) = lowerIntoRustBuffer(value)
 }
@@ -331,9 +332,14 @@ internal class UniFfiHandleMap<T: Any> {
         return map.get(handle)
     }
 
-    fun remove(handle: USize) {
-        map.remove(handle)
+    fun remove(handle: USize): T? {
+        return map.remove(handle)
     }
+}
+
+// FFI type for Rust future continuations
+internal interface UniFffiRustFutureContinuationCallbackType : Callback {
+    fun callback(continuationHandle: USize, pollResult: Short)
 }
 
 // Contains loading, initialization code,
@@ -383,11 +389,222 @@ internal interface _UniFFILib : Library {
     ): Unit
     fun ffi_beautyxt_rs_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
+
+    fun ffi_beautyxt_rs_rust_future_continuation_callback_set(
+        `callback`: UniFffiRustFutureContinuationCallbackType,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_poll_u8(
+        `handle`: Pointer, `uniffiCallback`: USize,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_cancel_u8(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_free_u8(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_complete_u8(
+        `handle`: Pointer, _uniffi_out_err: RustCallStatus,
+    ): Byte
+
+    fun ffi_beautyxt_rs_rust_future_poll_i8(
+        `handle`: Pointer, `uniffiCallback`: USize,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_cancel_i8(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_free_i8(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_complete_i8(
+        `handle`: Pointer, _uniffi_out_err: RustCallStatus,
+    ): Byte
+
+    fun ffi_beautyxt_rs_rust_future_poll_u16(
+        `handle`: Pointer, `uniffiCallback`: USize,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_cancel_u16(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_free_u16(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_complete_u16(
+        `handle`: Pointer, _uniffi_out_err: RustCallStatus,
+    ): Short
+
+    fun ffi_beautyxt_rs_rust_future_poll_i16(
+        `handle`: Pointer, `uniffiCallback`: USize,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_cancel_i16(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_free_i16(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_complete_i16(
+        `handle`: Pointer, _uniffi_out_err: RustCallStatus,
+    ): Short
+
+    fun ffi_beautyxt_rs_rust_future_poll_u32(
+        `handle`: Pointer, `uniffiCallback`: USize,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_cancel_u32(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_free_u32(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_complete_u32(
+        `handle`: Pointer, _uniffi_out_err: RustCallStatus,
+    ): Int
+
+    fun ffi_beautyxt_rs_rust_future_poll_i32(
+        `handle`: Pointer, `uniffiCallback`: USize,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_cancel_i32(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_free_i32(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_complete_i32(
+        `handle`: Pointer, _uniffi_out_err: RustCallStatus,
+    ): Int
+
+    fun ffi_beautyxt_rs_rust_future_poll_u64(
+        `handle`: Pointer, `uniffiCallback`: USize,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_cancel_u64(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_free_u64(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_complete_u64(
+        `handle`: Pointer, _uniffi_out_err: RustCallStatus,
+    ): Long
+
+    fun ffi_beautyxt_rs_rust_future_poll_i64(
+        `handle`: Pointer, `uniffiCallback`: USize,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_cancel_i64(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_free_i64(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_complete_i64(
+        `handle`: Pointer, _uniffi_out_err: RustCallStatus,
+    ): Long
+
+    fun ffi_beautyxt_rs_rust_future_poll_f32(
+        `handle`: Pointer, `uniffiCallback`: USize,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_cancel_f32(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_free_f32(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_complete_f32(
+        `handle`: Pointer, _uniffi_out_err: RustCallStatus,
+    ): Float
+
+    fun ffi_beautyxt_rs_rust_future_poll_f64(
+        `handle`: Pointer, `uniffiCallback`: USize,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_cancel_f64(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_free_f64(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_complete_f64(
+        `handle`: Pointer, _uniffi_out_err: RustCallStatus,
+    ): Double
+
+    fun ffi_beautyxt_rs_rust_future_poll_pointer(
+        `handle`: Pointer, `uniffiCallback`: USize,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_cancel_pointer(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_free_pointer(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_complete_pointer(
+        `handle`: Pointer, _uniffi_out_err: RustCallStatus,
+    ): Pointer
+
+    fun ffi_beautyxt_rs_rust_future_poll_rust_buffer(
+        `handle`: Pointer, `uniffiCallback`: USize,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_cancel_rust_buffer(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_free_rust_buffer(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_complete_rust_buffer(
+        `handle`: Pointer, _uniffi_out_err: RustCallStatus,
+    ): RustBuffer.ByValue
+
+    fun ffi_beautyxt_rs_rust_future_poll_void(
+        `handle`: Pointer, `uniffiCallback`: USize,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_cancel_void(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_free_void(
+        `handle`: Pointer,
+    ): Unit
+
+    fun ffi_beautyxt_rs_rust_future_complete_void(
+        `handle`: Pointer, _uniffi_out_err: RustCallStatus,
+    ): Unit
     fun uniffi_beautyxt_rs_checksum_func_markdown_to_docx(
     ): Short
     fun uniffi_beautyxt_rs_checksum_func_markdown_to_html(
     ): Short
-
     fun uniffi_beautyxt_rs_checksum_func_plain_text_to_docx(
     ): Short
     fun ffi_beautyxt_rs_uniffi_contract_version(
@@ -397,7 +614,7 @@ internal interface _UniFFILib : Library {
 
 private fun uniffiCheckContractApiVersion(lib: _UniFFILib) {
     // Get the bindings contract version from our ComponentInterface
-    val bindings_contract_version = 23
+    val bindings_contract_version = 24
     // Get the scaffolding contract version by calling the into the dylib
     val scaffolding_contract_version = lib.ffi_beautyxt_rs_uniffi_contract_version()
     if (bindings_contract_version != scaffolding_contract_version) {
@@ -418,10 +635,12 @@ private fun uniffiCheckApiChecksums(lib: _UniFFILib) {
     }
 }
 
+// Async support
+
 // Public interface members begin here.
 
 
-object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
+object FfiConverterString : FfiConverter<String, RustBuffer.ByValue> {
     // Note: we don't inherit from FfiConverterRustBuffer, because we use a
     // special encoding when lowering/lifting.  We can use `RustBuffer.len` to
     // store our length and avoid writing it out to the buffer.
@@ -475,7 +694,7 @@ object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     }
 }
 
-object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
+object FfiConverterByteArray : FfiConverterRustBuffer<ByteArray> {
     override fun read(buf: ByteBuffer): ByteArray {
         val len = buf.getInt()
         val byteArr = ByteArray(len)
@@ -493,7 +712,7 @@ object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
 
 fun `markdownToDocx`(`markdown`: String): ByteArray {
     return FfiConverterByteArray.lift(
-    rustCall { _status ->
+        rustCall { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_markdown_to_docx(FfiConverterString.lower(`markdown`),_status)
 })
 }
@@ -501,7 +720,7 @@ fun `markdownToDocx`(`markdown`: String): ByteArray {
 
 fun `markdownToHtml`(`markdown`: String): String {
     return FfiConverterString.lift(
-    rustCall { _status ->
+        rustCall { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_markdown_to_html(FfiConverterString.lower(`markdown`),_status)
 })
 }
