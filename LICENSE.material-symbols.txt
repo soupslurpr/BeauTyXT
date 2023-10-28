@@ -1,3 +1,13 @@
+A copy of the license for the following files only:
+
+    app/src/main/res/drawable/baseline_export_notes_24.xml
+    app/src/main/res/drawable/baseline_file_open_24.xml
+    app/src/main/res/drawable/baseline_output_24.xml
+    app/src/main/res/drawable/baseline_preview_24.xml
+    app/src/main/res/drawable/baseline_print_24.xml
+    app/src/main/res/drawable/baseline_save_as_24.xml
+
+is provided below.
 
                                  Apache License
                            Version 2.0, January 2004
