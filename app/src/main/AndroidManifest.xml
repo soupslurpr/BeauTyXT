@@ -13,6 +13,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.beautyxt"
         android:enableOnBackInvokedCallback="true"
+        android:memtagMode="async"
         tools:targetApi="34">
         <activity
             android:name="dev.soupslurpr.beautyxt.MainActivity"
