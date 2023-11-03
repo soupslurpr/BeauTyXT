@@ -74,6 +74,9 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.0")
     implementation("androidx.navigation:navigation-compose:2.7.4")
     implementation("com.google.android.material:material:1.10.0")
+    implementation("io.coil-kt:coil:2.5.0")
+    implementation("io.coil-kt:coil-compose:2.5.0")
+    implementation("io.coil-kt:coil-svg:2.5.0")
 
     implementation(platform("androidx.compose:compose-bom:2023.10.01"))
     implementation("androidx.compose.ui:ui")
