@@ -2,6 +2,7 @@ package dev.soupslurpr.beautyxt
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.print.PrintAttributes
 import android.print.PrintManager
@@ -9,6 +10,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.annotation.StringRes
@@ -61,6 +63,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityOptionsCompat
 import androidx.core.content.ContextCompat.startActivity
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -80,17 +83,20 @@ import dev.soupslurpr.beautyxt.ui.PrivacyPolicyScreen
 import dev.soupslurpr.beautyxt.ui.RustLibraryCreditsScreen
 import dev.soupslurpr.beautyxt.ui.SettingsScreen
 import dev.soupslurpr.beautyxt.ui.StartupScreen
+import dev.soupslurpr.beautyxt.ui.TypstProjectScreen
+import dev.soupslurpr.beautyxt.ui.TypstProjectViewModel
 import java.time.LocalDateTime
 import kotlin.random.Random
 
 enum class BeauTyXTScreens(@StringRes val title: Int) {
     Start(title = R.string.app_name),
     FileEdit(title = R.string.file_editor),
+    TypstProject(title = R.string.typst_project),
     Settings(title = R.string.settings),
     License(title = R.string.license),
     PrivacyPolicy(title = R.string.privacy_policy),
     Credits(title = R.string.credits),
-    RustLibraryCredits(title = R.string.rust_library_credits)
+    RustLibraryCredits(title = R.string.rust_library_credits);
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -451,6 +457,8 @@ fun BeauTyXTApp(
 
     val fileUiState by fileViewModel.uiState.collectAsState()
 
+    val typstProjectViewModel: TypstProjectViewModel = viewModel()
+
     val preferencesUiState by preferencesViewModel.uiState.collectAsState()
 
     val openFileLauncher = rememberLauncherForActivityResult(contract = OpenDocument()) {
@@ -474,6 +482,19 @@ fun BeauTyXTApp(
             fileViewModel.setReadOnly(false)
             fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
+        }
+    }
+
+    val openTypstProjectLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts
+            .OpenDocumentTree()
+    ) { projectFolderUri ->
+        if (projectFolderUri != null) {
+            typstProjectViewModel.openProject(projectFolderUri, context)
+            navController.navigate(BeauTyXTScreens.TypstProject.name)
+//            fileViewModel.setReadOnly(false)
+//            fileViewModel.setUri(uri, context)
+//            navController.navigate(BeauTyXTScreens.FileEdit.name)
         }
     }
 
@@ -1137,6 +1158,9 @@ ${
                             ActivityOptionsCompat.makeBasic(),
                         )
                     },
+                    onOpenTypstButtonClicked = {
+                        openTypstProjectLauncher.launch(Uri.EMPTY)
+                    },
                     onOpenAnyButtonClicked = {
                         openFileLauncher.launch(
                             arrayOf("*/*"),
@@ -1214,6 +1238,11 @@ ${
                     fileUiState = fileUiState,
                     previewMarkdownRenderedToHtmlFullscreen = previewMarkdownRenderedToFullscreen,
                     navigateUp = { navController.navigateUp() }
+                )
+            }
+            composable(route = BeauTyXTScreens.TypstProject.name) {
+                TypstProjectScreen(
+                    typstProjectViewModel = typstProjectViewModel
                 )
             }
             composable(route = BeauTyXTScreens.Settings.name) {

@@ -81,4 +81,5 @@
         this?\nDeleted files are irrecoverable (gone forever!)</string>
     <string name="share" tools:ignore="MissingTranslation">Share</string>
     <string name="share_as" tools:ignore="MissingTranslation">Share As</string>
+    <string name="typst_project">Typst Project</string>
 </resources>

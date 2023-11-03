@@ -17,12 +17,11 @@ package dev.soupslurpr.beautyxt
 // compile the Rust component. The easiest way to ensure this is to bundle the Kotlin
 // helpers directly inline like we're doing here.
 
-import com.sun.jna.Library
 import com.sun.jna.IntegerType
+import com.sun.jna.Library
 import com.sun.jna.Native
 import com.sun.jna.Pointer
 import com.sun.jna.Structure
-import com.sun.jna.Callback
 import com.sun.jna.ptr.*
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -338,7 +337,7 @@ internal class UniFfiHandleMap<T: Any> {
 }
 
 // FFI type for Rust future continuations
-internal interface UniFffiRustFutureContinuationCallbackType : Callback {
+internal interface UniFffiRustFutureContinuationCallbackType : com.sun.jna.Callback {
     fun callback(continuationHandle: USize, pollResult: Short)
 }
 
@@ -373,6 +372,21 @@ internal interface _UniFFILib : Library {
         }
     }
 
+    fun uniffi_beautyxt_rs_fn_func_add_project_files(
+        `newProjectFiles`: RustBuffer.ByValue, _uniffi_out_err: RustCallStatus,
+    ): Unit
+
+    fun uniffi_beautyxt_rs_fn_func_clear_project_files(
+        _uniffi_out_err: RustCallStatus,
+    ): Unit
+
+    fun uniffi_beautyxt_rs_fn_func_get_project_file_text(
+        `path`: RustBuffer.ByValue, _uniffi_out_err: RustCallStatus,
+    ): RustBuffer.ByValue
+
+    fun uniffi_beautyxt_rs_fn_func_initialize_world(
+        _uniffi_out_err: RustCallStatus,
+    ): Unit
     fun uniffi_beautyxt_rs_fn_func_markdown_to_docx(`markdown`: RustBuffer.ByValue,_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_beautyxt_rs_fn_func_markdown_to_html(`markdown`: RustBuffer.ByValue,_uniffi_out_err: RustCallStatus, 
@@ -380,6 +394,26 @@ internal interface _UniFFILib : Library {
 
     fun uniffi_beautyxt_rs_fn_func_plain_text_to_docx(
         `plainText`: RustBuffer.ByValue, _uniffi_out_err: RustCallStatus,
+    ): RustBuffer.ByValue
+
+    fun uniffi_beautyxt_rs_fn_func_remove_project_files(
+        `projectFilesPathsToRemove`: RustBuffer.ByValue, _uniffi_out_err: RustCallStatus,
+    ): Unit
+
+    fun uniffi_beautyxt_rs_fn_func_set_main_project_file(
+        `mainProjectFilePathAndFd`: RustBuffer.ByValue, _uniffi_out_err: RustCallStatus,
+    ): Unit
+
+    fun uniffi_beautyxt_rs_fn_func_test_get_main_pdf(
+        _uniffi_out_err: RustCallStatus,
+    ): RustBuffer.ByValue
+
+    fun uniffi_beautyxt_rs_fn_func_test_get_main_svg(
+        _uniffi_out_err: RustCallStatus,
+    ): RustBuffer.ByValue
+
+    fun uniffi_beautyxt_rs_fn_func_update_project_file(
+        `newText`: RustBuffer.ByValue, `path`: RustBuffer.ByValue, _uniffi_out_err: RustCallStatus,
     ): RustBuffer.ByValue
     fun ffi_beautyxt_rs_rustbuffer_alloc(`size`: Int,_uniffi_out_err: RustCallStatus, 
     ): RustBuffer.ByValue
@@ -601,11 +635,38 @@ internal interface _UniFFILib : Library {
     fun ffi_beautyxt_rs_rust_future_complete_void(
         `handle`: Pointer, _uniffi_out_err: RustCallStatus,
     ): Unit
+
+    fun uniffi_beautyxt_rs_checksum_func_add_project_files(
+    ): Short
+
+    fun uniffi_beautyxt_rs_checksum_func_clear_project_files(
+    ): Short
+
+    fun uniffi_beautyxt_rs_checksum_func_get_project_file_text(
+    ): Short
+
+    fun uniffi_beautyxt_rs_checksum_func_initialize_world(
+    ): Short
     fun uniffi_beautyxt_rs_checksum_func_markdown_to_docx(
     ): Short
     fun uniffi_beautyxt_rs_checksum_func_markdown_to_html(
     ): Short
     fun uniffi_beautyxt_rs_checksum_func_plain_text_to_docx(
+    ): Short
+
+    fun uniffi_beautyxt_rs_checksum_func_remove_project_files(
+    ): Short
+
+    fun uniffi_beautyxt_rs_checksum_func_set_main_project_file(
+    ): Short
+
+    fun uniffi_beautyxt_rs_checksum_func_test_get_main_pdf(
+    ): Short
+
+    fun uniffi_beautyxt_rs_checksum_func_test_get_main_svg(
+    ): Short
+
+    fun uniffi_beautyxt_rs_checksum_func_update_project_file(
     ): Short
     fun ffi_beautyxt_rs_uniffi_contract_version(
     ): Int
@@ -624,6 +685,18 @@ private fun uniffiCheckContractApiVersion(lib: _UniFFILib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: _UniFFILib) {
+    if (lib.uniffi_beautyxt_rs_checksum_func_add_project_files() != 26793.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_beautyxt_rs_checksum_func_clear_project_files() != 13150.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_beautyxt_rs_checksum_func_get_project_file_text() != 40266.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_beautyxt_rs_checksum_func_initialize_world() != 60119.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_beautyxt_rs_checksum_func_markdown_to_docx() != 19396.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -633,12 +706,67 @@ private fun uniffiCheckApiChecksums(lib: _UniFFILib) {
     if (lib.uniffi_beautyxt_rs_checksum_func_plain_text_to_docx() != 1235.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_beautyxt_rs_checksum_func_remove_project_files() != 64095.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_beautyxt_rs_checksum_func_set_main_project_file() != 29991.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_beautyxt_rs_checksum_func_test_get_main_pdf() != 23928.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_beautyxt_rs_checksum_func_test_get_main_svg() != 7757.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_beautyxt_rs_checksum_func_update_project_file() != 19949.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
 }
 
 // Async support
 
 // Public interface members begin here.
 
+
+object FfiConverterInt : FfiConverter<Int, Int> {
+    override fun lift(value: Int): Int {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Int {
+        return buf.getInt()
+    }
+
+    override fun lower(value: Int): Int {
+        return value
+    }
+
+    override fun allocationSize(value: Int) = 4
+
+    override fun write(value: Int, buf: ByteBuffer) {
+        buf.putInt(value)
+    }
+}
+
+object FfiConverterULong : FfiConverter<ULong, Long> {
+    override fun lift(value: Long): ULong {
+        return value.toULong()
+    }
+
+    override fun read(buf: ByteBuffer): ULong {
+        return lift(buf.getLong())
+    }
+
+    override fun lower(value: ULong): Long {
+        return value.toLong()
+    }
+
+    override fun allocationSize(value: ULong) = 8
+
+    override fun write(value: ULong, buf: ByteBuffer) {
+        buf.putLong(value.toLong())
+    }
+}
 
 object FfiConverterString : FfiConverter<String, RustBuffer.ByValue> {
     // Note: we don't inherit from FfiConverterRustBuffer, because we use a
@@ -710,6 +838,414 @@ object FfiConverterByteArray : FfiConverterRustBuffer<ByteArray> {
     }
 }
 
+
+data class CustomSourceDiagnostic(
+    var `severity`: CustomSeverity,
+    var `span`: ULong,
+    var `message`: String,
+    var `trace`: List<CustomTracepoint>,
+    var `hints`: List<String>
+) {
+
+    companion object
+}
+
+object FfiConverterTypeCustomSourceDiagnostic : FfiConverterRustBuffer<CustomSourceDiagnostic> {
+    override fun read(buf: ByteBuffer): CustomSourceDiagnostic {
+        return CustomSourceDiagnostic(
+            FfiConverterTypeCustomSeverity.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeCustomTracepoint.read(buf),
+            FfiConverterSequenceString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: CustomSourceDiagnostic) = (
+            FfiConverterTypeCustomSeverity.allocationSize(value.`severity`) +
+                    FfiConverterULong.allocationSize(value.`span`) +
+                    FfiConverterString.allocationSize(value.`message`) +
+                    FfiConverterSequenceTypeCustomTracepoint.allocationSize(value.`trace`) +
+                    FfiConverterSequenceString.allocationSize(value.`hints`)
+            )
+
+    override fun write(value: CustomSourceDiagnostic, buf: ByteBuffer) {
+        FfiConverterTypeCustomSeverity.write(value.`severity`, buf)
+        FfiConverterULong.write(value.`span`, buf)
+        FfiConverterString.write(value.`message`, buf)
+        FfiConverterSequenceTypeCustomTracepoint.write(value.`trace`, buf)
+        FfiConverterSequenceString.write(value.`hints`, buf)
+    }
+}
+
+
+data class ProjectFilePathAndFd(
+    var `path`: String,
+    var `fd`: Int
+) {
+
+    companion object
+}
+
+object FfiConverterTypeProjectFilePathAndFd : FfiConverterRustBuffer<ProjectFilePathAndFd> {
+    override fun read(buf: ByteBuffer): ProjectFilePathAndFd {
+        return ProjectFilePathAndFd(
+            FfiConverterString.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ProjectFilePathAndFd) = (
+            FfiConverterString.allocationSize(value.`path`) +
+                    FfiConverterInt.allocationSize(value.`fd`)
+            )
+
+    override fun write(value: ProjectFilePathAndFd, buf: ByteBuffer) {
+        FfiConverterString.write(value.`path`, buf)
+        FfiConverterInt.write(value.`fd`, buf)
+    }
+}
+
+
+enum class CustomSeverity {
+    ERROR, WARNING;
+
+    companion object
+}
+
+object FfiConverterTypeCustomSeverity : FfiConverterRustBuffer<CustomSeverity> {
+    override fun read(buf: ByteBuffer) = try {
+        CustomSeverity.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: CustomSeverity) = 4
+
+    override fun write(value: CustomSeverity, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+sealed class CustomTracepoint {
+    data class Call(
+        val `string`: String?,
+        val `span`: ULong
+    ) : CustomTracepoint() {
+        companion object
+    }
+
+    data class Show(
+        val `string`: String,
+        val `span`: ULong
+    ) : CustomTracepoint() {
+        companion object
+    }
+
+    data class Import(
+        val `span`: ULong
+    ) : CustomTracepoint() {
+        companion object
+    }
+
+
+    companion object
+}
+
+object FfiConverterTypeCustomTracepoint : FfiConverterRustBuffer<CustomTracepoint> {
+    override fun read(buf: ByteBuffer): CustomTracepoint {
+        return when (buf.getInt()) {
+            1 -> CustomTracepoint.Call(
+                FfiConverterOptionalString.read(buf),
+                FfiConverterULong.read(buf),
+            )
+
+            2 -> CustomTracepoint.Show(
+                FfiConverterString.read(buf),
+                FfiConverterULong.read(buf),
+            )
+
+            3 -> CustomTracepoint.Import(
+                FfiConverterULong.read(buf),
+            )
+
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: CustomTracepoint) = when (value) {
+        is CustomTracepoint.Call -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                    4
+                            + FfiConverterOptionalString.allocationSize(value.`string`)
+                            + FfiConverterULong.allocationSize(value.`span`)
+                    )
+        }
+
+        is CustomTracepoint.Show -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                    4
+                            + FfiConverterString.allocationSize(value.`string`)
+                            + FfiConverterULong.allocationSize(value.`span`)
+                    )
+        }
+
+        is CustomTracepoint.Import -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                    4
+                            + FfiConverterULong.allocationSize(value.`span`)
+                    )
+        }
+    }
+
+    override fun write(value: CustomTracepoint, buf: ByteBuffer) {
+        when (value) {
+            is CustomTracepoint.Call -> {
+                buf.putInt(1)
+                FfiConverterOptionalString.write(value.`string`, buf)
+                FfiConverterULong.write(value.`span`, buf)
+            }
+
+            is CustomTracepoint.Show -> {
+                buf.putInt(2)
+                FfiConverterString.write(value.`string`, buf)
+                FfiConverterULong.write(value.`span`, buf)
+            }
+
+            is CustomTracepoint.Import -> {
+                buf.putInt(3)
+                FfiConverterULong.write(value.`span`, buf)
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+sealed class RenderException {
+    data class VecCustomSourceDiagnostic(
+        val `customSourceDiagnostics`: List<CustomSourceDiagnostic>
+    ) : RenderException() {
+        companion object
+    }
+
+
+    companion object
+}
+
+object FfiConverterTypeRenderException : FfiConverterRustBuffer<RenderException> {
+    override fun read(buf: ByteBuffer): RenderException {
+        return when (buf.getInt()) {
+            1 -> RenderException.VecCustomSourceDiagnostic(
+                FfiConverterSequenceTypeCustomSourceDiagnostic.read(buf),
+            )
+
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: RenderException) = when (value) {
+        is RenderException.VecCustomSourceDiagnostic -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                    4
+                            + FfiConverterSequenceTypeCustomSourceDiagnostic.allocationSize(value.`customSourceDiagnostics`)
+                    )
+        }
+    }
+
+    override fun write(value: RenderException, buf: ByteBuffer) {
+        when (value) {
+            is RenderException.VecCustomSourceDiagnostic -> {
+                buf.putInt(1)
+                FfiConverterSequenceTypeCustomSourceDiagnostic.write(value.`customSourceDiagnostics`, buf)
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+object FfiConverterOptionalString : FfiConverterRustBuffer<String?> {
+    override fun read(buf: ByteBuffer): String? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterString.read(buf)
+    }
+
+    override fun allocationSize(value: String?): Int {
+        if (value == null) {
+            return 1
+        } else {
+            return 1 + FfiConverterString.allocationSize(value)
+        }
+    }
+
+    override fun write(value: String?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterString.write(value, buf)
+        }
+    }
+}
+
+
+object FfiConverterSequenceString : FfiConverterRustBuffer<List<String>> {
+    override fun read(buf: ByteBuffer): List<String> {
+        val len = buf.getInt()
+        return List<String>(len) {
+            FfiConverterString.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<String>): Int {
+        val sizeForLength = 4
+        val sizeForItems = value.map { FfiConverterString.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<String>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.forEach {
+            FfiConverterString.write(it, buf)
+        }
+    }
+}
+
+
+object FfiConverterSequenceByteArray : FfiConverterRustBuffer<List<ByteArray>> {
+    override fun read(buf: ByteBuffer): List<ByteArray> {
+        val len = buf.getInt()
+        return List<ByteArray>(len) {
+            FfiConverterByteArray.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ByteArray>): Int {
+        val sizeForLength = 4
+        val sizeForItems = value.map { FfiConverterByteArray.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ByteArray>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.forEach {
+            FfiConverterByteArray.write(it, buf)
+        }
+    }
+}
+
+
+object FfiConverterSequenceTypeCustomSourceDiagnostic : FfiConverterRustBuffer<List<CustomSourceDiagnostic>> {
+    override fun read(buf: ByteBuffer): List<CustomSourceDiagnostic> {
+        val len = buf.getInt()
+        return List<CustomSourceDiagnostic>(len) {
+            FfiConverterTypeCustomSourceDiagnostic.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<CustomSourceDiagnostic>): Int {
+        val sizeForLength = 4
+        val sizeForItems = value.map { FfiConverterTypeCustomSourceDiagnostic.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<CustomSourceDiagnostic>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.forEach {
+            FfiConverterTypeCustomSourceDiagnostic.write(it, buf)
+        }
+    }
+}
+
+
+object FfiConverterSequenceTypeProjectFilePathAndFd : FfiConverterRustBuffer<List<ProjectFilePathAndFd>> {
+    override fun read(buf: ByteBuffer): List<ProjectFilePathAndFd> {
+        val len = buf.getInt()
+        return List<ProjectFilePathAndFd>(len) {
+            FfiConverterTypeProjectFilePathAndFd.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<ProjectFilePathAndFd>): Int {
+        val sizeForLength = 4
+        val sizeForItems = value.map { FfiConverterTypeProjectFilePathAndFd.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<ProjectFilePathAndFd>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.forEach {
+            FfiConverterTypeProjectFilePathAndFd.write(it, buf)
+        }
+    }
+}
+
+
+object FfiConverterSequenceTypeCustomTracepoint : FfiConverterRustBuffer<List<CustomTracepoint>> {
+    override fun read(buf: ByteBuffer): List<CustomTracepoint> {
+        val len = buf.getInt()
+        return List<CustomTracepoint>(len) {
+            FfiConverterTypeCustomTracepoint.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<CustomTracepoint>): Int {
+        val sizeForLength = 4
+        val sizeForItems = value.map { FfiConverterTypeCustomTracepoint.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<CustomTracepoint>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.forEach {
+            FfiConverterTypeCustomTracepoint.write(it, buf)
+        }
+    }
+}
+
+fun `addProjectFiles`(`newProjectFiles`: List<ProjectFilePathAndFd>) =
+
+    rustCall { _status ->
+        _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_add_project_files(
+            FfiConverterSequenceTypeProjectFilePathAndFd.lower(
+                `newProjectFiles`
+            ), _status
+        )
+    }
+
+
+fun `clearProjectFiles`() =
+
+    rustCall { _status ->
+        _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_clear_project_files(_status)
+    }
+
+
+fun `getProjectFileText`(`path`: String): String {
+    return FfiConverterString.lift(
+        rustCall { _status ->
+            _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_get_project_file_text(
+                FfiConverterString.lower(`path`),
+                _status
+            )
+        })
+}
+
+
+fun `initializeWorld`() =
+
+    rustCall { _status ->
+        _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_initialize_world(_status)
+    }
+
+
+
 fun `markdownToDocx`(`markdown`: String): ByteArray {
     return FfiConverterByteArray.lift(
         rustCall { _status ->
@@ -731,6 +1267,57 @@ fun `plainTextToDocx`(`plainText`: String): ByteArray {
         rustCall { _status ->
             _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_plain_text_to_docx(
                 FfiConverterString.lower(`plainText`),
+                _status
+            )
+        })
+}
+
+
+fun `removeProjectFiles`(`projectFilesPathsToRemove`: List<String>) =
+
+    rustCall { _status ->
+        _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_remove_project_files(
+            FfiConverterSequenceString.lower(
+                `projectFilesPathsToRemove`
+            ), _status
+        )
+    }
+
+
+fun `setMainProjectFile`(`mainProjectFilePathAndFd`: ProjectFilePathAndFd) =
+
+    rustCall { _status ->
+        _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_set_main_project_file(
+            FfiConverterTypeProjectFilePathAndFd.lower(
+                `mainProjectFilePathAndFd`
+            ), _status
+        )
+    }
+
+
+fun `testGetMainPdf`(): ByteArray {
+    return FfiConverterByteArray.lift(
+        rustCall { _status ->
+            _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_test_get_main_pdf(_status)
+        })
+}
+
+@Throws(RenderException::class)
+
+fun `testGetMainSvg`(): List<ByteArray> {
+    return FfiConverterSequenceByteArray.lift(
+        rustCallWithError(RenderException) { _status ->
+            _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_test_get_main_svg(_status)
+        })
+}
+
+
+fun `updateProjectFile`(`newText`: String, `path`: String): String {
+    return FfiConverterString.lift(
+        rustCall { _status ->
+            _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_update_project_file(
+                FfiConverterString.lower(`newText`),
+                FfiConverterString.lower(`path`),
                 _status
             )
         })

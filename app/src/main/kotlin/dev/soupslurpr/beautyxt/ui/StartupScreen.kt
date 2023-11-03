@@ -4,7 +4,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -35,7 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
@@ -50,6 +48,7 @@ fun StartupScreen(
     splashMessage: String,
     onOpenTxtButtonClicked: () -> Unit,
     onOpenMdButtonClicked: () -> Unit,
+    onOpenTypstButtonClicked: () -> Unit,
     onOpenAnyButtonClicked: () -> Unit,
     onCreateTxtButtonClicked: () -> Unit,
     onCreateMdButtonClicked: () -> Unit,
@@ -122,6 +121,15 @@ fun StartupScreen(
                     }
                 ) {
                     Text(text = stringResource(R.string.md))
+                }
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        onOpenTypstButtonClicked()
+                        isOpenFileTypeAlertDialogShown = false
+                    }
+                ) {
+                    Text(text = "Typst project")
                 }
                 if (preferencesUiState.experimentalFeatureOpenAnyFileType.second.value) {
                     FilledTonalButton(
@@ -216,21 +224,4 @@ fun FileTypeSelectionDialog(
             }
         }
     }
-}
-
-@Preview
-@Composable
-fun StartupPreview() {
-    StartupScreen(
-        modifier = Modifier.fillMaxSize(),
-        splashMessage = "Now previewable!",
-        onOpenAnyButtonClicked = {},
-        onOpenTxtButtonClicked = {},
-        onOpenMdButtonClicked = {},
-        onCreateTxtButtonClicked = {},
-        onCreateMdButtonClicked = {},
-        onSettingsButtonClicked = {},
-        fileViewModel = FileViewModel(),
-        preferencesUiState = PreferencesUiState()
-    )
 }
