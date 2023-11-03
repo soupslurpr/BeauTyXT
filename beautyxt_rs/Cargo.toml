@@ -23,6 +23,12 @@ crate-type = ["cdylib"]
 name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
 
+[profile.release-dev]
+inherits = "release"
+strip = false
+lto = false
+codegen-units = 16
+
 [profile.release]
 strip = true
 lto = "fat"
