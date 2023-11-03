@@ -221,8 +221,8 @@ pub struct CustomSourceDiagnostic {
     hints: Vec<String>,
 }
 
-#[derive(uniffi::Enum, Debug, thiserror::Error)]
-pub enum RenderException {
+#[derive(uniffi::Error, Debug, thiserror::Error)]
+pub enum RenderError {
     #[error("Integer overflow on an operation with")]
     VecCustomSourceDiagnostic {
         custom_source_diagnostics: Vec<CustomSourceDiagnostic>,
@@ -230,7 +230,7 @@ pub enum RenderException {
 }
 
 #[uniffi::export]
-pub fn test_get_main_svg() -> Result<Vec<Vec<u8>>, RenderException> {
+pub fn test_get_main_svg() -> Result<Vec<Vec<u8>>, RenderError> {
     let binding = WORLD.lock().unwrap();
     let world = binding.as_ref().unwrap();
     let mut tracer = Tracer::new();
@@ -246,7 +246,7 @@ pub fn test_get_main_svg() -> Result<Vec<Vec<u8>>, RenderException> {
             Ok(svgs)
         }
         // Convert the errors to our custom errors that can be returned to Kotlin code
-        Err(errors) => Err(RenderException::VecCustomSourceDiagnostic {
+        Err(errors) => Err(RenderError::VecCustomSourceDiagnostic {
             custom_source_diagnostics: errors
                 .iter()
                 .map(|source_diagnostic| CustomSourceDiagnostic {
