@@ -1,8 +1,10 @@
 package dev.soupslurpr.beautyxt.ui
 
+import android.content.res.Configuration
 import android.net.Uri
 import android.webkit.WebView
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
@@ -19,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -50,6 +53,7 @@ fun FileEditScreen(
     val renderedMarkdownVerticalScrollState = rememberScrollState()
     val textFieldVerticalScrollState = rememberScrollState()
     val textStyle = typography.bodyLarge
+    val isPortrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
 
     LaunchedEffect(key1 = previewMarkdownRenderedToHtmlFullscreen) {
         /** This is so the markdown render updates when disabling render markdown, making a change,
@@ -70,99 +74,230 @@ fun FileEditScreen(
         }
     }
 
-    Column(
-        modifier = Modifier.imePadding()
-    ) {
-        TextField(
-            /** We cannot use .verticalScroll when editing is possible as the TextField currently
-             * does not scroll to the next line when pressing enter automatically with .verticalScroll.
-             * It does scroll to the next line when pressing enter without it having .verticalScroll.
-             */
-            modifier = if (readOnly) {
-                Modifier
-                    .fillMaxSize()
-                    .weight(
-                        if (previewMarkdownRenderedToHtmlFullscreen) {
-                            0.00000001f
-                        } else {
-                            1f
-                        }
-                    )
-                    .verticalScroll(textFieldVerticalScrollState)
-            } else {
-                Modifier
-                    .fillMaxSize()
-                    .weight(
-                        if (previewMarkdownRenderedToHtmlFullscreen) {
-                            0.00000001f
-                        } else {
-                            1f
-                        }
-                    )
-            },
-            value = content,
-            onValueChange = {
-                onContentChanged(it)
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = textColor,
-                focusedBorderColor = Color.Transparent,
-                unfocusedBorderColor = Color.Transparent
-            ),
-            label = {
-                if (previewMarkdownRenderedToHtmlFullscreen) {
-                    // if we don't do this then when the preview is fullscreen the label appears
+    if (isPortrait) {
+        Column(
+            modifier = Modifier.imePadding()
+        ) {
+            // TODO: Move to functions to reduce unnecessary 2x code duplication. Also its very annoying. See the
+            //  TypstProjectScreen.kt for an example of how to do it properly.
+            TextField(
+                /** We cannot use .verticalScroll when editing is possible as the TextField currently
+                 * does not scroll to the next line when pressing enter automatically with .verticalScroll.
+                 * It does scroll to the next line when pressing enter without it having .verticalScroll.
+                 */
+                modifier = if (readOnly) {
+                    Modifier
+                        .fillMaxSize()
+                        .weight(
+                            if (previewMarkdownRenderedToHtmlFullscreen) {
+                                0.00000001f
+                            } else {
+                                1f
+                            }
+                        )
+                        .verticalScroll(textFieldVerticalScrollState)
                 } else {
-                    Text(
-                        text = name,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            textStyle = textStyle,
-            enabled = !readOnly
-        )
-        when (mimeType) {
-            "text/markdown" -> {
-                if (preferencesUiState.renderMarkdown.second.value or previewMarkdownRenderedToHtmlFullscreen) {
+                    Modifier
+                        .fillMaxSize()
+                        .weight(
+                            if (previewMarkdownRenderedToHtmlFullscreen) {
+                                0.00000001f
+                            } else {
+                                1f
+                            }
+                        )
+                },
+                value = content,
+                onValueChange = {
+                    onContentChanged(it)
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = textColor,
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent
+                ),
+                label = {
                     if (previewMarkdownRenderedToHtmlFullscreen) {
-                        Spacer(modifier = Modifier.padding(4.dp))
+                        // if we don't do this then when the preview is fullscreen the label appears
+                    } else {
+                        Text(
+                            text = name,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                    Text(
-                        text = stringResource(R.string.rendered_markdown),
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 0.dp),
-                        style = typography.bodySmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .weight(1f)
-                            .padding(8.dp)
-                            .verticalScroll(renderedMarkdownVerticalScrollState)
-                    ) {
-                        AndroidView(
-                            factory = { context ->
-                                WebView(context).apply {
-                                    settings.javaScriptEnabled = false // disable JavaScript for security.
-                                    settings.setSupportZoom(false)
-                                    settings.builtInZoomControls = false
-                                    settings.displayZoomControls = false
-                                    setBackgroundColor(colorScheme.background.toArgb()) // set WebView background color to current colorScheme's background color.
+                },
+                textStyle = textStyle,
+                enabled = !readOnly
+            )
+            when (mimeType) {
+                "text/markdown" -> {
+                    if (preferencesUiState.renderMarkdown.second.value or previewMarkdownRenderedToHtmlFullscreen) {
+                        if (previewMarkdownRenderedToHtmlFullscreen) {
+                            Spacer(modifier = Modifier.padding(4.dp))
+                        }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .weight(1f)
+                                .padding(8.dp)
+                                .verticalScroll(renderedMarkdownVerticalScrollState)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.rendered_markdown),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 0.dp),
+                                style = typography.bodySmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            AndroidView(
+                                factory = { context ->
+                                    WebView(context).apply {
+                                        settings.javaScriptEnabled = false // disable JavaScript for security.
+                                        settings.setSupportZoom(false)
+                                        settings.builtInZoomControls = false
+                                        settings.displayZoomControls = false
+                                        setBackgroundColor(colorScheme.background.toArgb()) // set WebView background color to current colorScheme's background color.
+                                    }
+                                },
+                                update = { view ->
+                                    /**
+                                     * The markdown which is converted to HTML is inserted into the body of this.
+                                     * The default text color is set to the current colorScheme's onBackground color
+                                     * to match the TextField's text color.
+                                     */
+                                    fileViewModel.setMarkdownToHtml()
+                                    val html = """
+                                <!DOCTYPE html>
+                                <html>
+                                    <head>
+                                        <meta charset="utf-8"/>
+                                        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+                                        <style>
+                                            html {
+                                                overflow-wrap: anywhere;
+                                            }
+                                            body {
+                                                color: ${textColor.toCssColor()};  
+                                            }
+                                            table, th, td {
+                                                border: thin solid;
+                                            }
+                                        </style>
+                                    </head>
+                                    <body>
+                                        ${
+                                        if (contentConvertedToHtml == "") {
+                                            fileUiState.contentConvertedToHtml.value
+                                        } else {
+                                            contentConvertedToHtml
+                                        }
+                                    }
+                                    </body>
+                                </html>
+                                """.trimIndent()
+                                    view.loadData(html, "text/html", "UTF-8")
                                 }
-                            },
-                            update = { view ->
-                                /**
-                                 * The markdown which is converted to HTML is inserted into the body of this.
-                                 * The default text color is set to the current colorScheme's onBackground color
-                                 * to match the TextField's text color.
-                                 */
-                                fileViewModel.setMarkdownToHtml()
-                                val html = """
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        Row(
+            modifier = Modifier.imePadding()
+        ) {
+            TextField(
+                /** We cannot use .verticalScroll when editing is possible as the TextField currently
+                 * does not scroll to the next line when pressing enter automatically with .verticalScroll.
+                 * It does scroll to the next line when pressing enter without it having .verticalScroll.
+                 */
+                modifier = if (readOnly) {
+                    Modifier
+                        .fillMaxSize()
+                        .weight(
+                            if (previewMarkdownRenderedToHtmlFullscreen) {
+                                0.00000001f
+                            } else {
+                                1f
+                            }
+                        )
+                        .verticalScroll(textFieldVerticalScrollState)
+                } else {
+                    Modifier
+                        .fillMaxSize()
+                        .weight(
+                            if (previewMarkdownRenderedToHtmlFullscreen) {
+                                0.00000001f
+                            } else {
+                                1f
+                            }
+                        )
+                },
+                value = content,
+                onValueChange = {
+                    onContentChanged(it)
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = textColor,
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent
+                ),
+                label = {
+                    if (previewMarkdownRenderedToHtmlFullscreen) {
+                        // if we don't do this then when the preview is fullscreen the label appears
+                    } else {
+                        Text(
+                            text = name,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                textStyle = textStyle,
+                enabled = !readOnly
+            )
+            when (mimeType) {
+                "text/markdown" -> {
+                    if (preferencesUiState.renderMarkdown.second.value or previewMarkdownRenderedToHtmlFullscreen) {
+                        if (previewMarkdownRenderedToHtmlFullscreen) {
+                            Spacer(modifier = Modifier.padding(4.dp))
+                        }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .weight(1f)
+                                .padding(8.dp)
+                                .verticalScroll(renderedMarkdownVerticalScrollState)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.rendered_markdown),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 0.dp),
+                                style = typography.bodySmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            AndroidView(
+                                factory = { context ->
+                                    WebView(context).apply {
+                                        settings.javaScriptEnabled = false // disable JavaScript for security.
+                                        settings.setSupportZoom(false)
+                                        settings.builtInZoomControls = false
+                                        settings.displayZoomControls = false
+                                        setBackgroundColor(colorScheme.background.toArgb()) // set WebView background color to current colorScheme's background color.
+                                    }
+                                },
+                                update = { view ->
+                                    /**
+                                     * The markdown which is converted to HTML is inserted into the body of this.
+                                     * The default text color is set to the current colorScheme's onBackground color
+                                     * to match the TextField's text color.
+                                     */
+                                    fileViewModel.setMarkdownToHtml()
+                                    val html = """
                                 <!DOCTYPE html>
                                 <html>
                                     <head>
@@ -182,16 +317,18 @@ fun FileEditScreen(
                                     </head>
                                     <body>
                                         ${if (contentConvertedToHtml == "") {
-                                    fileUiState.contentConvertedToHtml.value
-                                        } else {
-                                            contentConvertedToHtml
-                                        }}
+                                        fileUiState.contentConvertedToHtml.value
+                                    } else {
+                                        contentConvertedToHtml
+                                    }
+                                    }
                                     </body>
                                 </html>
                                 """.trimIndent()
-                                view.loadData(html, "text/html", "UTF-8")
-                            }
-                        )
+                                    view.loadData(html, "text/html", "UTF-8")
+                                }
+                            )
+                        }
                     }
                 }
             }

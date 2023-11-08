@@ -48,10 +48,11 @@ fun StartupScreen(
     splashMessage: String,
     onOpenTxtButtonClicked: () -> Unit,
     onOpenMdButtonClicked: () -> Unit,
-    onOpenTypstButtonClicked: () -> Unit,
+    onOpenTypstProjectButtonClicked: () -> Unit,
     onOpenAnyButtonClicked: () -> Unit,
     onCreateTxtButtonClicked: () -> Unit,
     onCreateMdButtonClicked: () -> Unit,
+    onCreateTypstProjectButtonClicked: () -> Unit,
     onSettingsButtonClicked: () -> Unit,
     fileViewModel: FileViewModel,
     preferencesUiState: PreferencesUiState,
@@ -95,13 +96,13 @@ fun StartupScreen(
                 contentDescription = null
             )
             Spacer(modifier = modifier.width(8.dp))
-            Text(stringResource(R.string.open_existing_file))
+            Text(stringResource(R.string.open))
             FileTypeSelectionDialog(
                 isShown = isOpenFileTypeAlertDialogShown,
                 onDismissRequest = { isOpenFileTypeAlertDialogShown = false }
             ) {
                 Text(
-                    text = stringResource(R.string.open_file),
+                    text = stringResource(R.string.open),
                     style = MaterialTheme.typography.headlineSmall
                 )
                 FilledTonalButton(
@@ -125,11 +126,11 @@ fun StartupScreen(
                 FilledTonalButton(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
-                        onOpenTypstButtonClicked()
+                        onOpenTypstProjectButtonClicked()
                         isOpenFileTypeAlertDialogShown = false
                     }
                 ) {
-                    Text(text = "Typst project")
+                    Text(text = stringResource(R.string.typst_project))
                 }
                 if (preferencesUiState.experimentalFeatureOpenAnyFileType.second.value) {
                     FilledTonalButton(
@@ -153,13 +154,13 @@ fun StartupScreen(
                 contentDescription = null
             )
             Spacer(modifier = modifier.width(8.dp))
-            Text(stringResource(R.string.create_new_file))
+            Text(stringResource(R.string.create))
             FileTypeSelectionDialog(
                 isShown = isCreateFileTypeAlertDialogShown,
                 onDismissRequest = { isCreateFileTypeAlertDialogShown = false },
             ) {
                 Text(
-                    text = stringResource(R.string.new_file),
+                    text = stringResource(R.string.create),
                     style = MaterialTheme.typography.headlineSmall
                 )
                 FilledTonalButton(
@@ -179,6 +180,15 @@ fun StartupScreen(
                     },
                 ) {
                     Text(text = stringResource(R.string.md))
+                }
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        isCreateFileTypeAlertDialogShown = false
+                        onCreateTypstProjectButtonClicked()
+                    },
+                ) {
+                    Text(text = stringResource(R.string.create_typst_project, stringResource(R.string.typst_project)))
                 }
             }
         }

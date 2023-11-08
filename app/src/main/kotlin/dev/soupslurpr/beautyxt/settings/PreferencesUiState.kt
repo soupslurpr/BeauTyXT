@@ -25,6 +25,12 @@ data class PreferencesUiState(
         mutableStateOf(true)
     ),
 
+    /** Whether to show Typst project warnings and errors below the Typst project preview */
+    val typstProjectShowWarningsAndErrors: Pair<Preferences.Key<Boolean>, MutableState<Boolean>> = Pair(
+        (booleanPreferencesKey("TYPST_PROJECT_SHOW_WARNINGS_AND_ERRORS")),
+        mutableStateOf(true)
+    ),
+
     /** Experimental feature that shows a button when a markdown file is open which will toggle
      * a fullscreen view of the rendered markdown preview.
      */

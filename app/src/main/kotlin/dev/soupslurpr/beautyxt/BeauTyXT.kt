@@ -27,6 +27,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
@@ -72,6 +73,7 @@ import androidx.navigation.navDeepLink
 import dev.soupslurpr.beautyxt.constants.mimeTypeDocx
 import dev.soupslurpr.beautyxt.constants.mimeTypeHtml
 import dev.soupslurpr.beautyxt.constants.mimeTypeMarkdown
+import dev.soupslurpr.beautyxt.constants.mimeTypePdf
 import dev.soupslurpr.beautyxt.constants.mimeTypePlainText
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
@@ -154,6 +156,9 @@ fun BeauTyXTAppBar(
     deleteFileDialogConfirmButton: @Composable () -> Unit,
     deleteFileDialogDismissButton: @Composable () -> Unit,
 
+    onTypstProjectOpenAnotherFileInTheProjectButtonClicked: () -> Unit,
+    onTypstProjectCreateAndOpenAnotherFileInTheProjectButtonClicked: () -> Unit,
+
     readOnly: Boolean,
     mimeType: String,
     onPreviewMarkdownRenderedToFullscreenButtonClicked: () -> Unit,
@@ -177,9 +182,31 @@ fun BeauTyXTAppBar(
             }
         },
         actions = {
-            if (currentScreen == BeauTyXTScreens.FileEdit) {
-                if (readOnly) {
+            val isCurrentScreenTypstProject = currentScreen == BeauTyXTScreens.TypstProject
+            if (currentScreen == BeauTyXTScreens.FileEdit || isCurrentScreenTypstProject) {
+                // Read only checking not implemented yet for Typst projects
+                if (!isCurrentScreenTypstProject && readOnly) {
                     Text(text = stringResource(R.string.read_only))
+                }
+                if (isCurrentScreenTypstProject) {
+                    IconButton(
+                        onClick = onTypstProjectCreateAndOpenAnotherFileInTheProjectButtonClicked,
+                        content = {
+                            Icon(
+                                imageVector = Icons.Filled.Add,
+                                contentDescription = stringResource(R.string.create_and_edit_another_file_in_the_typst_project)
+                            )
+                        }
+                    )
+                    IconButton(
+                        onClick = onTypstProjectOpenAnotherFileInTheProjectButtonClicked,
+                        content = {
+                            Icon(
+                                painter = painterResource(R.drawable.baseline_file_open_24),
+                                contentDescription = stringResource(R.string.edit_another_file_in_the_typst_project),
+                            )
+                        }
+                    )
                 }
                 if (mimeType == mimeTypeMarkdown) {
                     if (preferencesUiState.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value) {
@@ -216,7 +243,8 @@ fun BeauTyXTAppBar(
                         onClick = { onFileInfoDropdownMenuItemClicked() },
                         leadingIcon = {
                             Icon(imageVector = Icons.Filled.Info, contentDescription = null)
-                        }
+                        },
+                        enabled = !isCurrentScreenTypstProject
                     )
                     DropdownMenuItem(
                         text = {
@@ -244,7 +272,11 @@ fun BeauTyXTAppBar(
                         leadingIcon = {
                             Icon(imageVector = Icons.Filled.Delete, contentDescription = null)
                         },
-                        enabled = !readOnly,
+                        enabled = if (isCurrentScreenTypstProject) {
+                            false
+                        } else {
+                            !readOnly
+                        },
                     )
                     DropdownMenuItem(
                         text = {
@@ -274,7 +306,8 @@ fun BeauTyXTAppBar(
                         onClick = { onPrintOptionsExportDropdownMenuItemClicked() },
                         leadingIcon = {
                             Icon(painter = painterResource(R.drawable.baseline_print_24), contentDescription = null)
-                        }
+                        },
+                        enabled = !isCurrentScreenTypstProject,
                     )
                     DropdownMenuItem(
                         text = {
@@ -298,7 +331,8 @@ fun BeauTyXTAppBar(
                         onClick = { onShareExportDropdownMenuItemClicked() },
                         leadingIcon = {
                             Icon(imageVector = Icons.Filled.Share, contentDescription = null)
-                        }
+                        },
+                        enabled = !isCurrentScreenTypstProject,
                     )
                     DropdownMenuItem(
                         text = {
@@ -310,7 +344,8 @@ fun BeauTyXTAppBar(
                         onClick = { onShareAsExportDropdownMenuItemClicked() },
                         leadingIcon = {
                             Icon(imageVector = Icons.Filled.Share, contentDescription = null)
-                        }
+                        },
+                        enabled = !isCurrentScreenTypstProject,
                     )
                 }
                 if (fileInfoShown) {
@@ -453,6 +488,8 @@ fun BeauTyXTApp(
         backStackEntry?.destination?.route ?: BeauTyXTScreens.Start.name
     )
 
+    val isCurrentScreenTypstProject = currentScreen == BeauTyXTScreens.TypstProject
+
     val context = LocalContext.current
 
     val fileUiState by fileViewModel.uiState.collectAsState()
@@ -492,9 +529,16 @@ fun BeauTyXTApp(
         if (projectFolderUri != null) {
             typstProjectViewModel.openProject(projectFolderUri, context)
             navController.navigate(BeauTyXTScreens.TypstProject.name)
-//            fileViewModel.setReadOnly(false)
-//            fileViewModel.setUri(uri, context)
-//            navController.navigate(BeauTyXTScreens.FileEdit.name)
+        }
+    }
+
+    val createTypstProjectLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts
+            .OpenDocumentTree()
+    ) { projectFolderUri ->
+        if (projectFolderUri != null) {
+            typstProjectViewModel.openProject(projectFolderUri, context)
+            navController.navigate(BeauTyXTScreens.TypstProject.name)
         }
     }
 
@@ -523,6 +567,49 @@ fun BeauTyXTApp(
             fileViewModel.exportAsDocx(it, context)
         }
     }
+
+    val exportTypstProjectAsPdfFileLauncher = rememberLauncherForActivityResult(
+        contract = CreateDocument(
+            mimeTypePdf
+        )
+    ) {
+        if (it != null) {
+            typstProjectViewModel.testExportDocumentToPdf(it, context)
+        }
+    }
+
+    val setTypstCurrentOpenedPathLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts
+            .OpenDocument
+                ()
+    ) {
+        if (it != null) {
+            typstProjectViewModel.setCurrentOpenedPath(it, context.contentResolver)
+            typstProjectViewModel.refreshProjectFiles(context)
+            typstProjectViewModel.uiState.value.currentOpenedContent.value = getProjectFileText(
+                typstProjectViewModel
+                    .uiState.value
+                    .currentOpenedPath.value
+            )
+        }
+    }
+
+    val createNewTypstProjectFileAndSetCurrentOpenedPathLauncher = rememberLauncherForActivityResult(
+        contract =
+        // .typ files don't have an official MIME type as far as I know as of 11/5/2023
+        CreateDocument("typst/application")
+    ) {
+        if (it != null) {
+            typstProjectViewModel.setCurrentOpenedPath(it, context.contentResolver)
+            typstProjectViewModel.refreshProjectFiles(context)
+            typstProjectViewModel.uiState.value.currentOpenedContent.value = getProjectFileText(
+                typstProjectViewModel
+                    .uiState.value
+                    .currentOpenedPath.value
+            )
+        }
+    }
+
     var previewMarkdownRenderedToFullscreen by rememberSaveable { mutableStateOf(false) }
 
     val randomValue = Random.nextInt(0, 10)
@@ -886,13 +973,22 @@ ${
                         }
                         if ((preferencesUiState.experimentalFeatureExportMarkdownToDocx.second.value and
                                     (fileUiState.mimeType.value == mimeTypeMarkdown)) or
-                            (fileUiState.mimeType.value != mimeTypeMarkdown)
+                            (fileUiState.mimeType.value != mimeTypeMarkdown && !isCurrentScreenTypstProject)
                         ) {
                             FileTypeSelectionDialogItem(
                                 fileTypeText = stringResource(R.string.docx),
                                 selected = exportAsSelectedFileType == mimeTypeDocx,
                                 onClickRadioButton = {
                                     exportAsSelectedFileType = mimeTypeDocx
+                                }
+                            )
+                        }
+                        if (isCurrentScreenTypstProject) {
+                            FileTypeSelectionDialogItem(
+                                fileTypeText = stringResource(R.string.pdf),
+                                selected = exportAsSelectedFileType == mimeTypePdf,
+                                onClickRadioButton = {
+                                    exportAsSelectedFileType = mimeTypePdf
                                 }
                             )
                         }
@@ -908,6 +1004,14 @@ ${
 
                                 mimeTypeDocx -> exportAsDocxFileLauncher.launch(
                                     fileUiState.name.value.substringBeforeLast(".")
+                                )
+
+                                mimeTypePdf -> exportTypstProjectAsPdfFileLauncher.launch(
+                                    if (isCurrentScreenTypstProject) {
+                                        "main.pdf"
+                                    } else {
+                                        fileUiState.name.value.substringBeforeLast(".")
+                                    }
                                 )
                             }
                             exportAsDialogShown = false
@@ -990,7 +1094,15 @@ ${
                             .fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
-                        when (fileUiState.mimeType.value) {
+                        if (isCurrentScreenTypstProject) {
+                            FileTypeSelectionDialogItem(
+                                fileTypeText = stringResource(R.string.pdf),
+                                selected = shareAsSelectedFileType == mimeTypePdf,
+                                onClickRadioButton = {
+                                    shareAsSelectedFileType = mimeTypePdf
+                                }
+                            )
+                        } else when (fileUiState.mimeType.value) {
                             mimeTypePlainText -> {
                                 FileTypeSelectionDialogItem(
                                     fileTypeText = stringResource(R.string.txt),
@@ -1020,6 +1132,7 @@ ${
                                     }
                                 )
                             }
+
                         }
                     }
                 },
@@ -1051,7 +1164,7 @@ ${
                                         putExtra(Intent.EXTRA_STREAM, fileUiState.uri.value)
                                         type = fileUiState.mimeType.value
                                     }
-                                }
+                                    }
                             }
 
                             val shareIntent = Intent.createChooser(sendIntent, null)
@@ -1125,6 +1238,13 @@ ${
                     )
                 },
 
+                onTypstProjectOpenAnotherFileInTheProjectButtonClicked = {
+                    setTypstCurrentOpenedPathLauncher.launch(arrayOf("*/*"))
+                },
+                onTypstProjectCreateAndOpenAnotherFileInTheProjectButtonClicked = {
+                    createNewTypstProjectFileAndSetCurrentOpenedPathLauncher.launch("enter-a-file-name.typ")
+                },
+
                 readOnly = fileUiState.readOnly.value,
 
                 mimeType = fileUiState.mimeType.value,
@@ -1158,7 +1278,7 @@ ${
                             ActivityOptionsCompat.makeBasic(),
                         )
                     },
-                    onOpenTypstButtonClicked = {
+                    onOpenTypstProjectButtonClicked = {
                         openTypstProjectLauncher.launch(Uri.EMPTY)
                     },
                     onOpenAnyButtonClicked = {
@@ -1190,6 +1310,9 @@ ${
                             }),
                             ActivityOptionsCompat.makeBasic()
                         )
+                    },
+                    onCreateTypstProjectButtonClicked = {
+                        createTypstProjectLauncher.launch(Uri.EMPTY)
                     },
                     onSettingsButtonClicked = {
                         navController.navigate(BeauTyXTScreens.Settings.name)
@@ -1242,7 +1365,9 @@ ${
             }
             composable(route = BeauTyXTScreens.TypstProject.name) {
                 TypstProjectScreen(
-                    typstProjectViewModel = typstProjectViewModel
+                    typstProjectViewModel = typstProjectViewModel,
+                    preferencesUiState = preferencesUiState,
+                    navigateUp = { navController.navigateUp() }
                 )
             }
             composable(route = BeauTyXTScreens.Settings.name) {

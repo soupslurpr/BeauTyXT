@@ -3,7 +3,7 @@
 
 @file:Suppress("NAME_SHADOWING")
 
-package dev.soupslurpr.beautyxt;
+package dev.soupslurpr.beautyxt
 
 // Common helper code.
 //
@@ -17,12 +17,11 @@ package dev.soupslurpr.beautyxt;
 // compile the Rust component. The easiest way to ensure this is to bundle the Kotlin
 // helpers directly inline like we're doing here.
 
-import com.sun.jna.Library
 import com.sun.jna.IntegerType
+import com.sun.jna.Library
 import com.sun.jna.Native
 import com.sun.jna.Pointer
 import com.sun.jna.Structure
-import com.sun.jna.Callback
 import com.sun.jna.ptr.*
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -44,7 +43,7 @@ open class RustBuffer : Structure() {
     class ByReference: RustBuffer(), Structure.ByReference
 
     companion object {
-        internal fun alloc(size: Int = 0) = rustCall() { status ->
+        internal fun alloc(size: Int = 0) = rustCall { status ->
             _UniFFILib.INSTANCE.ffi_beautyxt_rs_rustbuffer_alloc(size, status)
         }.also {
             if(it.data == null) {
@@ -52,7 +51,7 @@ open class RustBuffer : Structure() {
            }
         }
 
-        internal fun free(buf: RustBuffer.ByValue) = rustCall() { status ->
+        internal fun free(buf: ByValue) = rustCall { status ->
             _UniFFILib.INSTANCE.ffi_beautyxt_rs_rustbuffer_free(buf, status)
         }
     }
@@ -76,7 +75,7 @@ class RustBufferByReference : ByReference(16) {
      */
     fun setValue(value: RustBuffer.ByValue) {
         // NOTE: The offsets are as they are in the C-like struct.
-        val pointer = getPointer()
+        val pointer = pointer
         pointer.setInt(0, value.capacity)
         pointer.setInt(4, value.len)
         pointer.setPointer(8, value.data)
@@ -86,7 +85,7 @@ class RustBufferByReference : ByReference(16) {
      * Get a `RustBuffer.ByValue` from this reference.
      */
     fun getValue(): RustBuffer.ByValue {
-        val pointer = getPointer()
+        val pointer = pointer
         val value = RustBuffer.ByValue()
         value.writeField("capacity", pointer.getInt(0))
         value.writeField("len", pointer.getInt(4))
@@ -113,7 +112,7 @@ open class ForeignBytes : Structure() {
 //
 // All implementing objects should be public to support external types.  When a
 // type is external we need to import it's FfiConverter.
-public interface FfiConverter<KotlinType, FfiType> {
+interface FfiConverter<KotlinType, FfiType> {
     // Convert an FFI type to a Kotlin type
     fun lift(value: FfiType): KotlinType
 
@@ -176,7 +175,7 @@ public interface FfiConverter<KotlinType, FfiType> {
 }
 
 // FfiConverter that uses `RustBuffer` as the FfiType
-public interface FfiConverterRustBuffer<KotlinType>: FfiConverter<KotlinType, RustBuffer.ByValue> {
+interface FfiConverterRustBuffer<KotlinType>: FfiConverter<KotlinType, RustBuffer.ByValue> {
     override fun lift(value: RustBuffer.ByValue) = liftFromRustBuffer(value)
     override fun lower(value: KotlinType) = lowerIntoRustBuffer(value)
 }
@@ -207,7 +206,7 @@ class InternalException(message: String) : Exception(message)
 
 // Each top-level error class has a companion object that can lift the error from the call status's rust buffer
 interface CallStatusErrorHandler<E> {
-    fun lift(error_buf: RustBuffer.ByValue): E;
+    fun lift(error_buf: RustBuffer.ByValue): E
 }
 
 // Helpers for calling Rust
@@ -216,7 +215,7 @@ interface CallStatusErrorHandler<E> {
 
 // Call a rust function that returns a Result<>.  Pass in the Error class companion that corresponds to the Err
 private inline fun <U, E: Exception> rustCallWithError(errorHandler: CallStatusErrorHandler<E>, callback: (RustCallStatus) -> U): U {
-    var status = RustCallStatus();
+    var status = RustCallStatus()
     val return_value = callback(status)
     checkCallStatus(errorHandler, status)
     return return_value
@@ -252,11 +251,11 @@ object NullCallStatusErrorHandler: CallStatusErrorHandler<InternalException> {
 
 // Call a rust function that returns a plain value
 private inline fun <U> rustCall(callback: (RustCallStatus) -> U): U {
-    return rustCallWithError(NullCallStatusErrorHandler, callback);
+    return rustCallWithError(NullCallStatusErrorHandler, callback)
 }
 
 // IntegerType that matches Rust's `usize` / C's `size_t`
-public class USize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZE, value, true) {
+class USize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZE, value, true) {
     // This is needed to fill in the gaps of IntegerType's implementation of Number for Kotlin.
     override fun toByte() = toInt().toByte()
     // Needed until https://youtrack.jetbrains.com/issue/KT-47902 is fixed.
@@ -339,7 +338,7 @@ internal class UniFfiHandleMap<T: Any> {
 
 // FFI type for Rust future continuations
 internal interface UniFffiRustFutureContinuationCallbackType : com.sun.jna.Callback {
-    fun callback(continuationHandle: USize, pollResult: Short);
+    fun callback(continuationHandle: USize, pollResult: Short)
 }
 
 // Contains loading, initialization code,
@@ -582,10 +581,10 @@ private fun uniffiCheckApiChecksums(lib: _UniFFILib) {
     if (lib.uniffi_beautyxt_rs_checksum_func_test_get_main_pdf() != 23928.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_beautyxt_rs_checksum_func_test_get_main_svg() != 50057.toShort()) {
+    if (lib.uniffi_beautyxt_rs_checksum_func_test_get_main_svg() != 3789.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_beautyxt_rs_checksum_func_update_project_file() != 19949.toShort()) {
+    if (lib.uniffi_beautyxt_rs_checksum_func_update_project_file() != 64068.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
 }
@@ -595,7 +594,7 @@ private fun uniffiCheckApiChecksums(lib: _UniFFILib) {
 // Public interface members begin here.
 
 
-public object FfiConverterInt: FfiConverter<Int, Int> {
+object FfiConverterInt: FfiConverter<Int, Int> {
     override fun lift(value: Int): Int {
         return value
     }
@@ -615,7 +614,7 @@ public object FfiConverterInt: FfiConverter<Int, Int> {
     }
 }
 
-public object FfiConverterULong: FfiConverter<ULong, Long> {
+object FfiConverterULong: FfiConverter<ULong, Long> {
     override fun lift(value: Long): ULong {
         return value.toULong()
     }
@@ -635,7 +634,7 @@ public object FfiConverterULong: FfiConverter<ULong, Long> {
     }
 }
 
-public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
+object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     // Note: we don't inherit from FfiConverterRustBuffer, because we use a
     // special encoding when lowering/lifting.  We can use `RustBuffer.len` to
     // store our length and avoid writing it out to the buffer.
@@ -689,7 +688,7 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     }
 }
 
-public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
+object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
     override fun read(buf: ByteBuffer): ByteArray {
         val len = buf.getInt()
         val byteArr = ByteArray(len)
@@ -719,7 +718,7 @@ data class CustomSourceDiagnostic (
     companion object
 }
 
-public object FfiConverterTypeCustomSourceDiagnostic: FfiConverterRustBuffer<CustomSourceDiagnostic> {
+object FfiConverterTypeCustomSourceDiagnostic: FfiConverterRustBuffer<CustomSourceDiagnostic> {
     override fun read(buf: ByteBuffer): CustomSourceDiagnostic {
         return CustomSourceDiagnostic(
             FfiConverterTypeCustomSeverity.read(buf),
@@ -758,7 +757,7 @@ data class ProjectFilePathAndFd (
     companion object
 }
 
-public object FfiConverterTypeProjectFilePathAndFd: FfiConverterRustBuffer<ProjectFilePathAndFd> {
+object FfiConverterTypeProjectFilePathAndFd: FfiConverterRustBuffer<ProjectFilePathAndFd> {
     override fun read(buf: ByteBuffer): ProjectFilePathAndFd {
         return ProjectFilePathAndFd(
             FfiConverterString.read(buf),
@@ -778,6 +777,98 @@ public object FfiConverterTypeProjectFilePathAndFd: FfiConverterRustBuffer<Proje
 }
 
 
+sealed class CustomFileException : Exception() {
+    // Each variant is a nested class
+
+    class NotFound(
+        val `path`: String
+    ) : CustomFileException() {
+        override val message
+            get() = "path=${`path`}"
+    }
+
+    class InvalidUtf8 : CustomFileException() {
+        override val message
+            get() = ""
+    }
+
+    class Other(
+        val `details`: String?
+    ) : CustomFileException() {
+        override val message
+            get() = "details=${`details`}"
+    }
+
+
+    companion object ErrorHandler : CallStatusErrorHandler<CustomFileException> {
+        override fun lift(error_buf: RustBuffer.ByValue): CustomFileException =
+            FfiConverterTypeCustomFileError.lift(error_buf)
+    }
+
+
+}
+
+object FfiConverterTypeCustomFileError : FfiConverterRustBuffer<CustomFileException> {
+    override fun read(buf: ByteBuffer): CustomFileException {
+
+
+        return when (buf.getInt()) {
+            1 -> CustomFileException.NotFound(
+                FfiConverterString.read(buf),
+            )
+
+            2 -> CustomFileException.InvalidUtf8()
+            3 -> CustomFileException.Other(
+                FfiConverterOptionalString.read(buf),
+            )
+
+            else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: CustomFileException): Int {
+        return when (value) {
+            is CustomFileException.NotFound -> (
+                    // Add the size for the Int that specifies the variant plus the size needed for all fields
+                    4
+                            + FfiConverterString.allocationSize(value.`path`)
+                    )
+
+            is CustomFileException.InvalidUtf8 -> (
+                    // Add the size for the Int that specifies the variant plus the size needed for all fields
+                    4
+                    )
+
+            is CustomFileException.Other -> (
+                    // Add the size for the Int that specifies the variant plus the size needed for all fields
+                    4
+                            + FfiConverterOptionalString.allocationSize(value.`details`)
+                    )
+        }
+    }
+
+    override fun write(value: CustomFileException, buf: ByteBuffer) {
+        when (value) {
+            is CustomFileException.NotFound -> {
+                buf.putInt(1)
+                FfiConverterString.write(value.`path`, buf)
+            }
+
+            is CustomFileException.InvalidUtf8 -> {
+                buf.putInt(2)
+                Unit
+            }
+
+            is CustomFileException.Other -> {
+                buf.putInt(3)
+                FfiConverterOptionalString.write(value.`details`, buf)
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+
+}
+
+
 
 
 enum class CustomSeverity {
@@ -785,7 +876,7 @@ enum class CustomSeverity {
     companion object
 }
 
-public object FfiConverterTypeCustomSeverity: FfiConverterRustBuffer<CustomSeverity> {
+object FfiConverterTypeCustomSeverity: FfiConverterRustBuffer<CustomSeverity> {
     override fun read(buf: ByteBuffer) = try {
         CustomSeverity.values()[buf.getInt() - 1]
     } catch (e: IndexOutOfBoundsException) {
@@ -828,7 +919,7 @@ sealed class CustomTracepoint {
     companion object
 }
 
-public object FfiConverterTypeCustomTracepoint : FfiConverterRustBuffer<CustomTracepoint>{
+object FfiConverterTypeCustomTracepoint : FfiConverterRustBuffer<CustomTracepoint>{
     override fun read(buf: ByteBuffer): CustomTracepoint {
         return when(buf.getInt()) {
             1 -> CustomTracepoint.Call(
@@ -878,18 +969,15 @@ public object FfiConverterTypeCustomTracepoint : FfiConverterRustBuffer<CustomTr
                 buf.putInt(1)
                 FfiConverterOptionalString.write(value.`string`, buf)
                 FfiConverterULong.write(value.`span`, buf)
-                Unit
             }
             is CustomTracepoint.Show -> {
                 buf.putInt(2)
                 FfiConverterString.write(value.`string`, buf)
                 FfiConverterULong.write(value.`span`, buf)
-                Unit
             }
             is CustomTracepoint.Import -> {
                 buf.putInt(3)
                 FfiConverterULong.write(value.`span`, buf)
-                Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
@@ -919,7 +1007,7 @@ sealed class RenderException: Exception() {
     
 }
 
-public object FfiConverterTypeRenderError : FfiConverterRustBuffer<RenderException> {
+object FfiConverterTypeRenderError : FfiConverterRustBuffer<RenderException> {
     override fun read(buf: ByteBuffer): RenderException {
         
 
@@ -946,7 +1034,6 @@ public object FfiConverterTypeRenderError : FfiConverterRustBuffer<RenderExcepti
             is RenderException.VecCustomSourceDiagnostic -> {
                 buf.putInt(1)
                 FfiConverterSequenceTypeCustomSourceDiagnostic.write(value.`customSourceDiagnostics`, buf)
-                Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
@@ -956,7 +1043,7 @@ public object FfiConverterTypeRenderError : FfiConverterRustBuffer<RenderExcepti
 
 
 
-public object FfiConverterOptionalString: FfiConverterRustBuffer<String?> {
+object FfiConverterOptionalString: FfiConverterRustBuffer<String?> {
     override fun read(buf: ByteBuffer): String? {
         if (buf.get().toInt() == 0) {
             return null
@@ -985,7 +1072,7 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<String?> {
 
 
 
-public object FfiConverterSequenceString: FfiConverterRustBuffer<List<String>> {
+object FfiConverterSequenceString: FfiConverterRustBuffer<List<String>> {
     override fun read(buf: ByteBuffer): List<String> {
         val len = buf.getInt()
         return List<String>(len) {
@@ -1010,32 +1097,7 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<String>> {
 
 
 
-public object FfiConverterSequenceByteArray: FfiConverterRustBuffer<List<ByteArray>> {
-    override fun read(buf: ByteBuffer): List<ByteArray> {
-        val len = buf.getInt()
-        return List<ByteArray>(len) {
-            FfiConverterByteArray.read(buf)
-        }
-    }
-
-    override fun allocationSize(value: List<ByteArray>): Int {
-        val sizeForLength = 4
-        val sizeForItems = value.map { FfiConverterByteArray.allocationSize(it) }.sum()
-        return sizeForLength + sizeForItems
-    }
-
-    override fun write(value: List<ByteArray>, buf: ByteBuffer) {
-        buf.putInt(value.size)
-        value.forEach {
-            FfiConverterByteArray.write(it, buf)
-        }
-    }
-}
-
-
-
-
-public object FfiConverterSequenceTypeCustomSourceDiagnostic: FfiConverterRustBuffer<List<CustomSourceDiagnostic>> {
+object FfiConverterSequenceTypeCustomSourceDiagnostic: FfiConverterRustBuffer<List<CustomSourceDiagnostic>> {
     override fun read(buf: ByteBuffer): List<CustomSourceDiagnostic> {
         val len = buf.getInt()
         return List<CustomSourceDiagnostic>(len) {
@@ -1060,7 +1122,7 @@ public object FfiConverterSequenceTypeCustomSourceDiagnostic: FfiConverterRustBu
 
 
 
-public object FfiConverterSequenceTypeProjectFilePathAndFd: FfiConverterRustBuffer<List<ProjectFilePathAndFd>> {
+object FfiConverterSequenceTypeProjectFilePathAndFd: FfiConverterRustBuffer<List<ProjectFilePathAndFd>> {
     override fun read(buf: ByteBuffer): List<ProjectFilePathAndFd> {
         val len = buf.getInt()
         return List<ProjectFilePathAndFd>(len) {
@@ -1085,7 +1147,7 @@ public object FfiConverterSequenceTypeProjectFilePathAndFd: FfiConverterRustBuff
 
 
 
-public object FfiConverterSequenceTypeCustomTracepoint: FfiConverterRustBuffer<List<CustomTracepoint>> {
+object FfiConverterSequenceTypeCustomTracepoint: FfiConverterRustBuffer<List<CustomTracepoint>> {
     override fun read(buf: ByteBuffer): List<CustomTracepoint> {
         val len = buf.getInt()
         return List<CustomTracepoint>(len) {
@@ -1109,7 +1171,7 @@ public object FfiConverterSequenceTypeCustomTracepoint: FfiConverterRustBuffer<L
 
 fun `addProjectFiles`(`newProjectFiles`: List<ProjectFilePathAndFd>) =
     
-    rustCall() { _status ->
+    rustCall { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_add_project_files(FfiConverterSequenceTypeProjectFilePathAndFd.lower(`newProjectFiles`),_status)
 }
 
@@ -1117,7 +1179,7 @@ fun `addProjectFiles`(`newProjectFiles`: List<ProjectFilePathAndFd>) =
 
 fun `clearProjectFiles`() =
     
-    rustCall() { _status ->
+    rustCall { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_clear_project_files(_status)
 }
 
@@ -1125,7 +1187,7 @@ fun `clearProjectFiles`() =
 
 fun `getProjectFileText`(`path`: String): String {
     return FfiConverterString.lift(
-    rustCall() { _status ->
+    rustCall { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_get_project_file_text(FfiConverterString.lower(`path`),_status)
 })
 }
@@ -1133,7 +1195,7 @@ fun `getProjectFileText`(`path`: String): String {
 
 fun `initializeWorld`() =
     
-    rustCall() { _status ->
+    rustCall { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_initialize_world(_status)
 }
 
@@ -1141,7 +1203,7 @@ fun `initializeWorld`() =
 
 fun `markdownToDocx`(`markdown`: String): ByteArray {
     return FfiConverterByteArray.lift(
-    rustCall() { _status ->
+    rustCall { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_markdown_to_docx(FfiConverterString.lower(`markdown`),_status)
 })
 }
@@ -1149,7 +1211,7 @@ fun `markdownToDocx`(`markdown`: String): ByteArray {
 
 fun `markdownToHtml`(`markdown`: String): String {
     return FfiConverterString.lift(
-    rustCall() { _status ->
+    rustCall { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_markdown_to_html(FfiConverterString.lower(`markdown`),_status)
 })
 }
@@ -1157,7 +1219,7 @@ fun `markdownToHtml`(`markdown`: String): String {
 
 fun `plainTextToDocx`(`plainText`: String): ByteArray {
     return FfiConverterByteArray.lift(
-    rustCall() { _status ->
+    rustCall { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_plain_text_to_docx(FfiConverterString.lower(`plainText`),_status)
 })
 }
@@ -1165,7 +1227,7 @@ fun `plainTextToDocx`(`plainText`: String): ByteArray {
 
 fun `removeProjectFiles`(`projectFilesPathsToRemove`: List<String>) =
     
-    rustCall() { _status ->
+    rustCall { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_remove_project_files(FfiConverterSequenceString.lower(`projectFilesPathsToRemove`),_status)
 }
 
@@ -1173,7 +1235,7 @@ fun `removeProjectFiles`(`projectFilesPathsToRemove`: List<String>) =
 
 fun `setMainProjectFile`(`mainProjectFilePathAndFd`: ProjectFilePathAndFd) =
     
-    rustCall() { _status ->
+    rustCall { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_set_main_project_file(FfiConverterTypeProjectFilePathAndFd.lower(`mainProjectFilePathAndFd`),_status)
 }
 
@@ -1181,24 +1243,25 @@ fun `setMainProjectFile`(`mainProjectFilePathAndFd`: ProjectFilePathAndFd) =
 
 fun `testGetMainPdf`(): ByteArray {
     return FfiConverterByteArray.lift(
-    rustCall() { _status ->
+    rustCall { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_test_get_main_pdf(_status)
 })
 }
 
 @Throws(RenderException::class)
 
-fun `testGetMainSvg`(): List<ByteArray> {
-    return FfiConverterSequenceByteArray.lift(
+fun `testGetMainSvg`(): ByteArray {
+    return FfiConverterByteArray.lift(
     rustCallWithError(RenderException) { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_test_get_main_svg(_status)
 })
 }
 
+@Throws(CustomFileException::class)
 
 fun `updateProjectFile`(`newText`: String, `path`: String): String {
     return FfiConverterString.lift(
-    rustCall() { _status ->
+        rustCallWithError(CustomFileException) { _status ->
     _UniFFILib.INSTANCE.uniffi_beautyxt_rs_fn_func_update_project_file(FfiConverterString.lower(`newText`),FfiConverterString.lower(`path`),_status)
 })
 }

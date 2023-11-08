@@ -1,3 +1,4 @@
+use chrono::{Datelike, FixedOffset, TimeZone, Timelike, Utc};
 use comemo::Prehashed;
 use once_cell::sync::Lazy;
 #[cfg(target_family = "unix")]
@@ -7,14 +8,15 @@ use std::{
     io::{Read, Seek, Write},
     sync::Mutex,
 };
+use typst::{diag::EcoString, geom::Abs};
 use typst::{
     diag::{FileError, FileResult, Severity, Tracepoint},
-    eval::{Bytes, Datetime, Library, Tracer},
+    eval::{Bytes, Library, Tracer},
     font::{Font, FontBook},
     syntax::{FileId, PackageSpec, Source, VirtualPath},
     World,
 };
-use typst::diag::EcoString;
+use typst::{eval::Datetime, font::FontInfo};
 
 static MAIN_PROJECT_FILE: Lazy<Mutex<Option<ProjectFilePathAndFile>>> =
     Lazy::new(|| Mutex::new(None));
@@ -37,7 +39,7 @@ pub struct ProjectFilePathAndFile {
     path: String,
     file: File,
     source: Option<Source>,
-    bytes: Option<Source>,
+    bytes: Option<Bytes>,
 }
 
 impl ProjectFilePathAndFile {
@@ -103,9 +105,6 @@ pub fn remove_project_files(project_files_paths_to_remove: Vec<String>) {
     project_files.retain(|pf| !project_files_paths_to_remove.contains(&pf.path))
 }
 
-// let project_files = PROJECT_FILES.lock().unwrap();
-// project_files.iter().find(|project_file_path_and_file| project_file_path_and_file.path == path)
-
 #[uniffi::export]
 pub fn clear_project_files() {
     let mut project_files = PROJECT_FILES.lock().unwrap();
@@ -114,8 +113,18 @@ pub fn clear_project_files() {
     *MAIN_PROJECT_FILE.lock().unwrap() = None;
 }
 
+#[derive(uniffi::Error, Debug, thiserror::Error)]
+pub enum CustomFileError {
+    #[error("A file was not found at this path.")]
+    NotFound { path: String },
+    #[error("The file was not valid UTF-8, but should have been.")]
+    InvalidUtf8,
+    #[error("Another error.\n\nThe optional string can give more details, if available.")]
+    Other { details: Option<String> },
+}
+
 #[uniffi::export]
-pub fn update_project_file(new_text: String, path: String) -> String {
+pub fn update_project_file(new_text: String, path: String) -> Result<String, CustomFileError> {
     let world = WORLD.lock().unwrap();
     let world = world.as_ref().unwrap();
 
@@ -131,16 +140,126 @@ pub fn update_project_file(new_text: String, path: String) -> String {
 
         let text = source.text().to_owned();
 
-        file.set_len(0).unwrap();
-        file.write_all(text.as_bytes()).unwrap();
+        match file.set_len(0) {
+            Ok(_) => (),
+            Err(err) => {
+                return Err(CustomFileError::Other {
+                    details: Some(err.to_string()),
+                })
+            }
+        }
 
-        text
+        match file.write_all(text.as_bytes()) {
+            Ok(_) => (),
+            Err(err) => {
+                return Err(CustomFileError::Other {
+                    details: Some(err.to_string()),
+                })
+            }
+        }
+
+        match file.rewind() {
+            Ok(_) => (),
+            Err(err) => {
+                return Err(CustomFileError::Other {
+                    details: Some(format!(
+                        "Rewinding file failed. Error: {}, File: {:#?}",
+                        err, file
+                    )),
+                })
+            }
+        }
+
+        Ok(text)
     } else {
-        let source = world.source(FileId::new(None, VirtualPath::new(path)));
-        let mut source = source.unwrap(); // TODO: Properly handle errors by returning a result instead of unwrapping
+        let mut binding = PROJECT_FILES.lock();
+        let binding = binding.as_mut();
+        let project_files = binding.unwrap();
 
-        source.replace(&new_text);
-        source.text().to_owned()
+        match project_files
+            .iter_mut()
+            .find(|project_file_path_and_file| project_file_path_and_file.path == path)
+        {
+            Some(project_file_path_and_file) => match &mut project_file_path_and_file.source {
+                Some(source) => {
+                    source.replace(&new_text);
+                    let text = source.text().to_owned();
+
+                    let mut file = &project_file_path_and_file.file;
+
+                    match file.set_len(0) {
+                        Ok(_) => (),
+                        Err(err) => {
+                            return Err(CustomFileError::Other {
+                                details: Some(err.to_string()),
+                            })
+                        }
+                    }
+
+                    match file.write_all(text.as_bytes()) {
+                        Ok(_) => (),
+                        Err(err) => {
+                            return Err(CustomFileError::Other {
+                                details: Some(err.to_string()),
+                            })
+                        }
+                    }
+
+                    match project_file_path_and_file.file.rewind() {
+                        Ok(_) => (),
+                        Err(err) => {
+                            return Err(CustomFileError::Other {
+                                details: Some(format!(
+                                    "Rewinding file failed. Error: {}, File: {:#?}",
+                                    err, project_file_path_and_file.file
+                                )),
+                            })
+                        }
+                    }
+
+                    Ok(text)
+                }
+                None => {
+                    let mut buf = vec![];
+
+                    match project_file_path_and_file.file.read_to_end(&mut buf) {
+                        Ok(_) => (),
+                        Err(err) => {
+                            return Err(CustomFileError::Other {
+                                details: Some(err.to_string()),
+                            })
+                        }
+                    }
+
+                    match project_file_path_and_file.file.rewind() {
+                        Ok(_) => (),
+                        Err(err) => {
+                            return Err(CustomFileError::Other {
+                                details: Some(format!(
+                                    "Rewinding file failed. Error: {}, File: {:#?}",
+                                    err, project_file_path_and_file.file
+                                )),
+                            })
+                        }
+                    }
+
+                    let old_text = match std::string::String::from_utf8(buf) {
+                        Ok(text) => text,
+                        Err(_) => return Err(CustomFileError::InvalidUtf8),
+                    };
+
+                    let mut source =
+                        Source::new(FileId::new(None, VirtualPath::new(path)), old_text);
+
+                    source.replace(&new_text);
+
+                    project_file_path_and_file.source = Some(source.clone());
+
+                    Ok(source.text().to_owned())
+                }
+            },
+            None => Err(CustomFileError::NotFound { path }),
+        }
     }
 }
 
@@ -154,7 +273,9 @@ pub fn get_project_file_text(path: String) -> String {
 
         source.text().to_owned()
     } else {
-        let source = world.source(FileId::new(None, VirtualPath::new(path))).unwrap();  // TODO: Properly handle errors by returning a result instead of unwrapping
+        let source = world
+            .source(FileId::new(None, VirtualPath::new(path)))
+            .unwrap(); // TODO: Properly handle errors by returning a result instead of unwrapping
 
         source.text().to_owned()
     }
@@ -230,20 +351,16 @@ pub enum RenderError {
 }
 
 #[uniffi::export]
-pub fn test_get_main_svg() -> Result<Vec<Vec<u8>>, RenderError> {
+pub fn test_get_main_svg() -> Result<Vec<u8>, RenderError> {
     let binding = WORLD.lock().unwrap();
     let world = binding.as_ref().unwrap();
     let mut tracer = Tracer::new();
 
     match typst::compile(world, &mut tracer) {
         Ok(document) => {
-            let svgs: Vec<Vec<u8>> = document
-                .pages
-                .iter()
-                .map(|frame| typst::export::svg(frame).into_bytes())
-                .collect();
+            let frames = document.pages;
 
-            Ok(svgs)
+            Ok(typst::export::svg_merged(&frames, Abs::default()).into_bytes())
         }
         // Convert the errors to our custom errors that can be returned to Kotlin code
         Err(errors) => Err(RenderError::VecCustomSourceDiagnostic {
@@ -297,12 +414,27 @@ impl SomeWorld {
     pub fn new() -> SomeWorld {
         Self {
             library: Prehashed::new(typst_library::build()),
-            fonts: Prehashed::new(FontBook::from_fonts(&Font::new(
-                include_bytes!("../Roboto/Roboto-Regular.ttf")
-                    .as_slice()
-                    .into(),
-                0,
-            ))),
+            fonts: Prehashed::new(FontBook::from_infos(vec![
+                // Noto Serif
+                FontInfo::new(include_bytes!("../Noto_Serif/NotoSerif-Regular.ttf"), 0).unwrap(),
+                FontInfo::new(include_bytes!("../Noto_Serif/NotoSerif-Bold.ttf"), 0).unwrap(),
+                FontInfo::new(include_bytes!("../Noto_Serif/NotoSerif-Italic.ttf"), 0).unwrap(),
+                FontInfo::new(include_bytes!("../Noto_Serif/NotoSerif-BoldItalic.ttf"), 0).unwrap(),
+                // Roboto
+                FontInfo::new(include_bytes!("../Roboto/Roboto-Regular.ttf"), 0).unwrap(),
+                FontInfo::new(include_bytes!("../Roboto/Roboto-Bold.ttf"), 0).unwrap(),
+                FontInfo::new(include_bytes!("../Roboto/Roboto-Italic.ttf"), 0).unwrap(),
+                FontInfo::new(include_bytes!("../Roboto/Roboto-BoldItalic.ttf"), 0).unwrap(),
+
+                // STIX Two Math
+                FontInfo::new(include_bytes!("../STIX_Two/STIXTwoMath-Regular.ttf"), 0).unwrap(),
+
+                // STIX Two Text
+                FontInfo::new(include_bytes!("../STIX_Two/STIXTwoText-Regular.ttf"), 0).unwrap(),
+                FontInfo::new(include_bytes!("../STIX_Two/STIXTwoText-Bold.ttf"), 0).unwrap(),
+                FontInfo::new(include_bytes!("../STIX_Two/STIXTwoText-Italic.ttf"), 0).unwrap(),
+                FontInfo::new(include_bytes!("../STIX_Two/STIXTwoText-BoldItalic.ttf"), 0).unwrap(),
+            ])),
         }
     }
 }
@@ -324,20 +456,18 @@ impl World for SomeWorld {
         let main_project_file = binding.as_mut().unwrap();
 
         match &main_project_file.source {
-            Some(source) => {
-                source.clone()
-            },
+            Some(source) => source.clone(),
             None => {
                 let mut buf = vec![];
 
                 main_project_file.file.read_to_end(&mut buf).unwrap();
                 main_project_file.file.rewind().unwrap();
-    
+
                 Source::new(
                     FileId::new(None, VirtualPath::new(main_project_file.path.clone())),
                     std::str::from_utf8(&buf).unwrap().to_owned(),
                 )
-            },
+            }
         }
     }
 
@@ -391,17 +521,130 @@ impl World for SomeWorld {
 
     #[doc = " Try to access the specified file."]
     fn file(&self, id: FileId) -> FileResult<Bytes> {
-        todo!()
+        let mut binding = PROJECT_FILES.lock();
+        let binding = binding.as_mut();
+        let project_files = binding.unwrap();
+
+        let id_path = id.vpath().as_rooted_path();
+
+        match project_files.iter_mut().find(|project_file_path_and_file| {
+            project_file_path_and_file.path == id_path.to_str().unwrap()
+        }) {
+            Some(project_file_path_and_file) => match &project_file_path_and_file.bytes {
+                Some(bytes) => FileResult::Ok(bytes.clone()),
+                None => {
+                    let mut buf = vec![];
+
+                    match project_file_path_and_file.file.read_to_end(&mut buf) {
+                        Ok(_) => (),
+                        Err(err) => return FileResult::Err(FileError::from_io(err, id_path)),
+                    };
+
+                    match project_file_path_and_file.file.rewind() {
+                        Ok(_) => (),
+                        Err(err) => {
+                            return FileResult::Err(FileError::Other(Some(EcoString::inline(
+                                &format!(
+                                    "Rewinding file failed. Error: {}, File: {:#?}",
+                                    err, project_file_path_and_file.file
+                                ),
+                            ))))
+                        }
+                    };
+
+                    Ok(Bytes::from(buf))
+                }
+            },
+            None => FileResult::Err(FileError::NotFound(id_path.into())),
+        }
     }
 
     #[doc = " Try to access the font with the given index in the font book."]
     fn font(&self, index: usize) -> Option<Font> {
-        Font::new(
-            include_bytes!("../Roboto/Roboto-Regular.ttf")
-                .as_slice()
-                .into(),
-            0,
-        )
+        match index {
+            // Noto Serif
+            0 => Font::new(
+                include_bytes!("../Noto_Serif/NotoSerif-Regular.ttf")
+                    .as_slice()
+                    .into(),
+                0,
+            ),
+            1 => Font::new(
+                include_bytes!("../Noto_Serif/NotoSerif-Bold.ttf")
+                    .as_slice()
+                    .into(),
+                0,
+            ),
+            2 => Font::new(
+                include_bytes!("../Noto_Serif/NotoSerif-Italic.ttf")
+                    .as_slice()
+                    .into(),
+                0,
+            ),
+            3 => Font::new(
+                include_bytes!("../Noto_Serif/NotoSerif-BoldItalic.ttf")
+                    .as_slice()
+                    .into(),
+                0,
+            ),
+
+            // Roboto
+            4 => Font::new(
+                include_bytes!("../Roboto/Roboto-Regular.ttf")
+                    .as_slice()
+                    .into(),
+                0,
+            ),
+            5 => Font::new(
+                include_bytes!("../Roboto/Roboto-Bold.ttf")
+                    .as_slice()
+                    .into(),
+                0,
+            ),
+            6 => Font::new(
+                include_bytes!("../Roboto/Roboto-Italic.ttf")
+                    .as_slice()
+                    .into(),
+                0,
+            ),
+            7 => Font::new(
+                include_bytes!("../Roboto/Roboto-BoldItalic.ttf")
+                    .as_slice()
+                    .into(),
+                0,
+            ),
+
+            // STIX Two Math
+            8 => Font::new(include_bytes!("../STIX_Two/STIXTwoMath-Regular.ttf")
+                    .as_slice()
+                    .into(),
+                0,
+            ),
+
+            // STIX Two Text
+            9 => Font::new(include_bytes!("../STIX_Two/STIXTwoText-Regular.ttf")
+                    .as_slice()
+                    .into(),
+                0,
+            ),
+            10 => Font::new(include_bytes!("../STIX_Two/STIXTwoText-Bold.ttf")
+                    .as_slice()
+                    .into(), 
+                0
+            ),
+            11 => Font::new(include_bytes!("../STIX_Two/STIXTwoText-Italic.ttf")
+                    .as_slice()
+                    .into(),
+                0
+            ),
+            12 => Font::new(include_bytes!("../STIX_Two/STIXTwoText-BoldItalic.ttf")
+                    .as_slice()
+                    .into(),
+                0
+            ),
+
+            _ => panic!("Font index is not valid!"),
+        }
     }
 
     #[doc = " Get the current date."]
@@ -412,7 +655,41 @@ impl World for SomeWorld {
     #[doc = " If this function returns `None`, Typst\\'s `datetime` function will"]
     #[doc = " return an error."]
     fn today(&self, offset: Option<i64>) -> Option<Datetime> {
-        todo!()
+        let now = Utc::now();
+        let hour = 3600;
+
+        // TODO: Seems like device timezone is not detected... might have to pass it from the Kotlin side
+        match offset {
+            Some(offset) => {
+                let local_time = FixedOffset::east_opt((offset * hour).try_into().unwrap())
+                    .unwrap()
+                    .with_ymd_and_hms(
+                        now.year(),
+                        now.month().try_into().unwrap(),
+                        now.day().try_into().unwrap(),
+                        now.hour().try_into().unwrap(),
+                        now.minute().try_into().unwrap(),
+                        now.second().try_into().unwrap(),
+                    )
+                    .unwrap();
+                Some(Datetime::from_ymd_hms(
+                    local_time.year().try_into().unwrap(),
+                    local_time.month().try_into().unwrap(),
+                    local_time.day().try_into().unwrap(),
+                    local_time.hour().try_into().unwrap(),
+                    local_time.minute().try_into().unwrap(),
+                    local_time.second().try_into().unwrap(),
+                )?)
+            }
+            None => Some(Datetime::from_ymd_hms(
+                now.year(),
+                now.month().try_into().unwrap(),
+                now.day().try_into().unwrap(),
+                now.hour().try_into().unwrap(),
+                now.minute().try_into().unwrap(),
+                now.second().try_into().unwrap(),
+            )?),
+        }
     }
 
     #[doc = " A list of all available packages and optionally descriptions for them."]

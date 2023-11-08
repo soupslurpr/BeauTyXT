@@ -1,10 +1,8 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
     <string name="app_name">BeauTyXT</string>
     <string name="settings">Einstellungen</string>
     <string name="back_button">Zurück</string>
     <string name="welcome">Willkommen zu BeauTyXT!</string>
-    <string name="create_new_file">Eine neue Datei erstellen</string>
-    <string name="open_existing_file">Bestehende Datei öffnen</string>
     <string name="file_editor">Datei Editor</string>
     <string name="view_source_code_setting_name">Quellcode</string>
     <string name="view_source_code_setting_description">Siehe BeauTyXT\'s Quellcode auf der GitHub Webseite in deinem Webbrowser an</string>
@@ -28,8 +26,6 @@
     <string name="size">Größe</string>
     <string name="mime_type">MIME Typ</string>
     <string name="bytes">Bytes</string>
-    <string name="new_file">Neue Datei</string>
-    <string name="open_file">Datei öffnen</string>
     <string name="open_beautyxt_website_setting_name">BeauTyXT\'s Webseite</string>
     <string name="open_beautyxt_website_setting_description">Öffne BeauTyXT\'s Webseite in deinem Webbrowser</string>
 </resources>

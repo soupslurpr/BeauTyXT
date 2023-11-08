@@ -69,16 +69,34 @@ fun SettingsScreen(
             SettingsItem(
                 name = stringResource(id = R.string.render_markdown_setting_name),
                 description = stringResource(
-                    id = R.string.render_markdown_setting_description, stringResource(
-                        R.string
-                            .md
-                    )
+                    id = R.string.render_markdown_setting_description, stringResource(R.string.md)
                 ),
                 hasSwitch = true,
                 checked = preferencesUiState.renderMarkdown.second.value,
                 onCheckedChange = {
                     coroutineScope.launch {
                         preferencesViewModel.setPreference(preferencesUiState.renderMarkdown.first, it)
+                    }
+                }
+            )
+        }
+
+        Column {
+            SettingsCategoryText(category = stringResource(id = R.string.typst_project))
+            SettingsItem(
+                name = stringResource(R.string.typst_project_show_warnings_and_errors_setting_name),
+                description = stringResource(
+                    R.string.typst_project_show_warnings_and_errors_setting_description,
+                    stringResource(R.string.typst_project)
+                ),
+                hasSwitch = true,
+                checked = preferencesUiState.typstProjectShowWarningsAndErrors.second.value,
+                onCheckedChange = {
+                    coroutineScope.launch {
+                        preferencesViewModel.setPreference(
+                            preferencesUiState.typstProjectShowWarningsAndErrors
+                                .first, it
+                        )
                     }
                 }
             )

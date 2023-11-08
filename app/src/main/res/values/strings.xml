@@ -3,8 +3,6 @@
     <string name="settings">Settings</string>
     <string name="back_button">Back</string>
     <string name="welcome">Welcome to BeauTyXT!</string>
-    <string name="create_new_file">Create a new file</string>
-    <string name="open_existing_file">Open an existing file</string>
     <string name="file_editor">File Editor</string>
     <string name="view_source_code_setting_name">Source code</string>
     <string name="view_source_code_setting_description">View BeauTyXT\'s source code on the GitHub website in your web browser</string>
@@ -28,8 +26,6 @@
     <string name="size">Size</string>
     <string name="mime_type">MIME Type</string>
     <string name="bytes">Bytes</string>
-    <string name="new_file">New File</string>
-    <string name="open_file">Open File</string>
     <string name="open_beautyxt_website_setting_name">BeauTyXT\'s Website</string>
     <string name="open_beautyxt_website_setting_description">Open BeauTyXT\'s website in your web browser</string>
     <string name="review_privacy_policy_and_license" translatable="false">Review BeauTyXT\'s privacy policy and license (scroll down)</string>
@@ -81,5 +77,14 @@
         this?\nDeleted files are irrecoverable (gone forever!)</string>
     <string name="share" tools:ignore="MissingTranslation">Share</string>
     <string name="share_as" tools:ignore="MissingTranslation">Share As</string>
-    <string name="typst_project">Typst Project</string>
+    <string name="typst_project" tools:ignore="MissingTranslation">Typst project</string>
+    <string name="open" tools:ignore="MissingTranslation">Open</string>
+    <string name="create" tools:ignore="MissingTranslation">Create</string>
+    <string name="create_typst_project" tools:ignore="MissingTranslation">%1$s (Create a new folder from the menu and give access to it)</string>
+    <string name="pdf" tools:ignore="MissingTranslation">PDF (.pdf)</string>
+    <string name="edit_another_file_in_the_typst_project" tools:ignore="MissingTranslation">Edit another file in the Typst project</string>
+    <string name="create_and_edit_another_file_in_the_typst_project" tools:ignore="MissingTranslation">Create and edit another file in the Typst project</string>
+    <string name="typst_project_show_warnings_and_errors_setting_name" tools:ignore="MissingTranslation">Show warnings and errors</string>
+    <string name="typst_project_show_warnings_and_errors_setting_description" tools:ignore="MissingTranslation">Show warnings and errors below the %1$s preview</string>
+    <string name="rendered_typst_project_preview" tools:ignore="MissingTranslation">Rendered Typst project preview</string>
 </resources>

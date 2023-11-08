@@ -57,6 +57,13 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
                                 .second.value
                         )
                     ),
+                    typstProjectShowWarningsAndErrors = Pair(
+                        uiState.value.typstProjectShowWarningsAndErrors.first,
+                        mutableStateOf(
+                            settings[uiState.value.typstProjectShowWarningsAndErrors.first] ?: uiState.value
+                                .typstProjectShowWarningsAndErrors.second.value
+                        )
+                    ),
                     experimentalFeaturePreviewRenderedMarkdownInFullscreen = Pair(
                         uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first,
                         mutableStateOf(

@@ -6,4 +6,8 @@ accepted = [
     "BSD-3-Clause",
     "ISC",
     "Unicode-DFS-2016",
+    "NOASSERTION",
+    "OFL-1.1",
+    "Zlib",
+    "Apache-2.0 WITH LLVM-exception",
 ]
