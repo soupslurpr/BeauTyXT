@@ -39,6 +39,7 @@ fun TypstProjectScreen(
     typstProjectViewModel: TypstProjectViewModel,
     preferencesUiState: PreferencesUiState,
     navigateUp: () -> Unit,
+    previewTypstProjectRenderedToFullscreen: Boolean,
 ) {
     val context = LocalContext.current
 
@@ -71,7 +72,13 @@ fun TypstProjectScreen(
             modifier = Modifier.imePadding()
         ) {
             TypstProjectTextField(
-                modifier = Modifier.fillMaxSize().weight(1f),
+                modifier = Modifier.fillMaxSize().weight(
+                    if (previewTypstProjectRenderedToFullscreen) {
+                        0.00000001f
+                    } else {
+                        1f
+                    }
+                ),
                 content = content,
                 displayName = typstProjectUiState.currentOpenedDisplayName.value,
             ) {
@@ -115,7 +122,13 @@ fun TypstProjectScreen(
             modifier = Modifier.imePadding()
         ) {
             TypstProjectTextField(
-                modifier = Modifier.fillMaxSize().weight(1f),
+                modifier = Modifier.fillMaxSize().weight(
+                    if (previewTypstProjectRenderedToFullscreen) {
+                        0.00000001f
+                    } else {
+                        1f
+                    }
+                ),
                 content = content,
                 displayName = typstProjectUiState.currentOpenedDisplayName.value,
             ) {

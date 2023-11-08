@@ -39,6 +39,16 @@ data class PreferencesUiState(
         mutableStateOf(false)
     ),
 
+    /** Experimental feature that shows a button when a Typst project is open which will toggle a fullscreen view of
+     * the rendered Typst project preview.
+     */
+    val experimentalFeaturePreviewRenderedTypstProjectInFullscreen: Pair<Preferences.Key<Boolean>,
+            MutableState<Boolean>> = Pair(
+        (booleanPreferencesKey
+            ("EXPERIMENTAL_FEATURE_PREVIEW_RENDERED_TYPST_PROJECT_IN_FULLSCREEN")),
+        mutableStateOf(false)
+    ),
+
     /** Experimental feature that shows the open files of any type button. It is an experimental
      * feature as it currently corrupts some files such as but not limited to .pdf's, .odt's, and
      * probably more.

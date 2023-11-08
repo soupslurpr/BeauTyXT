@@ -162,6 +162,7 @@ fun BeauTyXTAppBar(
     readOnly: Boolean,
     mimeType: String,
     onPreviewMarkdownRenderedToFullscreenButtonClicked: () -> Unit,
+    onPreviewTypstProjectRenderedToFullscreenButtonClicked: () -> Unit,
     modifier: Modifier
 ) {
     val dropDownMenuItemTextStyle = typography.bodyLarge
@@ -188,7 +189,31 @@ fun BeauTyXTAppBar(
                 if (!isCurrentScreenTypstProject && readOnly) {
                     Text(text = stringResource(R.string.read_only))
                 }
+                if (mimeType == mimeTypeMarkdown) {
+                    if (preferencesUiState.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value) {
+                        IconButton(
+                            onClick = onPreviewMarkdownRenderedToFullscreenButtonClicked,
+                            content = {
+                                Icon(
+                                    painter = painterResource(R.drawable.baseline_preview_24),
+                                    contentDescription = stringResource(R.string.preview_markdown_rendered_to_html)
+                                )
+                            }
+                        )
+                    }
+                }
                 if (isCurrentScreenTypstProject) {
+                    if (preferencesUiState.experimentalFeaturePreviewRenderedTypstProjectInFullscreen.second.value) {
+                        IconButton(
+                            onClick = onPreviewTypstProjectRenderedToFullscreenButtonClicked,
+                            content = {
+                                Icon(
+                                    painter = painterResource(R.drawable.baseline_preview_24),
+                                    contentDescription = stringResource(R.string.toggle_previewing_typst_project_in_fullscreen)
+                                )
+                            }
+                        )
+                    }
                     IconButton(
                         onClick = onTypstProjectCreateAndOpenAnotherFileInTheProjectButtonClicked,
                         content = {
@@ -207,19 +232,6 @@ fun BeauTyXTAppBar(
                             )
                         }
                     )
-                }
-                if (mimeType == mimeTypeMarkdown) {
-                    if (preferencesUiState.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value) {
-                        IconButton(
-                            onClick = onPreviewMarkdownRenderedToFullscreenButtonClicked,
-                            content = {
-                                Icon(
-                                    painter = painterResource(R.drawable.baseline_preview_24),
-                                    contentDescription = stringResource(R.string.preview_markdown_rendered_to_html)
-                                )
-                            }
-                        )
-                    }
                 }
                 IconButton(
                     onClick = onDropDownMenuButtonClicked,
@@ -612,6 +624,8 @@ fun BeauTyXTApp(
     }
 
     var previewMarkdownRenderedToFullscreen by rememberSaveable { mutableStateOf(false) }
+
+    var previewTypstProjectRenderedToFullscreen by rememberSaveable { mutableStateOf(false) }
 
     val randomValue = Random.nextInt(0, 10)
     val splashMessage = rememberSaveable {
@@ -1254,6 +1268,10 @@ ${
                     previewMarkdownRenderedToFullscreen = !previewMarkdownRenderedToFullscreen
                 },
 
+                onPreviewTypstProjectRenderedToFullscreenButtonClicked = {
+                    previewTypstProjectRenderedToFullscreen = !previewTypstProjectRenderedToFullscreen
+                },
+
                 modifier = modifier
             )
         }
@@ -1368,7 +1386,8 @@ ${
                 TypstProjectScreen(
                     typstProjectViewModel = typstProjectViewModel,
                     preferencesUiState = preferencesUiState,
-                    navigateUp = { navController.navigateUp() }
+                    navigateUp = { navController.navigateUp() },
+                    previewTypstProjectRenderedToFullscreen = previewTypstProjectRenderedToFullscreen
                 )
             }
             composable(route = BeauTyXTScreens.Settings.name) {

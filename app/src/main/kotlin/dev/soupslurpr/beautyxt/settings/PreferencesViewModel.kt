@@ -72,6 +72,13 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
                                 ?: uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.second.value
                         )
                     ),
+                    experimentalFeaturePreviewRenderedTypstProjectInFullscreen = Pair(
+                        uiState.value.experimentalFeaturePreviewRenderedTypstProjectInFullscreen.first,
+                        mutableStateOf(
+                            settings[uiState.value.experimentalFeaturePreviewRenderedTypstProjectInFullscreen.first]
+                                ?: uiState.value.experimentalFeaturePreviewRenderedTypstProjectInFullscreen.second.value
+                        )
+                    ),
                     experimentalFeatureOpenAnyFileType = Pair(
                         uiState.value.experimentalFeatureOpenAnyFileType.first,
                         mutableStateOf(

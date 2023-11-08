@@ -187,6 +187,20 @@ fun SettingsScreen(
                 }
             )
             SettingsItem(
+                name = stringResource(R.string.fullscreen_typst_preview_button_setting_name),
+                description = stringResource(R.string.fullscreen_typst_preview_button_setting_description),
+                hasSwitch = true,
+                checked = preferencesUiState.experimentalFeaturePreviewRenderedTypstProjectInFullscreen.second.value,
+                onCheckedChange = {
+                    coroutineScope.launch {
+                        preferencesViewModel.setPreference(
+                            preferencesUiState
+                                .experimentalFeaturePreviewRenderedTypstProjectInFullscreen.first, it
+                        )
+                    }
+                }
+            )
+            SettingsItem(
                 name = stringResource(R.string.open_any_file_type_setting_name),
                 description = stringResource(R.string.open_any_file_type_setting_description),
                 hasSwitch = true,

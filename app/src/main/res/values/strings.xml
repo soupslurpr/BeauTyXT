@@ -87,4 +87,7 @@
     <string name="typst_project_show_warnings_and_errors_setting_name" tools:ignore="MissingTranslation">Show warnings and errors</string>
     <string name="typst_project_show_warnings_and_errors_setting_description" tools:ignore="MissingTranslation">Show warnings and errors below the %1$s preview</string>
     <string name="rendered_typst_project_preview" tools:ignore="MissingTranslation">Rendered Typst project preview</string>
+    <string name="toggle_previewing_typst_project_in_fullscreen" tools:ignore="MissingTranslation">Toggle previewing Typst project in fullscreen</string>
+    <string name="fullscreen_typst_preview_button_setting_name" tools:ignore="MissingTranslation">Fullscreen Typst Preview Button</string>
+    <string name="fullscreen_typst_preview_button_setting_description" tools:ignore="MissingTranslation">Shows a button when a Typst project is open which will toggle a fullscreen preview of the rendered Typst project.\nExperimental because it has a few issues.</string>
 </resources>
