@@ -584,8 +584,8 @@ fun BeauTyXTApp(
                 ()
     ) {
         if (it != null) {
-            typstProjectViewModel.setCurrentOpenedPath(it, context.contentResolver)
             typstProjectViewModel.refreshProjectFiles(context)
+            typstProjectViewModel.setCurrentOpenedPath(it, context.contentResolver)
             typstProjectViewModel.uiState.value.currentOpenedContent.value = getProjectFileText(
                 typstProjectViewModel
                     .uiState.value
@@ -600,6 +600,7 @@ fun BeauTyXTApp(
         CreateDocument("typst/application")
     ) {
         if (it != null) {
+            typstProjectViewModel.refreshProjectFiles(context)
             typstProjectViewModel.setCurrentOpenedPath(it, context.contentResolver)
             typstProjectViewModel.refreshProjectFiles(context)
             typstProjectViewModel.uiState.value.currentOpenedContent.value = getProjectFileText(
