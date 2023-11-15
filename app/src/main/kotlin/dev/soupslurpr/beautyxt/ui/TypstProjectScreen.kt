@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -26,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
 import coil.request.ImageRequest
@@ -94,6 +96,7 @@ fun TypstProjectScreen(
             ) {
                 Text(
                     text = stringResource(R.string.rendered_typst_project_preview),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 0.dp),
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold,
@@ -144,6 +147,7 @@ fun TypstProjectScreen(
             ) {
                 Text(
                     text = stringResource(R.string.rendered_typst_project_preview),
+                    modifier = Modifier.padding(top = 8.dp),
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold,
