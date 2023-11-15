@@ -231,56 +231,11 @@ fun CreditsScreen(
     LazyColumn(
         modifier = Modifier
     ) {
-        // This is a Rust library credit, its added as clearly defined doesn't identify it properly yet so it can't
-        // be included in the Rust library credits.
         item {
             CreditsItem(
-                dependencyName = "ICU4X",
-                dependencyPackageName = "https://github.com/unicode-org/icu4x",
-                dependencyLicense = "UNICODE LICENSE V3\n" +
-                        "\n" +
-                        "COPYRIGHT AND PERMISSION NOTICE\n" +
-                        "\n" +
-                        "Copyright © 2020-2023 Unicode, Inc.\n" +
-                        "\n" +
-                        "NOTICE TO USER: Carefully read the following legal agreement. BY\n" +
-                        "DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING DATA FILES, AND/OR\n" +
-                        "SOFTWARE, YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE\n" +
-                        "TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT\n" +
-                        "DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE THE DATA FILES OR SOFTWARE.\n" +
-                        "\n" +
-                        "Permission is hereby granted, free of charge, to any person obtaining a\n" +
-                        "copy of data files and any associated documentation (the \"Data Files\") or\n" +
-                        "software and any associated documentation (the \"Software\") to deal in the\n" +
-                        "Data Files or Software without restriction, including without limitation\n" +
-                        "the rights to use, copy, modify, merge, publish, distribute, and/or sell\n" +
-                        "copies of the Data Files or Software, and to permit persons to whom the\n" +
-                        "Data Files or Software are furnished to do so, provided that either (a)\n" +
-                        "this copyright and permission notice appear with all copies of the Data\n" +
-                        "Files or Software, or (b) this copyright and permission notice appear in\n" +
-                        "associated Documentation.\n" +
-                        "\n" +
-                        "THE DATA FILES AND SOFTWARE ARE PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY\n" +
-                        "KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF\n" +
-                        "MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF\n" +
-                        "THIRD PARTY RIGHTS.\n" +
-                        "\n" +
-                        "IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE\n" +
-                        "BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES,\n" +
-                        "OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,\n" +
-                        "WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,\n" +
-                        "ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA\n" +
-                        "FILES OR SOFTWARE.\n" +
-                        "\n" +
-                        "Except as contained in this notice, the name of a copyright holder shall\n" +
-                        "not be used in advertising or otherwise to promote the sale, use or other\n" +
-                        "dealings in these Data Files or Software without prior written\n" +
-                        "authorization of the copyright holder.\n" +
-                        "\n" +
-                        "—\n" +
-                        "\n" +
-                        "Portions of ICU4X may have been adapted from ICU4C and/or ICU4J.\n" +
-                        "ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation and others.\n"
+                dependencyName = "Coil",
+                dependencyPackageName = "io.coil-kt:coil\nio.coil-kt:coil-compose\nio.coil-kt:coil-svg",
+                dependencyLicense = APACHE2LICENSE,
             )
         }
         item {
