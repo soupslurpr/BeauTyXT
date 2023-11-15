@@ -46,7 +46,8 @@
     <string name="rendered_markdown" tools:ignore="MissingTranslation">Rendered Markdown</string>
     <string name="preview_markdown_rendered_to_html" tools:ignore="MissingTranslation">Preview Markdown rendered to HTML</string>
     <string name="experimental_features" tools:ignore="MissingTranslation">Experimental Features</string>
-    <string name="fullscreen_markdown_render_preview_setting_name" tools:ignore="MissingTranslation">Fullscreen Markdown Render Preview</string>
+    <string name="fullscreen_markdown_render_preview_setting_name" tools:ignore="MissingTranslation">Fullscreen
+        Markdown Preview Button</string>
     <string name="fullscreen_markdown_render_preview_setting_description" tools:ignore="MissingTranslation">Shows a button when a markdown file is open which will toggle a fullscreen view of the rendered markdown preview.\nExperimental because it has a few issues.</string>
     <string name="open_any_file_type_setting_name" tools:ignore="MissingTranslation">Open Any File Type</string>
     <string name="open_any_file_type_setting_description" tools:ignore="MissingTranslation">Shows Any file type
