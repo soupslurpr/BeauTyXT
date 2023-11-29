@@ -1,4 +1,4 @@
-use chrono::{Datelike, FixedOffset, TimeZone, Timelike, Utc};
+use chrono::{Datelike, FixedOffset, Local, TimeZone, Timelike, Utc};
 use comemo::Prehashed;
 use once_cell::sync::Lazy;
 #[cfg(target_family = "unix")]
@@ -425,10 +425,8 @@ impl SomeWorld {
                 FontInfo::new(include_bytes!("../Roboto/Roboto-Bold.ttf"), 0).unwrap(),
                 FontInfo::new(include_bytes!("../Roboto/Roboto-Italic.ttf"), 0).unwrap(),
                 FontInfo::new(include_bytes!("../Roboto/Roboto-BoldItalic.ttf"), 0).unwrap(),
-
                 // STIX Two Math
                 FontInfo::new(include_bytes!("../STIX_Two/STIXTwoMath-Regular.ttf"), 0).unwrap(),
-
                 // STIX Two Text
                 FontInfo::new(include_bytes!("../STIX_Two/STIXTwoText-Regular.ttf"), 0).unwrap(),
                 FontInfo::new(include_bytes!("../STIX_Two/STIXTwoText-Bold.ttf"), 0).unwrap(),
@@ -615,32 +613,37 @@ impl World for SomeWorld {
             ),
 
             // STIX Two Math
-            8 => Font::new(include_bytes!("../STIX_Two/STIXTwoMath-Regular.ttf")
+            8 => Font::new(
+                include_bytes!("../STIX_Two/STIXTwoMath-Regular.ttf")
                     .as_slice()
                     .into(),
                 0,
             ),
 
             // STIX Two Text
-            9 => Font::new(include_bytes!("../STIX_Two/STIXTwoText-Regular.ttf")
+            9 => Font::new(
+                include_bytes!("../STIX_Two/STIXTwoText-Regular.ttf")
                     .as_slice()
                     .into(),
                 0,
             ),
-            10 => Font::new(include_bytes!("../STIX_Two/STIXTwoText-Bold.ttf")
-                    .as_slice()
-                    .into(), 
-                0
-            ),
-            11 => Font::new(include_bytes!("../STIX_Two/STIXTwoText-Italic.ttf")
+            10 => Font::new(
+                include_bytes!("../STIX_Two/STIXTwoText-Bold.ttf")
                     .as_slice()
                     .into(),
-                0
+                0,
             ),
-            12 => Font::new(include_bytes!("../STIX_Two/STIXTwoText-BoldItalic.ttf")
+            11 => Font::new(
+                include_bytes!("../STIX_Two/STIXTwoText-Italic.ttf")
                     .as_slice()
                     .into(),
-                0
+                0,
+            ),
+            12 => Font::new(
+                include_bytes!("../STIX_Two/STIXTwoText-BoldItalic.ttf")
+                    .as_slice()
+                    .into(),
+                0,
             ),
 
             _ => panic!("Font index is not valid!"),
@@ -655,40 +658,35 @@ impl World for SomeWorld {
     #[doc = " If this function returns `None`, Typst\\'s `datetime` function will"]
     #[doc = " return an error."]
     fn today(&self, offset: Option<i64>) -> Option<Datetime> {
-        let now = Utc::now();
         let hour = 3600;
 
-        // TODO: Seems like device timezone is not detected... might have to pass it from the Kotlin side
         match offset {
             Some(offset) => {
-                let local_time = FixedOffset::east_opt((offset * hour).try_into().unwrap())
-                    .unwrap()
-                    .with_ymd_and_hms(
-                        now.year(),
-                        now.month().try_into().unwrap(),
-                        now.day().try_into().unwrap(),
-                        now.hour().try_into().unwrap(),
-                        now.minute().try_into().unwrap(),
-                        now.second().try_into().unwrap(),
-                    )
-                    .unwrap();
+                let now = Utc::now();
+                let fixed_offset = FixedOffset::east_opt((offset * hour).try_into().ok()?)?;
+                let local_time = fixed_offset.from_utc_datetime(&now.naive_utc());
+
                 Some(Datetime::from_ymd_hms(
-                    local_time.year().try_into().unwrap(),
-                    local_time.month().try_into().unwrap(),
-                    local_time.day().try_into().unwrap(),
-                    local_time.hour().try_into().unwrap(),
-                    local_time.minute().try_into().unwrap(),
-                    local_time.second().try_into().unwrap(),
+                    local_time.year().try_into().ok()?,
+                    local_time.month().try_into().ok()?,
+                    local_time.day().try_into().ok()?,
+                    local_time.hour().try_into().ok()?,
+                    local_time.minute().try_into().ok()?,
+                    local_time.second().try_into().ok()?,
                 )?)
             }
-            None => Some(Datetime::from_ymd_hms(
-                now.year(),
-                now.month().try_into().unwrap(),
-                now.day().try_into().unwrap(),
-                now.hour().try_into().unwrap(),
-                now.minute().try_into().unwrap(),
-                now.second().try_into().unwrap(),
-            )?),
+            None => {
+                let now = Local::now();
+
+                Some(Datetime::from_ymd_hms(
+                    now.year(),
+                    now.month().try_into().ok()?,
+                    now.day().try_into().ok()?,
+                    now.hour().try_into().ok()?,
+                    now.minute().try_into().ok()?,
+                    now.second().try_into().ok()?,
+                )?)
+            }
         }
     }
 
