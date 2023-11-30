@@ -22,3 +22,5 @@ local.properties
 app/src/main/jniLibs/arm64-v8a/libbeautyxt_rs.so
 app/src/main/jniLibs/x86_64/libbeautyxt_rs.so
 /app/release/bundletool-all-1.15.5.jar
+app/src/main/jniLibs/arm64-v8a/libbeautyxt_rs_compressed.so
+beautyxt_rs/upx.exe
