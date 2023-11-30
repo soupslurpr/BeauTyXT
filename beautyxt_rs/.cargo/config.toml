@@ -1,7 +1,13 @@
 [target.aarch64-linux-android]
 ar = "C:/Users/user/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe"
 linker = "C:/Users/user/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android23-clang.cmd"
+rustflags = [
+    "-C", "link-arg=-Wl,-z,pack-relative-relocs",  # Reduces size by ~1 MB
+]
 
 [target.x86_64-linux-android]
 ar = "C:/Users/user/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe"
 linker = "C:/Users/user/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/x86_64-linux-android23-clang.cmd"
+rustflags = [
+    "-C", "link-arg=-Wl,-z,pack-relative-relocs,",  # Reduces size by ~1 MB
+]
