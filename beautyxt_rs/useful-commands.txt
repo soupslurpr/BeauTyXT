@@ -20,6 +20,6 @@ cargo about generate about.hbs > ../app/src/main/assets/beautyxt_rs-third-party-
 
 Quick testing commands:
 
-cargo build --lib --profile release-dev --target aarch64-linux-android
-copy .\target\aarch64-linux-android\release-dev\libbeautyxt_rs.so ..\app\src\main\jniLibs\arm64-v8a\libbeautyxt_rs.so
-cargo run --features uniffi/cli --bin uniffi-bindgen generate --library target/aarch64-linux-android/release-dev/libbeautyxt_rs.so --language kotlin --out-dir "..\app\src\main\kotlin"
+cargo build --lib --target aarch64-linux-android
+copy .\target\aarch64-linux-android\debug\libbeautyxt_rs.so ..\app\src\main\jniLibs\arm64-v8a\libbeautyxt_rs.so
+cargo run --features uniffi/cli --bin uniffi-bindgen generate --library target/aarch64-linux-android/debug/libbeautyxt_rs.so --language kotlin --out-dir "..\app\src\main\kotlin"
