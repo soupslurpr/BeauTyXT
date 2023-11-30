@@ -334,9 +334,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chinese-number"
-version = "0.7.3"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9cec9efb10b00914876c7e7b1fdaec572b888443b4046cd11ba91eb8c5a1ccb"
+checksum = "b3b2ffc31f235dfd4a5fa440c9b9822144183821be28aeb269e205d5541164dd"
 dependencies = [
  "chinese-variant",
  "enum-ordinalize",
@@ -607,9 +607,18 @@ checksum = "ef1a6892d9eef45c8fa6b9e0086428a2cca8491aca8f787c534a3d6d0bcb3ced"
 
 [[package]]
 name = "enum-ordinalize"
-version = "3.1.15"
+version = "4.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bf1fa3f06bbff1ea5b1a9c7b14aa992a39657db60a2759457328d7e058f49ee"
+checksum = "b365ed566a2be6c61cb68e4faca9e74687004c5fd9a7291be8bc30992dd9195c"
+dependencies = [
+ "enum-ordinalize-derive",
+]
+
+[[package]]
+name = "enum-ordinalize-derive"
+version = "4.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38cc18088660bb148c996d739fe25b4deee5a5806ff14b76613a6698c6145b74"
 dependencies = [
  "num-bigint",
  "num-traits",
@@ -2176,12 +2185,13 @@ checksum = "09eab8a83bff89ba2200bd4c59be45c7c787f988431b936099a5a266c957f2f9"
 
 [[package]]
 name = "svg2pdf"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "363c5346967da04bf3ebb3d8bafa7f52c53c810167047904df1960eac3fc08b7"
+checksum = "a81da66842e426278f20062cd249779565e13f9ab4bfe0ac9e94eb476bc3a0f3"
 dependencies = [
  "image",
  "miniz_oxide",
+ "once_cell",
  "pdf-writer",
  "usvg",
 ]
