@@ -1,4 +1,4 @@
 [toolchain]
-channel = "nightly-2023-11-28"
+channel = "nightly-2023-11-30"
 targets = [ "aarch64-linux-android", "x86_64-linux-android" ]
 profile = "default"
