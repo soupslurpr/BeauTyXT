@@ -1,6 +1,6 @@
 # BeauTyXT
 
-BeauTyXT is a beautiful, private, and minimalistic text, markdown, and Typst editor.\
+BeauTyXT is a beautiful, private, and minimalistic Text, Markdown, and Typst editor.\
 Now supports Typst for uses that need more than just markdown.\
 Implements Material Design 3 and dynamic color schemes – because that's what the cool kids do 😎
 
