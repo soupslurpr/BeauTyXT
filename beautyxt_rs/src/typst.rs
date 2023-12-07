@@ -1,11 +1,6 @@
-use typst::text::Font;
-use typst::text::FontBook;
-use typst::Library;
-use typst::layout::Abs;
 use chrono::{Datelike, FixedOffset, Local, TimeZone, Timelike, Utc};
 use comemo::Prehashed;
 use once_cell::sync::Lazy;
-use typst_svg::svg;
 #[cfg(target_family = "unix")]
 use std::os::fd::FromRawFd;
 use std::{
@@ -13,6 +8,10 @@ use std::{
     io::{Read, Seek, Write},
     sync::Mutex,
 };
+use typst::layout::Abs;
+use typst::text::Font;
+use typst::text::FontBook;
+use typst::Library;
 use typst::{diag::EcoString, foundations::Bytes};
 use typst::{
     diag::{FileError, FileResult, Severity, Tracepoint},
@@ -47,15 +46,7 @@ pub struct ProjectFilePathAndFile {
 }
 
 impl ProjectFilePathAndFile {
-    pub fn new(path: String, file: File) -> Self {
-        ProjectFilePathAndFile {
-            path,
-            file,
-            source: None,
-            bytes: None,
-        }
-    }
-
+    #[allow(unreachable_code)]
     pub fn from_project_file_path_and_fd(project_file_path_and_fd: &ProjectFilePathAndFd) -> Self {
         ProjectFilePathAndFile {
             path: project_file_path_and_fd.path.clone(),
@@ -293,9 +284,7 @@ pub fn test_get_main_pdf() -> Vec<u8> {
 
     let document = typst::compile(world, &mut tracer).unwrap();
 
-    let pdf = typst_pdf::pdf(&document, None, None);
-
-    pdf
+    typst_pdf::pdf(&document, None, None)
 }
 
 /// The severity of a [`SourceDiagnostic`].
@@ -385,10 +374,9 @@ pub fn test_get_main_svg() -> Result<Vec<u8>, RenderError> {
                             match &spanned.v {
                                 Tracepoint::Call(function_call) => CustomTracepoint::Call {
                                     span,
-                                    string: match function_call {
-                                        Some(eco_string) => Some(eco_string.to_string()),
-                                        None => None,
-                                    },
+                                    string: function_call
+                                        .as_ref()
+                                        .map(|eco_string| eco_string.to_string()),
                                 },
                                 Tracepoint::Show(show_rule_application) => CustomTracepoint::Show {
                                     string: show_rule_application.to_string(),
@@ -671,7 +659,7 @@ impl World for SomeWorld {
                 let local_time = fixed_offset.from_utc_datetime(&now.naive_utc());
 
                 Some(Datetime::from_ymd_hms(
-                    local_time.year().try_into().ok()?,
+                    local_time.year(),
                     local_time.month().try_into().ok()?,
                     local_time.day().try_into().ok()?,
                     local_time.hour().try_into().ok()?,

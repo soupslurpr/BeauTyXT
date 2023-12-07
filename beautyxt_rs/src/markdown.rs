@@ -209,7 +209,7 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                             let font_size = if style.contains(font_size_css) {
                                 let index = style.find(font_size_css).unwrap();
 
-                                let remaining = &style[index + &font_size_css.len()..].trim();
+                                let remaining = &style[index + font_size_css.len()..].trim();
 
                                 let fontsize = remaining
                                     .split(|c: char| !c.is_numeric())
@@ -221,6 +221,7 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                                 11
                             };
 
+                            #[allow(clippy::single_match)]
                             match element.value().name.local.as_ref() {
                                 "div" => {
                                     for child in node.children() {
@@ -274,7 +275,7 @@ pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
                     *run = Some(
                         run_ref
                             .clone()
-                            .add_text(node.to_string().replace("\n", " ")),
+                            .add_text(node.to_string().replace('\n', " ")),
                     )
                 }
             }
