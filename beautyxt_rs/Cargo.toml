@@ -12,12 +12,14 @@ comemo = "0.3.1"
 docx-rs = "0.4.7"
 ego-tree = "0.6.2"
 libc = "0.2.150"
-markdown = "1.0.0-alpha.15"
-once_cell = "1.18.0"
+markdown = "1.0.0-alpha.16"
+once_cell = "1.19.0"
 scraper = "0.18.1"
 thiserror = "1.0.50"
-typst = { git = "https://github.com/typst/typst", version = "0.9.0", rev = "7bb4f6df44086b4c1120b227f7ae963e6c2ad5ab" }
-typst-library = { git = "https://github.com/typst/typst", version = "0.9.0", rev = "7bb4f6df44086b4c1120b227f7ae963e6c2ad5ab" }
+typst = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
+typst-pdf = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
+typst-svg = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
+typst-render = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
 uniffi = "0.25.2"
 
 [build-dependencies]
