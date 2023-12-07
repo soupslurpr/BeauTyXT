@@ -1,6 +1,11 @@
+use typst::text::Font;
+use typst::text::FontBook;
+use typst::Library;
+use typst::layout::Abs;
 use chrono::{Datelike, FixedOffset, Local, TimeZone, Timelike, Utc};
 use comemo::Prehashed;
 use once_cell::sync::Lazy;
+use typst_svg::svg;
 #[cfg(target_family = "unix")]
 use std::os::fd::FromRawFd;
 use std::{
@@ -8,15 +13,14 @@ use std::{
     io::{Read, Seek, Write},
     sync::Mutex,
 };
-use typst::{diag::EcoString, geom::Abs};
+use typst::{diag::EcoString, foundations::Bytes};
 use typst::{
     diag::{FileError, FileResult, Severity, Tracepoint},
-    eval::{Bytes, Library, Tracer},
-    font::{Font, FontBook},
+    eval::Tracer,
     syntax::{FileId, PackageSpec, Source, VirtualPath},
     World,
 };
-use typst::{eval::Datetime, font::FontInfo};
+use typst::{foundations::Datetime, text::FontInfo};
 
 static MAIN_PROJECT_FILE: Lazy<Mutex<Option<ProjectFilePathAndFile>>> =
     Lazy::new(|| Mutex::new(None));
@@ -289,7 +293,7 @@ pub fn test_get_main_pdf() -> Vec<u8> {
 
     let document = typst::compile(world, &mut tracer).unwrap();
 
-    let pdf = typst::export::pdf(&document, None, None);
+    let pdf = typst_pdf::pdf(&document, None, None);
 
     pdf
 }
@@ -360,7 +364,7 @@ pub fn test_get_main_svg() -> Result<Vec<u8>, RenderError> {
         Ok(document) => {
             let frames = document.pages;
 
-            Ok(typst::export::svg_merged(&frames, Abs::default()).into_bytes())
+            Ok(typst_svg::svg_merged(&frames, Abs::default()).into_bytes())
         }
         // Convert the errors to our custom errors that can be returned to Kotlin code
         Err(errors) => Err(RenderError::VecCustomSourceDiagnostic {
@@ -413,7 +417,7 @@ pub struct SomeWorld {
 impl SomeWorld {
     pub fn new() -> SomeWorld {
         Self {
-            library: Prehashed::new(typst_library::build()),
+            library: Prehashed::new(typst::Library::build()),
             fonts: Prehashed::new(FontBook::from_infos(vec![
                 // Noto Serif
                 FontInfo::new(include_bytes!("../Noto_Serif/NotoSerif-Regular.ttf"), 0).unwrap(),
