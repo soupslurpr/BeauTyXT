@@ -1,10 +1,4 @@
-Remember to add system environment variables first:
-
-Variable = AR_aarch64_linux_android
-Value = C:/Users/user/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe
-
-Variable = AR_x86_64_linux_android
-Value = C:/Users/user/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-ar.exe
+Remember to specify correct path for environment variables at ./.cargo/config.toml first!
 
 Build, copy compiled files to correct places, and generate bindings to "..\app\src\main\kotlin":
 
