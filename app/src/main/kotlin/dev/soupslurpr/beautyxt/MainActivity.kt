@@ -32,13 +32,16 @@ class MainActivity : ComponentActivity() {
             )
             val fileViewModel: FileViewModel = viewModel()
 
-            if ((intent.action == Intent.ACTION_VIEW) or (intent.action == Intent.ACTION_EDIT)) {
+            val isActionViewOrEdit = (intent.action == Intent.ACTION_VIEW) or (intent.action == Intent.ACTION_EDIT)
+
+            if (isActionViewOrEdit) {
                 val readOnly = intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION == 0
 
                 fileViewModel.setReadOnly(readOnly)
 
                 intent.data?.let { fileViewModel.setUri(it, LocalContext.current) }
             }
+
             val preferencesUiState by preferencesViewModel.uiState.collectAsState()
 
             BeauTyXTTheme(
@@ -48,9 +51,10 @@ class MainActivity : ComponentActivity() {
                     ReviewPrivacyPolicyAndLicense(preferencesViewModel = preferencesViewModel)
                 } else if (preferencesUiState.acceptedPrivacyPolicyAndLicense.second.value) {
                     BeauTyXTApp(
+                        modifier = Modifier,
                         fileViewModel = fileViewModel,
                         preferencesViewModel = preferencesViewModel,
-                        modifier = Modifier
+                        isActionViewOrEdit = isActionViewOrEdit,
                     )
                 }
             }

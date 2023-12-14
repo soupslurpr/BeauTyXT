@@ -69,7 +69,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navDeepLink
 import dev.soupslurpr.beautyxt.constants.mimeTypeDocx
 import dev.soupslurpr.beautyxt.constants.mimeTypeHtml
 import dev.soupslurpr.beautyxt.constants.mimeTypeMarkdown
@@ -488,9 +487,10 @@ fun FileTypeSelectionDialogItem(
 
 @Composable
 fun BeauTyXTApp(
+    modifier: Modifier,
     fileViewModel: FileViewModel,
     preferencesViewModel: PreferencesViewModel,
-    modifier: Modifier,
+    isActionViewOrEdit: Boolean,
 ) {
     val navController = rememberNavController()
 
@@ -1278,7 +1278,15 @@ ${
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = BeauTyXTScreens.Start.name,
+            // Use this instead of deeplinks so that when back is pressed
+            // it goes to the app this app was opened by. Deeplinks not doing
+            // that is intentional, see figure 4 at
+            // https://developer.android.com/guide/navigation/principles#deep-link
+            startDestination = if (isActionViewOrEdit) {
+                BeauTyXTScreens.FileEdit.name
+            } else {
+                BeauTyXTScreens.Start.name
+            },
             modifier = modifier.padding(innerPadding),
         ) {
             composable(route = BeauTyXTScreens.Start.name) {
@@ -1342,20 +1350,6 @@ ${
             }
             composable(
                 route = BeauTyXTScreens.FileEdit.name,
-                deepLinks = listOf(
-                    navDeepLink {
-                        mimeType = mimeTypePlainText
-                    },
-                    navDeepLink {
-                        mimeType = "application/json"
-                    },
-                    navDeepLink {
-                        mimeType = "application/xml"
-                    },
-                    navDeepLink {
-                        mimeType = mimeTypeMarkdown
-                    }
-                ),
             ) {
                 FileEditScreen(
                     name = fileUiState.name.value,

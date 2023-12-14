@@ -18,6 +18,7 @@
         <activity
             android:name="dev.soupslurpr.beautyxt.MainActivity"
             android:exported="true"
+            android:documentLaunchMode="intoExisting"
             android:theme="@style/Theme.beautyxt">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
