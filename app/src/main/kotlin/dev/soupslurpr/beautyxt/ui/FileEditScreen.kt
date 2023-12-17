@@ -10,12 +10,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MaterialTheme.typography
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
@@ -80,13 +82,9 @@ fun FileEditScreen(
         ) {
             // TODO: Move to functions to reduce unnecessary 2x code duplication. Also its very annoying. See the
             //  TypstProjectScreen.kt for an example of how to do it properly.
-            TextField(
-                /** We cannot use .verticalScroll when editing is possible as the TextField currently
-                 * does not scroll to the next line when pressing enter automatically with .verticalScroll.
-                 * It does scroll to the next line when pressing enter without it having .verticalScroll.
-                 */
-                modifier = if (readOnly) {
-                    Modifier
+            if (readOnly) {
+                Column(
+                    modifier = Modifier
                         .fillMaxSize()
                         .weight(
                             if (previewMarkdownRenderedToHtmlFullscreen) {
@@ -95,42 +93,83 @@ fun FileEditScreen(
                                 1f
                             }
                         )
-                        .verticalScroll(textFieldVerticalScrollState)
-                } else {
-                    Modifier
-                        .fillMaxSize()
-                        .weight(
-                            if (previewMarkdownRenderedToHtmlFullscreen) {
-                                0.00000001f
-                            } else {
-                                1f
-                            }
-                        )
-                },
-                value = content,
-                onValueChange = {
-                    onContentChanged(it)
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = textColor,
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent
-                ),
-                label = {
+                        .padding(TextFieldDefaults.contentPaddingWithLabel())
+                        .verticalScroll(textFieldVerticalScrollState),
+                ) {
                     if (previewMarkdownRenderedToHtmlFullscreen) {
                         // if we don't do this then when the preview is fullscreen the label appears
                     } else {
+                        SelectionContainer {
+                            Text(
+                                text = name,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = typography.bodySmall.fontSize,
+                                fontStyle = typography.bodySmall.fontStyle,
+                                fontFamily = typography.bodySmall.fontFamily,
+                            )
+                        }
+                    }
+                    SelectionContainer {
                         Text(
-                            text = name,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
+                            text = content
                         )
                     }
-                },
-                textStyle = textStyle,
-                enabled = !readOnly
-            )
+                }
+            } else {
+                TextField(
+                    /** We cannot use .verticalScroll when editing is possible as the TextField currently
+                     * does not scroll to the next line when pressing enter automatically with .verticalScroll.
+                     * It does scroll to the next line when pressing enter without it having .verticalScroll.
+                     */
+                    modifier = if (readOnly) {
+                        Modifier
+                            .fillMaxSize()
+                            .weight(
+                                if (previewMarkdownRenderedToHtmlFullscreen) {
+                                    0.00000001f
+                                } else {
+                                    1f
+                                }
+                            )
+                            .verticalScroll(textFieldVerticalScrollState)
+                    } else {
+                        Modifier
+                            .fillMaxSize()
+                            .weight(
+                                if (previewMarkdownRenderedToHtmlFullscreen) {
+                                    0.00000001f
+                                } else {
+                                    1f
+                                }
+                            )
+                    },
+                    value = content,
+                    onValueChange = {
+                        onContentChanged(it)
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = textColor,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent
+                    ),
+                    label = {
+                        if (previewMarkdownRenderedToHtmlFullscreen) {
+                            // if we don't do this then when the preview is fullscreen the label appears
+                        } else {
+                            Text(
+                                text = name,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    textStyle = textStyle,
+                    enabled = !readOnly
+                )
+            }
             when (mimeType) {
                 "text/markdown" -> {
                     if (preferencesUiState.renderMarkdown.second.value or previewMarkdownRenderedToHtmlFullscreen) {
@@ -209,13 +248,9 @@ fun FileEditScreen(
         Row(
             modifier = Modifier.imePadding()
         ) {
-            TextField(
-                /** We cannot use .verticalScroll when editing is possible as the TextField currently
-                 * does not scroll to the next line when pressing enter automatically with .verticalScroll.
-                 * It does scroll to the next line when pressing enter without it having .verticalScroll.
-                 */
-                modifier = if (readOnly) {
-                    Modifier
+            if (readOnly) {
+                Column(
+                    modifier = Modifier
                         .fillMaxSize()
                         .weight(
                             if (previewMarkdownRenderedToHtmlFullscreen) {
@@ -224,42 +259,69 @@ fun FileEditScreen(
                                 1f
                             }
                         )
-                        .verticalScroll(textFieldVerticalScrollState)
-                } else {
-                    Modifier
-                        .fillMaxSize()
-                        .weight(
-                            if (previewMarkdownRenderedToHtmlFullscreen) {
-                                0.00000001f
-                            } else {
-                                1f
-                            }
-                        )
-                },
-                value = content,
-                onValueChange = {
-                    onContentChanged(it)
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = textColor,
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent
-                ),
-                label = {
+                        .padding(TextFieldDefaults.contentPaddingWithLabel())
+                        .verticalScroll(textFieldVerticalScrollState),
+                ) {
                     if (previewMarkdownRenderedToHtmlFullscreen) {
                         // if we don't do this then when the preview is fullscreen the label appears
                     } else {
+                        SelectionContainer {
+                            Text(
+                                text = name,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = typography.bodySmall.fontSize,
+                                fontStyle = typography.bodySmall.fontStyle,
+                                fontFamily = typography.bodySmall.fontFamily,
+                            )
+                        }
+                    }
+                    SelectionContainer {
                         Text(
-                            text = name,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
+                            text = content
                         )
                     }
-                },
-                textStyle = textStyle,
-                enabled = !readOnly
-            )
+                }
+            } else {
+                TextField(
+                    /** We cannot use .verticalScroll when editing is possible as the TextField currently
+                     * does not scroll to the next line when pressing enter automatically with .verticalScroll.
+                     * It does scroll to the next line when pressing enter without it having .verticalScroll.
+                     */
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(
+                            if (previewMarkdownRenderedToHtmlFullscreen) {
+                                0.00000001f
+                            } else {
+                                1f
+                            }
+                        ),
+                    value = content,
+                    onValueChange = {
+                        onContentChanged(it)
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = textColor,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent
+                    ),
+                    label = {
+                        if (previewMarkdownRenderedToHtmlFullscreen) {
+                            // if we don't do this then when the preview is fullscreen the label appears
+                        } else {
+                            Text(
+                                text = name,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    textStyle = textStyle,
+                )
+            }
             when (mimeType) {
                 "text/markdown" -> {
                     if (preferencesUiState.renderMarkdown.second.value or previewMarkdownRenderedToHtmlFullscreen) {
