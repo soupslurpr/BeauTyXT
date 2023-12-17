@@ -123,28 +123,15 @@ fun FileEditScreen(
                      * does not scroll to the next line when pressing enter automatically with .verticalScroll.
                      * It does scroll to the next line when pressing enter without it having .verticalScroll.
                      */
-                    modifier = if (readOnly) {
-                        Modifier
-                            .fillMaxSize()
-                            .weight(
-                                if (previewMarkdownRenderedToHtmlFullscreen) {
-                                    0.00000001f
-                                } else {
-                                    1f
-                                }
-                            )
-                            .verticalScroll(textFieldVerticalScrollState)
-                    } else {
-                        Modifier
-                            .fillMaxSize()
-                            .weight(
-                                if (previewMarkdownRenderedToHtmlFullscreen) {
-                                    0.00000001f
-                                } else {
-                                    1f
-                                }
-                            )
-                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(
+                            if (previewMarkdownRenderedToHtmlFullscreen) {
+                                0.00000001f
+                            } else {
+                                1f
+                            }
+                        ),
                     value = content,
                     onValueChange = {
                         onContentChanged(it)
@@ -158,16 +145,17 @@ fun FileEditScreen(
                         if (previewMarkdownRenderedToHtmlFullscreen) {
                             // if we don't do this then when the preview is fullscreen the label appears
                         } else {
-                            Text(
-                                text = name,
-                                textAlign = TextAlign.Center,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
-                            )
+                            SelectionContainer {
+                                Text(
+                                    text = name,
+                                    textAlign = TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     },
                     textStyle = textStyle,
-                    enabled = !readOnly
                 )
             }
             when (mimeType) {
@@ -311,12 +299,14 @@ fun FileEditScreen(
                         if (previewMarkdownRenderedToHtmlFullscreen) {
                             // if we don't do this then when the preview is fullscreen the label appears
                         } else {
-                            Text(
-                                text = name,
-                                textAlign = TextAlign.Center,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
-                            )
+                            SelectionContainer {
+                                Text(
+                                    text = name,
+                                    textAlign = TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     },
                     textStyle = textStyle,
