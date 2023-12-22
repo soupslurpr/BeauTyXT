@@ -21,34 +21,34 @@ use typst::{
 };
 use typst::{foundations::Datetime, text::FontInfo};
 
-static MAIN_PROJECT_FILE: Lazy<Mutex<Option<ProjectFilePathAndFile>>> =
+static MAIN_TYPST_PROJECT_FILE: Lazy<Mutex<Option<TypstProjectFilePathAndFile>>> =
     Lazy::new(|| Mutex::new(None));
-static PROJECT_FILES: Lazy<Mutex<Vec<ProjectFilePathAndFile>>> = Lazy::new(|| Mutex::new(vec![]));
+static TYPST_PROJECT_FILES: Lazy<Mutex<Vec<TypstProjectFilePathAndFile>>> = Lazy::new(|| Mutex::new(vec![]));
 
-static WORLD: Lazy<Mutex<Option<SomeWorld>>> = Lazy::new(|| Mutex::new(None));
+static TYPST_WORLD: Lazy<Mutex<Option<SomeTypstWorld>>> = Lazy::new(|| Mutex::new(None));
 
 #[uniffi::export]
-pub fn initialize_world() {
-    *WORLD.lock().unwrap() = Some(SomeWorld::new());
+pub fn initialize_typst_world() {
+    *TYPST_WORLD.lock().unwrap() = Some(SomeTypstWorld::new());
 }
 
 #[derive(uniffi::Record, PartialEq)]
-pub struct ProjectFilePathAndFd {
+pub struct TypstProjectFilePathAndFd {
     path: String,
     fd: libc::c_int,
 }
 
-pub struct ProjectFilePathAndFile {
+pub struct TypstProjectFilePathAndFile {
     path: String,
     file: File,
     source: Option<Source>,
     bytes: Option<Bytes>,
 }
 
-impl ProjectFilePathAndFile {
+impl TypstProjectFilePathAndFile {
     #[allow(unreachable_code)]
-    pub fn from_project_file_path_and_fd(project_file_path_and_fd: &ProjectFilePathAndFd) -> Self {
-        ProjectFilePathAndFile {
+    pub fn from_project_file_path_and_fd(project_file_path_and_fd: &TypstProjectFilePathAndFd) -> Self {
+        TypstProjectFilePathAndFile {
             path: project_file_path_and_fd.path.clone(),
             file: {
                 #[cfg(target_family = "unix")]
@@ -67,45 +67,45 @@ impl ProjectFilePathAndFile {
 }
 
 #[uniffi::export]
-pub fn set_main_project_file(main_project_file_path_and_fd: ProjectFilePathAndFd) {
-    *MAIN_PROJECT_FILE.lock().unwrap() = Some(
-        ProjectFilePathAndFile::from_project_file_path_and_fd(&main_project_file_path_and_fd),
+pub fn set_main_typst_project_file(main_project_file_path_and_fd: TypstProjectFilePathAndFd) {
+    *MAIN_TYPST_PROJECT_FILE.lock().unwrap() = Some(
+        TypstProjectFilePathAndFile::from_project_file_path_and_fd(&main_project_file_path_and_fd),
     );
 }
 
 #[uniffi::export]
-pub fn add_project_files(new_project_files: Vec<ProjectFilePathAndFd>) {
+pub fn add_typst_project_files(new_project_files: Vec<TypstProjectFilePathAndFd>) {
     let new_project_files_paths = new_project_files
         .iter()
         .map(|npf| npf.path.clone())
         .collect::<Vec<String>>();
 
     // Remove existing files with the same path to avoid duplicate path and file pairs.
-    remove_project_files(new_project_files_paths);
+    remove_typst_project_files(new_project_files_paths);
 
-    let mut project_files = PROJECT_FILES.lock().unwrap();
+    let mut project_files = TYPST_PROJECT_FILES.lock().unwrap();
     project_files.append(
         &mut new_project_files
             .iter()
             .map(|project_file_path_and_fd| {
-                ProjectFilePathAndFile::from_project_file_path_and_fd(project_file_path_and_fd)
+                TypstProjectFilePathAndFile::from_project_file_path_and_fd(project_file_path_and_fd)
             })
             .collect(),
     );
 }
 
 #[uniffi::export]
-pub fn remove_project_files(project_files_paths_to_remove: Vec<String>) {
-    let mut project_files = PROJECT_FILES.lock().unwrap();
+pub fn remove_typst_project_files(project_files_paths_to_remove: Vec<String>) {
+    let mut project_files = TYPST_PROJECT_FILES.lock().unwrap();
     project_files.retain(|pf| !project_files_paths_to_remove.contains(&pf.path))
 }
 
 #[uniffi::export]
-pub fn clear_project_files() {
-    let mut project_files = PROJECT_FILES.lock().unwrap();
+pub fn clear_typst_project_files() {
+    let mut project_files = TYPST_PROJECT_FILES.lock().unwrap();
     project_files.clear();
     project_files.shrink_to_fit();
-    *MAIN_PROJECT_FILE.lock().unwrap() = None;
+    *MAIN_TYPST_PROJECT_FILE.lock().unwrap() = None;
 }
 
 #[derive(uniffi::Error, Debug, thiserror::Error)]
@@ -119,14 +119,14 @@ pub enum CustomFileError {
 }
 
 #[uniffi::export]
-pub fn update_project_file(new_text: String, path: String) -> Result<String, CustomFileError> {
-    let world = WORLD.lock().unwrap();
+pub fn update_typst_project_file(new_text: String, path: String) -> Result<String, CustomFileError> {
+    let world = TYPST_WORLD.lock().unwrap();
     let world = world.as_ref().unwrap();
 
     if path == "/main.typ" {
         let mut source = world.main();
 
-        let main_project_file = MAIN_PROJECT_FILE.lock().unwrap();
+        let main_project_file = MAIN_TYPST_PROJECT_FILE.lock().unwrap();
         let main_project_file = main_project_file.as_ref().unwrap();
 
         let mut file = &main_project_file.file;
@@ -167,7 +167,7 @@ pub fn update_project_file(new_text: String, path: String) -> Result<String, Cus
 
         Ok(text)
     } else {
-        let mut binding = PROJECT_FILES.lock();
+        let mut binding = TYPST_PROJECT_FILES.lock();
         let binding = binding.as_mut();
         let project_files = binding.unwrap();
 
@@ -259,8 +259,8 @@ pub fn update_project_file(new_text: String, path: String) -> Result<String, Cus
 }
 
 #[uniffi::export]
-pub fn get_project_file_text(path: String) -> String {
-    let world = WORLD.lock().unwrap();
+pub fn get_typst_project_file_text(path: String) -> String {
+    let world = TYPST_WORLD.lock().unwrap();
     let world = world.as_ref().unwrap();
 
     if path == "/main.typ" {
@@ -277,8 +277,8 @@ pub fn get_project_file_text(path: String) -> String {
 }
 
 #[uniffi::export]
-pub fn test_get_main_pdf() -> Vec<u8> {
-    let binding = WORLD.lock().unwrap();
+pub fn get_typst_pdf() -> Vec<u8> {
+    let binding = TYPST_WORLD.lock().unwrap();
     let world = binding.as_ref().unwrap();
     let mut tracer = Tracer::new();
 
@@ -289,7 +289,7 @@ pub fn test_get_main_pdf() -> Vec<u8> {
 
 /// The severity of a [`SourceDiagnostic`].
 #[derive(uniffi::Enum, Debug)]
-pub enum CustomSeverity {
+pub enum TypstCustomSeverity {
     /// A fatal error.
     Error,
     /// A non-fatal warning.
@@ -298,7 +298,7 @@ pub enum CustomSeverity {
 
 /// A part of a diagnostic's [trace](SourceDiagnostic::trace).
 #[derive(uniffi::Enum, Debug)]
-pub enum CustomTracepoint {
+pub enum TypstCustomTracepoint {
     /// A function call.
     Call {
         /// The spanned value.
@@ -321,15 +321,15 @@ pub enum CustomTracepoint {
 }
 
 #[derive(uniffi::Record, Debug)]
-pub struct CustomSourceDiagnostic {
+pub struct TypstCustomSourceDiagnostic {
     /// Whether the diagnostic is an error or a warning.
-    severity: CustomSeverity,
+    severity: TypstCustomSeverity,
     /// The span of the relevant node in the source code.
     span: u64,
     /// A diagnostic message describing the problem.
     message: String,
     /// The trace of function calls leading to the problem.
-    trace: Vec<CustomTracepoint>,
+    trace: Vec<TypstCustomTracepoint>,
     /// Additional hints to the user, indicating how this problem could be avoided
     /// or worked around.
     hints: Vec<String>,
@@ -339,13 +339,13 @@ pub struct CustomSourceDiagnostic {
 pub enum RenderError {
     #[error("Integer overflow on an operation with")]
     VecCustomSourceDiagnostic {
-        custom_source_diagnostics: Vec<CustomSourceDiagnostic>,
+        custom_source_diagnostics: Vec<TypstCustomSourceDiagnostic>,
     },
 }
 
 #[uniffi::export]
-pub fn test_get_main_svg() -> Result<Vec<u8>, RenderError> {
-    let binding = WORLD.lock().unwrap();
+pub fn get_typst_svg() -> Result<Vec<u8>, RenderError> {
+    let binding = TYPST_WORLD.lock().unwrap();
     let world = binding.as_ref().unwrap();
     let mut tracer = Tracer::new();
 
@@ -359,10 +359,10 @@ pub fn test_get_main_svg() -> Result<Vec<u8>, RenderError> {
         Err(errors) => Err(RenderError::VecCustomSourceDiagnostic {
             custom_source_diagnostics: errors
                 .iter()
-                .map(|source_diagnostic| CustomSourceDiagnostic {
+                .map(|source_diagnostic| TypstCustomSourceDiagnostic {
                     severity: match source_diagnostic.severity {
-                        Severity::Error => CustomSeverity::Error,
-                        Severity::Warning => CustomSeverity::Warning,
+                        Severity::Error => TypstCustomSeverity::Error,
+                        Severity::Warning => TypstCustomSeverity::Warning,
                     },
                     span: source_diagnostic.span.number(),
                     message: source_diagnostic.message.to_string(),
@@ -372,17 +372,17 @@ pub fn test_get_main_svg() -> Result<Vec<u8>, RenderError> {
                         .map(|spanned| {
                             let span = spanned.span.number();
                             match &spanned.v {
-                                Tracepoint::Call(function_call) => CustomTracepoint::Call {
+                                Tracepoint::Call(function_call) => TypstCustomTracepoint::Call {
                                     span,
                                     string: function_call
                                         .as_ref()
                                         .map(|eco_string| eco_string.to_string()),
                                 },
-                                Tracepoint::Show(show_rule_application) => CustomTracepoint::Show {
+                                Tracepoint::Show(show_rule_application) => TypstCustomTracepoint::Show {
                                     string: show_rule_application.to_string(),
                                     span,
                                 },
-                                Tracepoint::Import => CustomTracepoint::Import { span },
+                                Tracepoint::Import => TypstCustomTracepoint::Import { span },
                             }
                         })
                         .collect(),
@@ -392,18 +392,18 @@ pub fn test_get_main_svg() -> Result<Vec<u8>, RenderError> {
                         .map(|eco_string| eco_string.to_string())
                         .collect(),
                 })
-                .collect::<Vec<CustomSourceDiagnostic>>(),
+                .collect::<Vec<TypstCustomSourceDiagnostic>>(),
         }),
     }
 }
 
-pub struct SomeWorld {
+pub struct SomeTypstWorld {
     library: Prehashed<Library>,
     fonts: Prehashed<FontBook>,
 }
 
-impl SomeWorld {
-    pub fn new() -> SomeWorld {
+impl SomeTypstWorld {
+    pub fn new() -> SomeTypstWorld {
         Self {
             library: Prehashed::new(typst::Library::build()),
             fonts: Prehashed::new(FontBook::from_infos(vec![
@@ -429,7 +429,7 @@ impl SomeWorld {
     }
 }
 
-impl World for SomeWorld {
+impl World for SomeTypstWorld {
     #[doc = " The standard library."]
     fn library(&self) -> &Prehashed<Library> {
         &self.library
@@ -442,7 +442,7 @@ impl World for SomeWorld {
 
     #[doc = " Access the main source file."]
     fn main(&self) -> Source {
-        let mut binding = MAIN_PROJECT_FILE.lock().unwrap();
+        let mut binding = MAIN_TYPST_PROJECT_FILE.lock().unwrap();
         let main_project_file = binding.as_mut().unwrap();
 
         match &main_project_file.source {
@@ -468,7 +468,7 @@ impl World for SomeWorld {
     #[doc = " same on-disk file. Implementors can deduplicate and return the same"]
     #[doc = " `Source` if they want to, but do not have to."]
     fn source(&self, id: FileId) -> FileResult<Source> {
-        let mut binding = PROJECT_FILES.lock();
+        let mut binding = TYPST_PROJECT_FILES.lock();
         let binding = binding.as_mut();
         let project_files = binding.unwrap();
 
@@ -511,7 +511,7 @@ impl World for SomeWorld {
 
     #[doc = " Try to access the specified file."]
     fn file(&self, id: FileId) -> FileResult<Bytes> {
-        let mut binding = PROJECT_FILES.lock();
+        let mut binding = TYPST_PROJECT_FILES.lock();
         let binding = binding.as_mut();
         let project_files = binding.unwrap();
 

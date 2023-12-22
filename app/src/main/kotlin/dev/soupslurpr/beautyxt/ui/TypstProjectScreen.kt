@@ -31,8 +31,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
 import coil.request.ImageRequest
-import dev.soupslurpr.beautyxt.CustomSourceDiagnostic
 import dev.soupslurpr.beautyxt.R
+import dev.soupslurpr.beautyxt.TypstCustomSourceDiagnostic
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 import kotlinx.coroutines.Dispatchers
 
@@ -74,13 +74,15 @@ fun TypstProjectScreen(
             modifier = Modifier.imePadding()
         ) {
             TypstProjectTextField(
-                modifier = Modifier.fillMaxSize().weight(
-                    if (previewTypstProjectRenderedToFullscreen) {
-                        0.00000001f
-                    } else {
-                        1f
-                    }
-                ),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(
+                        if (previewTypstProjectRenderedToFullscreen) {
+                            0.00000001f
+                        } else {
+                            1f
+                        }
+                    ),
                 content = content,
                 displayName = typstProjectUiState.currentOpenedDisplayName.value,
             ) {
@@ -92,7 +94,9 @@ fun TypstProjectScreen(
             }
 
             Column(
-                modifier = Modifier.fillMaxWidth().weight(1f)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
             ) {
                 Text(
                     text = stringResource(R.string.rendered_typst_project_preview),
@@ -104,7 +108,10 @@ fun TypstProjectScreen(
                 )
 
                 ScrollableSvgDocumentPreview(
-                    modifier = Modifier.verticalScroll(svgPreviewVerticalScroll).fillMaxWidth().background(Color.White)
+                    modifier = Modifier
+                        .verticalScroll(svgPreviewVerticalScroll)
+                        .fillMaxWidth()
+                        .background(Color.White)
                         .weight(1f),
                     imageRequest = imageRequest,
                 )
@@ -114,7 +121,10 @@ fun TypstProjectScreen(
                         .isNotEmpty()
                 ) {
                     WarningsAndErrors(
-                        modifier = Modifier.verticalScroll(rememberScrollState()).fillMaxWidth().weight(0.25f),
+                        modifier = Modifier
+                            .verticalScroll(rememberScrollState())
+                            .fillMaxWidth()
+                            .weight(0.25f),
                         sourceDiagnostics = typstProjectUiState.sourceDiagnostics.toList()
                     )
                 }
@@ -125,13 +135,15 @@ fun TypstProjectScreen(
             modifier = Modifier.imePadding()
         ) {
             TypstProjectTextField(
-                modifier = Modifier.fillMaxSize().weight(
-                    if (previewTypstProjectRenderedToFullscreen) {
-                        0.00000001f
-                    } else {
-                        1f
-                    }
-                ),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(
+                        if (previewTypstProjectRenderedToFullscreen) {
+                            0.00000001f
+                        } else {
+                            1f
+                        }
+                    ),
                 content = content,
                 displayName = typstProjectUiState.currentOpenedDisplayName.value,
             ) {
@@ -143,7 +155,9 @@ fun TypstProjectScreen(
             }
 
             Column(
-                modifier = Modifier.fillMaxWidth().weight(1f)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
             ) {
                 Text(
                     text = stringResource(R.string.rendered_typst_project_preview),
@@ -155,7 +169,10 @@ fun TypstProjectScreen(
                 )
 
                 ScrollableSvgDocumentPreview(
-                    modifier = Modifier.verticalScroll(svgPreviewVerticalScroll).fillMaxWidth().background(Color.White)
+                    modifier = Modifier
+                        .verticalScroll(svgPreviewVerticalScroll)
+                        .fillMaxWidth()
+                        .background(Color.White)
                         .weight(1f),
                     imageRequest = imageRequest,
                 )
@@ -164,7 +181,10 @@ fun TypstProjectScreen(
                         .sourceDiagnostics.isNotEmpty()
                 ) {
                     WarningsAndErrors(
-                        modifier = Modifier.verticalScroll(rememberScrollState()).fillMaxWidth().weight(0.25f),
+                        modifier = Modifier
+                            .verticalScroll(rememberScrollState())
+                            .fillMaxWidth()
+                            .weight(0.25f),
                         sourceDiagnostics = typstProjectUiState.sourceDiagnostics.toList()
                     )
                 }
@@ -216,7 +236,7 @@ fun ScrollableSvgDocumentPreview(
 @Composable
 fun WarningsAndErrors(
     modifier: Modifier = Modifier,
-    sourceDiagnostics: List<CustomSourceDiagnostic>,
+    sourceDiagnostics: List<TypstCustomSourceDiagnostic>,
 ) {
     Column(
         modifier = modifier
