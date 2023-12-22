@@ -731,8 +731,8 @@ object FfiConverterByteArray : FfiConverterRustBuffer<ByteArray> {
 
 
 data class TypstCustomSourceDiagnostic(
-    var `severity`: TypstCustomSeverity, 
-    var `span`: ULong,
+    var `severity`: TypstCustomSeverity,
+    var `span`: ULong, 
     var `message`: String, 
     var `trace`: List<TypstCustomTracepoint>, 
     var `hints`: List<String>
@@ -1255,6 +1255,7 @@ fun `removeTypstProjectFiles`(`projectFilesPathsToRemove`: List<String>) =
             ), _status
         )
 }
+
 
 
 fun `setMainTypstProjectFile`(`mainProjectFilePathAndFd`: TypstProjectFilePathAndFd) =
