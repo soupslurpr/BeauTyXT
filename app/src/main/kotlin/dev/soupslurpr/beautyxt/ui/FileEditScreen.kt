@@ -164,6 +164,13 @@ fun FileEditScreen(
                         if (previewMarkdownRenderedToHtmlFullscreen) {
                             Spacer(modifier = Modifier.padding(4.dp))
                         }
+                        Text(
+                            text = stringResource(R.string.rendered_markdown),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 0.dp),
+                            style = typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -171,13 +178,6 @@ fun FileEditScreen(
                                 .padding(8.dp)
                                 .verticalScroll(renderedMarkdownVerticalScrollState)
                         ) {
-                            Text(
-                                text = stringResource(R.string.rendered_markdown),
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 0.dp),
-                                style = typography.bodySmall,
-                                fontWeight = FontWeight.Bold
-                            )
                             AndroidView(
                                 factory = { context ->
                                     WebView(context).apply {
@@ -319,37 +319,39 @@ fun FileEditScreen(
                             Spacer(modifier = Modifier.padding(4.dp))
                         }
                         Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .weight(1f)
-                                .padding(8.dp)
-                                .verticalScroll(renderedMarkdownVerticalScrollState)
+                            modifier = Modifier.weight(1f)
                         ) {
                             Text(
                                 text = stringResource(R.string.rendered_markdown),
                                 color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp),
                                 style = typography.bodySmall,
                                 fontWeight = FontWeight.Bold
                             )
-                            AndroidView(
-                                factory = { context ->
-                                    WebView(context).apply {
-                                        settings.javaScriptEnabled = false // disable JavaScript for security.
-                                        settings.setSupportZoom(false)
-                                        settings.builtInZoomControls = false
-                                        settings.displayZoomControls = false
-                                        setBackgroundColor(colorScheme.background.toArgb()) // set WebView background color to current colorScheme's background color.
-                                    }
-                                },
-                                update = { view ->
-                                    /**
-                                     * The markdown which is converted to HTML is inserted into the body of this.
-                                     * The default text color is set to the current colorScheme's onBackground color
-                                     * to match the TextField's text color.
-                                     */
-                                    fileViewModel.setMarkdownToHtml()
-                                    val html = """
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(start = 8.dp, end = 8.dp)
+                                    .verticalScroll(renderedMarkdownVerticalScrollState)
+                            ) {
+                                AndroidView(
+                                    factory = { context ->
+                                        WebView(context).apply {
+                                            settings.javaScriptEnabled = false // disable JavaScript for security.
+                                            settings.setSupportZoom(false)
+                                            settings.builtInZoomControls = false
+                                            settings.displayZoomControls = false
+                                            setBackgroundColor(colorScheme.background.toArgb()) // set WebView background color to current colorScheme's background color.
+                                        }
+                                    },
+                                    update = { view ->
+                                        /**
+                                         * The markdown which is converted to HTML is inserted into the body of this.
+                                         * The default text color is set to the current colorScheme's onBackground color
+                                         * to match the TextField's text color.
+                                         */
+                                        fileViewModel.setMarkdownToHtml()
+                                        val html = """
                                 <!DOCTYPE html>
                                 <html>
                                     <head>
@@ -369,17 +371,18 @@ fun FileEditScreen(
                                     </head>
                                     <body>
                                         ${if (contentConvertedToHtml == "") {
-                                        fileUiState.contentConvertedToHtml.value
-                                    } else {
-                                        contentConvertedToHtml
-                                    }
-                                    }
+                                            fileUiState.contentConvertedToHtml.value
+                                        } else {
+                                            contentConvertedToHtml
+                                        }
+                                        }
                                     </body>
                                 </html>
                                 """.trimIndent()
-                                    view.loadData(html, "text/html", "UTF-8")
-                                }
-                            )
+                                        view.loadData(html, "text/html", "UTF-8")
+                                    }
+                                )
+                            }
                         }
                     }
                 }
