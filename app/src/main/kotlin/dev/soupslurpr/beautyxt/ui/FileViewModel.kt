@@ -1,33 +1,95 @@
 package dev.soupslurpr.beautyxt.ui
 
+import android.app.Application
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.database.Cursor
 import android.net.Uri
+import android.os.IBinder
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.Observer
+import androidx.lifecycle.viewModelScope
+import dev.soupslurpr.beautyxt.IFileViewModelRustLibraryAidlInterface
 import dev.soupslurpr.beautyxt.constants.mimeTypeMarkdown
 import dev.soupslurpr.beautyxt.data.FileUiState
-import dev.soupslurpr.beautyxt.markdownToDocx
-import dev.soupslurpr.beautyxt.markdownToHtml
-import dev.soupslurpr.beautyxt.plainTextToDocx
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.FileOutputStream
 import java.io.InputStreamReader
+import kotlin.coroutines.resume
 
-class FileViewModel : ViewModel() {
+class FileViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * File state for this file
      */
     private val _uiState = MutableStateFlow(FileUiState())
     val uiState: StateFlow<FileUiState> = _uiState.asStateFlow()
+
+    private var rustService: MutableLiveData<IFileViewModelRustLibraryAidlInterface?> = MutableLiveData(null)
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val rustService = IFileViewModelRustLibraryAidlInterface.Stub.asInterface(service)
+
+            this@FileViewModel.rustService.postValue(rustService)
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            rustService.postValue(null)
+        }
+    }
+
+    private val intentService = Intent(getApplication(), FileViewModelRustLibraryIsolatedService::class.java)
+
+    private suspend fun <T> LiveData<T>.awaitFirstNonNull(): T {
+        return withContext(Dispatchers.Main.immediate) {
+            suspendCancellableCoroutine { continuation ->
+                val observer = object : Observer<T> {
+                    override fun onChanged(value: T) {
+                        if (value != null) {
+                            continuation.resume(value)
+                            this@awaitFirstNonNull.removeObserver(this)
+                        }
+                    }
+                }
+
+                observeForever(observer)
+
+                // Handle coroutine cancellation
+                continuation.invokeOnCancellation {
+                    this@awaitFirstNonNull.removeObserver(observer)
+                }
+            }
+        }
+    }
+
+    private fun bindService() {
+        getApplication<Application>().bindService(intentService, serviceConnection, Context.BIND_AUTO_CREATE)
+    }
+
+    private fun unbindService() {
+        getApplication<Application>().unbindService(serviceConnection)
+    }
+
+    init {
+        bindService()
+    }
 
     /**
      * Set the uri for this file and update the content
@@ -147,7 +209,11 @@ class FileViewModel : ViewModel() {
     }
 
     fun setMarkdownToHtml() {
-        _uiState.value.contentConvertedToHtml.value = markdownToHtml(uiState.value.content.value)
+        viewModelScope.launch {
+            _uiState.value.contentConvertedToHtml.value = rustService.awaitFirstNonNull()!!.markdownToHtml(
+                uiState.value.content.value
+            )
+        }
     }
 
     fun setReadOnly(readOnly: Boolean) {
@@ -157,7 +223,6 @@ class FileViewModel : ViewModel() {
     fun setWordCount() {
         val wordCount = uiState.value.content.value.split("\\s+".toRegex()).filter { it.isNotEmpty() }.size.toLong()
         _uiState.value.wordCount.value = wordCount
-
     }
 
     fun setCharacterCount() {
@@ -235,31 +300,34 @@ class FileViewModel : ViewModel() {
     }
 
     fun exportAsDocx(uri: Uri, context: Context) {
-        val docx = when (uiState.value.mimeType.value) {
-            mimeTypeMarkdown -> {
-                markdownToDocx(uiState.value.content.value)
-            }
+        viewModelScope.launch {
+            val docx = when (uiState.value.mimeType.value) {
+                mimeTypeMarkdown -> {
+                    rustService.awaitFirstNonNull()!!.markdownToDocx(uiState.value.content.value)
+                }
 
-            else -> {
-                plainTextToDocx(uiState.value.content.value)
-            }
-        }
-
-        try {
-            val contentResolver = context.contentResolver
-            contentResolver.openFileDescriptor(uri, "wt")?.use {
-                FileOutputStream(it.fileDescriptor).use {
-                    it.write(docx)
+                else -> {
+                    rustService.awaitFirstNonNull()!!.plainTextToDocx(uiState.value.content.value)
                 }
             }
-        } finally {
 
+            try {
+                val contentResolver = context.contentResolver
+                contentResolver.openFileDescriptor(uri, "wt")?.use {
+                    FileOutputStream(it.fileDescriptor).use {
+                        it.write(docx)
+                    }
+                }
+            } finally {
+
+            }
+            // TODO: Handle exceptions
         }
-        // TODO: Handle exceptions
     }
 
     override fun onCleared() {
         super.onCleared()
         clearUiState()
+        unbindService()
     }
 }

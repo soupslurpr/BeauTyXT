@@ -17,6 +17,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
 import dev.soupslurpr.beautyxt.ui.FileViewModel
 import dev.soupslurpr.beautyxt.ui.ReviewPrivacyPolicyAndLicense
+import dev.soupslurpr.beautyxt.ui.TypstProjectViewModel
 import dev.soupslurpr.beautyxt.ui.theme.BeauTyXTTheme
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -27,10 +28,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
+            val fileViewModel: FileViewModel = viewModel()
+
+            val typstProjectViewModel: TypstProjectViewModel = viewModel()
+
             val preferencesViewModel: PreferencesViewModel = viewModel(
                 factory = PreferencesViewModel.PreferencesViewModelFactory(dataStore)
             )
-            val fileViewModel: FileViewModel = viewModel()
 
             val isActionViewOrEdit = (intent.action == Intent.ACTION_VIEW) or (intent.action == Intent.ACTION_EDIT)
 
@@ -53,6 +57,7 @@ class MainActivity : ComponentActivity() {
                     BeauTyXTApp(
                         modifier = Modifier,
                         fileViewModel = fileViewModel,
+                        typstProjectViewModel = typstProjectViewModel,
                         preferencesViewModel = preferencesViewModel,
                         isActionViewOrEdit = isActionViewOrEdit,
                     )
