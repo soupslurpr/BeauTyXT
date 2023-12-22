@@ -67,7 +67,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityOptionsCompat
 import androidx.core.content.ContextCompat.startActivity
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -492,6 +491,7 @@ fun FileTypeSelectionDialogItem(
 fun BeauTyXTApp(
     modifier: Modifier,
     fileViewModel: FileViewModel,
+    typstProjectViewModel: TypstProjectViewModel,
     preferencesViewModel: PreferencesViewModel,
     isActionViewOrEdit: Boolean,
 ) {
@@ -509,7 +509,7 @@ fun BeauTyXTApp(
 
     val fileUiState by fileViewModel.uiState.collectAsState()
 
-    val typstProjectViewModel: TypstProjectViewModel = viewModel()
+    val typstProjectUiState by typstProjectViewModel.uiState.collectAsState()
 
     val preferencesUiState by preferencesViewModel.uiState.collectAsState()
 
@@ -589,7 +589,7 @@ fun BeauTyXTApp(
         )
     ) {
         if (it != null) {
-            typstProjectViewModel.testExportDocumentToPdf(it, context)
+            typstProjectViewModel.exportDocumentToPdf(it, context)
         }
     }
 
@@ -601,10 +601,8 @@ fun BeauTyXTApp(
         if (it != null) {
             typstProjectViewModel.refreshProjectFiles(context)
             typstProjectViewModel.setCurrentOpenedPath(it, context.contentResolver)
-            typstProjectViewModel.uiState.value.currentOpenedContent.value = getProjectFileText(
-                typstProjectViewModel
-                    .uiState.value
-                    .currentOpenedPath.value
+            typstProjectUiState.currentOpenedContent.value = typstProjectViewModel.getTypstProjectFileText(
+                typstProjectUiState.currentOpenedPath.value
             )
         }
     }
@@ -618,10 +616,8 @@ fun BeauTyXTApp(
             typstProjectViewModel.refreshProjectFiles(context)
             typstProjectViewModel.setCurrentOpenedPath(it, context.contentResolver)
             typstProjectViewModel.refreshProjectFiles(context)
-            typstProjectViewModel.uiState.value.currentOpenedContent.value = getProjectFileText(
-                typstProjectViewModel
-                    .uiState.value
-                    .currentOpenedPath.value
+            typstProjectUiState.currentOpenedContent.value = typstProjectViewModel.getTypstProjectFileText(
+                typstProjectUiState.currentOpenedPath.value
             )
         }
     }
