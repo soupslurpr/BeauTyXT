@@ -15,7 +15,7 @@ libc = "0.2.151"
 markdown = "1.0.0-alpha.16"
 once_cell = "1.19.0"
 scraper = "0.18.1"
-thiserror = "1.0.51"
+thiserror = "1.0.52"
 typst = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
 typst-pdf = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
 typst-svg = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
