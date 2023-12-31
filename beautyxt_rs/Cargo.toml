@@ -20,10 +20,10 @@ typst = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70c
 typst-pdf = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
 typst-svg = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
 typst-render = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
-uniffi = "0.25.3"
+uniffi = { git = "https://github.com/mozilla/uniffi-rs/", rev = "fb8dd5c0f9406ea558d0d9d86804f4688ae95e44", version = "0.25.3" }
 
 [build-dependencies]
-uniffi = { version = "0.25.3", features = ["build"] }
+uniffi = { git = "https://github.com/mozilla/uniffi-rs/", rev = "fb8dd5c0f9406ea558d0d9d86804f4688ae95e44", version = "0.25.3", features = ["build"] }
 
 [lib]
 crate-type = ["cdylib"]

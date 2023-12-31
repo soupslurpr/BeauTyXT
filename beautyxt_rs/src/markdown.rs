@@ -47,7 +47,7 @@ const MARKDOWN_PARSE_OPTIONS: ParseOptions = ParseOptions {
 };
 
 #[uniffi::export]
-pub fn markdown_to_html(markdown: String) -> String {
+pub fn markdown_to_html(markdown: &str) -> String {
     markdown::to_html_with_options(
         &markdown,
         &Options {
@@ -70,7 +70,7 @@ pub fn markdown_to_html(markdown: String) -> String {
 }
 
 #[uniffi::export]
-pub fn markdown_to_docx(markdown: String) -> Vec<u8> {
+pub fn markdown_to_docx(markdown: &str) -> Vec<u8> {
     let tree = markdown::to_mdast(&markdown, &MARKDOWN_PARSE_OPTIONS).unwrap();
 
     let mut docx = Docx::new()

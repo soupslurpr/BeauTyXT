@@ -119,7 +119,7 @@ pub enum CustomFileError {
 }
 
 #[uniffi::export]
-pub fn update_typst_project_file(new_text: String, path: String) -> Result<String, CustomFileError> {
+pub fn update_typst_project_file(new_text: &str, path: String) -> Result<String, CustomFileError> {
     let world = TYPST_WORLD.lock().unwrap();
     let world = world.as_ref().unwrap();
 
