@@ -12,3 +12,12 @@ Check out the official website at https://beautyxt.app/ for more info and downlo
 
 Check [CONTRIBUTING.md](https://github.com/soupslurpr/BeauTyXT/blob/master/CONTRIBUTING.md) for things to know
 if you want to contribute.
+
+## Donation
+
+Like BeauTyXT? You can donate to [soupslurpr](https://github.com/soupslurpr), the lead developer of BeauTyXT to support their work on BeauTyXT and their other open source projects. Thank you!
+
+[Monero](https://www.getmonero.org/) address:\
+`88rAaNowhaC8JG8NJDpcdRWr1gGVmtFPnHWPS9xXvqY44G4XKVi5hZMax2FQ6B8KAcMpzkeJAhNek8qMHZjjwvkEKuiyBKF`
+
+The [Monero](https://www.getmonero.org/) address can also be found in the app's settings.
