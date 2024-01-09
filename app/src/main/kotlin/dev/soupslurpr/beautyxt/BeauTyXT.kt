@@ -79,6 +79,7 @@ import dev.soupslurpr.beautyxt.constants.mimeTypePlainText
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
 import dev.soupslurpr.beautyxt.ui.CreditsScreen
+import dev.soupslurpr.beautyxt.ui.DonationScreen
 import dev.soupslurpr.beautyxt.ui.FileEditScreen
 import dev.soupslurpr.beautyxt.ui.FileViewModel
 import dev.soupslurpr.beautyxt.ui.LicenseScreen
@@ -99,7 +100,8 @@ enum class BeauTyXTScreens(@StringRes val title: Int) {
     License(title = R.string.license),
     PrivacyPolicy(title = R.string.privacy_policy),
     Credits(title = R.string.credits),
-    RustLibraryCredits(title = R.string.rust_library_credits);
+    RustLibraryCredits(title = R.string.rust_library_credits),
+    Donation(title = R.string.donation),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1398,7 +1400,10 @@ ${
                     onCreditsIconButtonClicked = {
                         navController.navigate(BeauTyXTScreens.Credits.name)
                     },
-                    preferencesViewModel = preferencesViewModel
+                    preferencesViewModel = preferencesViewModel,
+                    onDonationSettingsItemClicked = {
+                        navController.navigate(BeauTyXTScreens.Donation.name)
+                    }
                 )
             }
             composable(route = BeauTyXTScreens.License.name) {
@@ -1414,6 +1419,9 @@ ${
             }
             composable(route = BeauTyXTScreens.RustLibraryCredits.name) {
                 RustLibraryCreditsScreen()
+            }
+            composable(route = BeauTyXTScreens.Donation.name) {
+                DonationScreen()
             }
         }
     }

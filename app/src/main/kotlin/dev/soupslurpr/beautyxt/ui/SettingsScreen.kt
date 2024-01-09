@@ -39,6 +39,7 @@ fun SettingsScreen(
     onPrivacyPolicyIconButtonClicked: () -> Unit,
     onCreditsIconButtonClicked: () -> Unit,
     preferencesViewModel: PreferencesViewModel,
+    onDonationSettingsItemClicked: () -> Unit,
 ) {
     val localUriHandler = LocalUriHandler.current
     val preferencesUiState by preferencesViewModel.uiState.collectAsState()
@@ -165,6 +166,18 @@ fun SettingsScreen(
                     Icon(
                         imageVector = Icons.Filled.Info,
                         contentDescription = null
+                    )
+                }
+            )
+            SettingsItem(
+                stringResource(R.string.donation_setting_name),
+                stringResource(R.string.donation_setting_description),
+                hasIcon = true,
+                onClickIconSetting = { onDonationSettingsItemClicked() },
+                icon = {
+                    Icon(
+                        Icons.Filled.Info,
+                        null
                     )
                 }
             )

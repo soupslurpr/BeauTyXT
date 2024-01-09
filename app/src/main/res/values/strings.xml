@@ -91,4 +91,7 @@
     <string name="toggle_previewing_typst_project_in_fullscreen" tools:ignore="MissingTranslation">Toggle previewing Typst project in fullscreen</string>
     <string name="fullscreen_typst_preview_button_setting_name" tools:ignore="MissingTranslation">Fullscreen Typst Preview Button</string>
     <string name="fullscreen_typst_preview_button_setting_description" tools:ignore="MissingTranslation">Shows a button when a Typst project is open which will toggle a fullscreen preview of the rendered Typst project.\nExperimental because it has a few issues.</string>
+    <string name="donation" tools:ignore="MissingTranslation">Donation</string>
+    <string name="donation_setting_name" tools:ignore="MissingTranslation">Donation</string>
+    <string name="donation_setting_description" tools:ignore="MissingTranslation">View how to donate to BeauTyXT\'s lead developer in-app</string>
 </resources>
