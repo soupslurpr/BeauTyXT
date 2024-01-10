@@ -2,7 +2,7 @@ use docx_rs::{Docx, Run};
 use std::io::Cursor;
 
 #[uniffi::export]
-pub fn plain_text_to_docx(plain_text: String) -> Vec<u8> {
+pub fn plain_text_to_docx(plain_text: &str) -> Vec<u8> {
     let mut docx = Docx::new();
 
     for paragraph in plain_text.split('\n') {
