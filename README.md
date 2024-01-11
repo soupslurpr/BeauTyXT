@@ -21,3 +21,8 @@ Like BeauTyXT? You can donate to [soupslurpr](https://github.com/soupslurpr), th
 `88rAaNowhaC8JG8NJDpcdRWr1gGVmtFPnHWPS9xXvqY44G4XKVi5hZMax2FQ6B8KAcMpzkeJAhNek8qMHZjjwvkEKuiyBKF`
 
 The [Monero](https://www.getmonero.org/) address can also be found in the app's settings.
+
+## Branding
+
+You may not use the name "BeauTyXT", a name that includes "BeauTyXT", and the app icon in a derivative work that has published builds.\
+This is to prevent confusion of which is the official BeauTyXT.
