@@ -636,7 +636,8 @@ fun BeauTyXTApp(
             0 -> "Text, but beautiful."
             1 -> "TeXTacular!"
             2 -> "In Rust We Trust."
-            3, 4, 5, 6, 7 -> "Supremely sandboxed!"
+            3, 4, 5 -> "Supremely sandboxed!"
+            6, 7 -> "Cares about your security."
             else -> "Text, but beautiful."
         }
     }
