@@ -1,4 +1,4 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
     <string name="app_name">BeauTyXT</string>
     <string name="settings">Impostazioni</string>
     <string name="back_button">Indietro</string>
@@ -54,8 +54,6 @@
         nella finestra di dialogo apertura di un file esistente.\nATTENZIONE: LEGGI O RISCHI DI PERDERE I DATI: NON modificare i file
         che contengono contenuti binari, altrimenti rischi la corruzione! Alcuni esempi di tali file sono i pdf,
         gli odt e altri ancora.</string>
-    <string name="rust_library_credits">Crediti della libreria di Rust</string>
-    <string name="view_credits_for_rust_library">Visualizza i crediti per la libreria di Rust</string>
     <string name="docx">Office Open XML (.docx)</string>
     <string name="export_markdown_to_docx_setting_name">Esporta %1$s in %2$s</string>
     <string name="export_markdown_to_docx_setting_description">Aggiunge un\'opzione

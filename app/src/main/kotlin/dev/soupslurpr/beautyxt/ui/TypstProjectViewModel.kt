@@ -1,28 +1,40 @@
 package dev.soupslurpr.beautyxt.ui
 
+import android.annotation.SuppressLint
+import android.app.Application
+import android.content.ComponentName
 import android.content.ContentResolver
 import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.database.Cursor
 import android.net.Uri
+import android.os.IBinder
 import android.provider.OpenableColumns
+import androidx.compose.runtime.mutableStateListOf
 import androidx.documentfile.provider.DocumentFile
-import androidx.lifecycle.ViewModel
-import dev.soupslurpr.beautyxt.RenderException
-import dev.soupslurpr.beautyxt.TypstProjectFilePathAndFd
-import dev.soupslurpr.beautyxt.addTypstProjectFiles
-import dev.soupslurpr.beautyxt.clearTypstProjectFiles
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.Observer
+import androidx.lifecycle.viewModelScope
+import dev.soupslurpr.beautyxt.ITypstProjectViewModelRustLibraryAidlInterface
+import dev.soupslurpr.beautyxt.PathAndPfd
+import dev.soupslurpr.beautyxt.bindings.TypstCustomSeverity
+import dev.soupslurpr.beautyxt.bindings.TypstCustomSourceDiagnostic
+import dev.soupslurpr.beautyxt.bindings.TypstCustomTracepoint
 import dev.soupslurpr.beautyxt.data.TypstProjectUiState
-import dev.soupslurpr.beautyxt.getTypstPdf
-import dev.soupslurpr.beautyxt.getTypstSvg
-import dev.soupslurpr.beautyxt.initializeTypstWorld
-import dev.soupslurpr.beautyxt.setMainTypstProjectFile
-import dev.soupslurpr.beautyxt.updateTypstProjectFile
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import java.io.FileOutputStream
+import kotlin.coroutines.resume
 
-class TypstProjectViewModel : ViewModel() {
+class TypstProjectViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * File state for this file
@@ -30,56 +42,63 @@ class TypstProjectViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(TypstProjectUiState())
     val uiState: StateFlow<TypstProjectUiState> = _uiState.asStateFlow()
 
-    fun openProject(projectFolderUri: Uri, context: Context) {
-        initializeTypstWorld()
+    private var rustService: MutableLiveData<ITypstProjectViewModelRustLibraryAidlInterface?> = MutableLiveData(null)
 
-        _uiState.value.projectFolderUri.value = projectFolderUri
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val rustService = ITypstProjectViewModelRustLibraryAidlInterface.Stub.asInterface(service)
 
-        val files: MutableList<TypstProjectFilePathAndFd> = mutableListOf()
-        val filesQueue = ArrayDeque<DocumentFile>()
+            this@TypstProjectViewModel.rustService.postValue(rustService)
+        }
 
-        filesQueue.addAll(
-            DocumentFile.fromTreeUri(context, uiState.value.projectFolderUri.value)?.listFiles().orEmpty()
-        )
+        override fun onServiceDisconnected(name: ComponentName?) {
+            rustService.postValue(null)
+        }
+    }
 
-        while (filesQueue.isNotEmpty()) {
-            val file = filesQueue.removeFirst()
-            if (file.isDirectory) {
-                filesQueue.addAll(file.listFiles())
-            } else {
-                val parcelFileDescriptor = context.contentResolver.openAssetFileDescriptor(file.uri, "rw")
-                    ?.parcelFileDescriptor
-                if (parcelFileDescriptor != null) {
-                    val projectFile = TypstProjectFilePathAndFd(
-                        file.uri.lastPathSegment?.removePrefix(
-                            uiState.value.projectFolderUri.value
-                                .lastPathSegment.orEmpty()
-                        ).orEmpty(), parcelFileDescriptor.detachFd()
-                    )
-                    if (projectFile.path == "/main.typ") {
-                        _uiState.value.currentOpenedPath.value = "/main.typ"
-                        _uiState.value.currentOpenedDisplayName.value = "main.typ"
-                        setMainTypstProjectFile(projectFile)
-                        _uiState.value.currentOpenedContent.value =
-                            dev.soupslurpr.beautyxt.getTypstProjectFileText(uiState.value.currentOpenedPath.value)
-                    } else {
-                        files.add(projectFile)
+    private var intentService = Intent(getApplication(), TypstProjectViewModelRustLibraryIsolatedService::class.java)
+
+    private suspend fun <T> LiveData<T>.awaitFirstNonNull(): T {
+        return withContext(Dispatchers.Main.immediate) {
+            suspendCancellableCoroutine { continuation ->
+                val observer = object : Observer<T> {
+                    override fun onChanged(value: T) {
+                        if (value != null) {
+                            continuation.resume(value)
+                            this@awaitFirstNonNull.removeObserver(this)
+                        }
                     }
+                }
+
+                observeForever(observer)
+
+                // Handle coroutine cancellation
+                continuation.invokeOnCancellation {
+                    this@awaitFirstNonNull.removeObserver(observer)
                 }
             }
         }
+    }
 
-        addTypstProjectFiles(files)
+    private fun bindService() {
+        getApplication<Application>().bindService(intentService, serviceConnection, Context.BIND_AUTO_CREATE)
+    }
 
-        if (uiState.value.currentOpenedPath.value == "") {
-            DocumentFile.fromTreeUri(context, uiState.value.projectFolderUri.value)?.createFile(
-                "typst/application",
-                "main.typ"
-            )
-            _uiState.value.currentOpenedPath.value = "/main.typ"
-            _uiState.value.currentOpenedDisplayName.value = "main.typ"
-            refreshProjectFiles(context)
-            val files: MutableList<TypstProjectFilePathAndFd> = mutableListOf()
+    private fun unbindService() {
+        getApplication<Application>().unbindService(serviceConnection)
+    }
+
+    init {
+        bindService()
+    }
+
+    fun openProject(projectFolderUri: Uri, context: Context) {
+        viewModelScope.launch {
+            rustService.awaitFirstNonNull()!!.initializeTypstWorld()
+
+            _uiState.value.projectFolderUri.value = projectFolderUri
+
+            val files: MutableList<PathAndPfd> = mutableListOf()
             val filesQueue = ArrayDeque<DocumentFile>()
 
             filesQueue.addAll(
@@ -91,21 +110,25 @@ class TypstProjectViewModel : ViewModel() {
                 if (file.isDirectory) {
                     filesQueue.addAll(file.listFiles())
                 } else {
+                    @SuppressLint("Recycle") // We close the file descriptor in the Rust code
                     val parcelFileDescriptor = context.contentResolver.openAssetFileDescriptor(file.uri, "rw")
                         ?.parcelFileDescriptor
                     if (parcelFileDescriptor != null) {
-                        val projectFile = TypstProjectFilePathAndFd(
+                        val projectFile = PathAndPfd(
                             file.uri.lastPathSegment?.removePrefix(
                                 uiState.value.projectFolderUri.value
                                     .lastPathSegment.orEmpty()
-                            ).orEmpty(), parcelFileDescriptor.detachFd()
+                            ).orEmpty(), parcelFileDescriptor
                         )
                         if (projectFile.path == "/main.typ") {
                             _uiState.value.currentOpenedPath.value = "/main.typ"
                             _uiState.value.currentOpenedDisplayName.value = "main.typ"
-                            setMainTypstProjectFile(projectFile)
+                            rustService.awaitFirstNonNull()!!.setMainTypstProjectFile(projectFile)
                             _uiState.value.currentOpenedContent.value =
-                                dev.soupslurpr.beautyxt.getTypstProjectFileText(uiState.value.currentOpenedPath.value)
+                                rustService.awaitFirstNonNull()!!.getTypstProjectFileText(
+                                    uiState.value
+                                        .currentOpenedPath.value
+                                )
                         } else {
                             files.add(projectFile)
                         }
@@ -113,41 +136,164 @@ class TypstProjectViewModel : ViewModel() {
                 }
             }
 
-            addTypstProjectFiles(files)
-        }
+            rustService.awaitFirstNonNull()!!.addTypstProjectFiles(files)
 
-        renderProjectToSvgs()
+            if (uiState.value.currentOpenedPath.value == "") {
+                DocumentFile.fromTreeUri(context, uiState.value.projectFolderUri.value)?.createFile(
+                    "typst/application",
+                    "main.typ"
+                )
+                _uiState.value.currentOpenedPath.value = "/main.typ"
+                _uiState.value.currentOpenedDisplayName.value = "main.typ"
+                refreshProjectFiles(context)
+
+                files.clear()
+                filesQueue.clear()
+
+                filesQueue.addAll(
+                    DocumentFile.fromTreeUri(context, uiState.value.projectFolderUri.value)?.listFiles().orEmpty()
+                )
+
+                while (filesQueue.isNotEmpty()) {
+                    val file = filesQueue.removeFirst()
+                    if (file.isDirectory) {
+                        filesQueue.addAll(file.listFiles())
+                    } else {
+                        @SuppressLint("Recycle") // We close the file descriptor in the Rust code
+                        val parcelFileDescriptor = context.contentResolver.openAssetFileDescriptor(file.uri, "rw")
+                            ?.parcelFileDescriptor
+                        if (parcelFileDescriptor != null) {
+                            val projectFile = PathAndPfd(
+                                file.uri.lastPathSegment?.removePrefix(
+                                    uiState.value.projectFolderUri.value
+                                        .lastPathSegment.orEmpty()
+                                ).orEmpty(),
+                                parcelFileDescriptor
+                            )
+                            if (projectFile.path == "/main.typ") {
+                                _uiState.value.currentOpenedPath.value = "/main.typ"
+                                _uiState.value.currentOpenedDisplayName.value = "main.typ"
+                                rustService.awaitFirstNonNull()!!.setMainTypstProjectFile(projectFile)
+                                _uiState.value.currentOpenedContent.value =
+                                    rustService.awaitFirstNonNull()!!.getTypstProjectFileText(
+                                        uiState.value.currentOpenedPath.value
+                                    )
+                            } else {
+                                files.add(projectFile)
+                            }
+                        }
+                    }
+                }
+
+                rustService.awaitFirstNonNull()!!.addTypstProjectFiles(files)
+            }
+
+            renderProjectToSvgs()
+        }
     }
 
     fun exportDocumentToPdf(exportUri: Uri, context: Context) {
-        val pdf = getTypstPdf()
+        viewModelScope.launch {
+            val pdf = rustService.awaitFirstNonNull()!!.getTypstPdf()
 
-        try {
-            val contentResolver = context.contentResolver
-            contentResolver.openFileDescriptor(exportUri, "wt")?.use {
-                FileOutputStream(it.fileDescriptor).use {
-                    it.write(pdf)
+            try {
+                val contentResolver = context.contentResolver
+                contentResolver.openFileDescriptor(exportUri, "wt")?.use {
+                    FileOutputStream(it.fileDescriptor).use {
+                        it.write(pdf)
+                    }
                 }
-            }
-        } finally {
+            } finally {
 
+            }
+            // TODO: Handle exceptions
         }
-        // TODO: Handle exceptions
     }
 
     fun renderProjectToSvgs() {
-        var noException = true
+        viewModelScope.launch {
+            var noException = true
 
-        try {
-            _uiState.value.renderedProjectSvg.value = getTypstSvg()
-        } catch (e: RenderException.VecCustomSourceDiagnostic) {
-            _uiState.value.sourceDiagnostics.clear()
-            _uiState.value.sourceDiagnostics.addAll(e.customSourceDiagnostics)
-            noException = false
-        }
+            val bundle = rustService.awaitFirstNonNull()!!.getTypstSvg()
 
-        if (noException) {
-            _uiState.value.sourceDiagnostics.clear()
+            val svg = bundle.getByteArray("svg")
+
+            if (svg != null) {
+                _uiState.value.renderedProjectSvg.value = svg
+            } else {
+                var sourceDiagnostics: MutableList<TypstCustomSourceDiagnostic> = mutableStateListOf()
+
+                var index = 0
+                while (true) {
+                    val severity = bundle.getString("severity$index")
+                    val span = if (bundle.containsKey("span$index")) {
+                        bundle.getLong("span$index")
+                    } else {
+                        null
+                    }
+                    val message = bundle.getString("message$index")
+                    val trace = bundle.getInt("trace$index")
+
+                    val sourceDiagnostic = TypstCustomSourceDiagnostic(
+                        severity = when (severity) {
+                            "WARNING" -> TypstCustomSeverity.WARNING
+                            "ERROR" -> TypstCustomSeverity.ERROR
+                            else -> break
+                        },
+                        span = when (span) {
+                            null -> break
+                            else -> span.toULong()
+                        },
+                        message = when (message) {
+                            null -> break
+                            else -> message
+                        },
+                        trace = if (trace >= 0) {
+                            val traceList: MutableList<TypstCustomTracepoint> = mutableListOf()
+                            trace.downTo(0).reversed().forEach { traceIndex ->
+                                val prefix = "trace${index}name${traceIndex}"
+                                traceList.add(
+                                    when (bundle.getString(prefix)) {
+                                        "Call" -> TypstCustomTracepoint.Call(
+                                            string = bundle.getString("${prefix}string"),
+                                            span = bundle.getLong("${prefix}span").toULong(),
+                                        )
+
+                                        "Import" -> TypstCustomTracepoint.Import(
+                                            bundle.getLong("${prefix}span").toULong()
+                                        )
+
+                                        "Show" -> TypstCustomTracepoint.Show(
+                                            bundle.getString("${prefix}string") ?: return@forEach,
+                                            bundle.getLong("${prefix}span").toULong()
+                                        )
+
+                                        null -> return@forEach
+                                        else -> return@forEach
+                                    }
+                                )
+                            }
+                            traceList
+                        } else {
+                            listOf()
+                        },
+                        hints = bundle.getStringArrayList("hints$index").let {
+                            it ?: ArrayList()
+                        }
+                    )
+                    sourceDiagnostics.add(sourceDiagnostic)
+
+                    index += 1
+                }
+
+                _uiState.value.sourceDiagnostics.clear()
+                _uiState.value.sourceDiagnostics.addAll(sourceDiagnostics)
+                noException = false
+            }
+
+            if (noException) {
+                _uiState.value.sourceDiagnostics.clear()
+            }
         }
     }
 
@@ -159,7 +305,7 @@ class TypstProjectViewModel : ViewModel() {
                 .orEmpty()
         ).orEmpty()
 
-        _uiState.value.currentOpenedContent.value = getTypstProjectFileText(uiState.value.currentOpenedPath.value)
+        setTypstProjectFileText(uiState.value.currentOpenedPath.value)
 
         // Sets the display name
 
@@ -183,55 +329,66 @@ class TypstProjectViewModel : ViewModel() {
     }
 
     fun refreshProjectFiles(context: Context) {
-        val projectFolderUri = uiState.value.projectFolderUri.value
+        viewModelScope.launch {
+            val projectFolderUri = uiState.value.projectFolderUri.value
 
-        val files: MutableList<TypstProjectFilePathAndFd> = mutableListOf()
-        val filesQueue = ArrayDeque<DocumentFile>()
+            val files: MutableList<PathAndPfd> = mutableListOf()
+            val filesQueue = ArrayDeque<DocumentFile>()
 
-        filesQueue.addAll(DocumentFile.fromTreeUri(context, projectFolderUri)?.listFiles().orEmpty())
+            filesQueue.addAll(DocumentFile.fromTreeUri(context, projectFolderUri)?.listFiles().orEmpty())
 
-        while (filesQueue.isNotEmpty()) {
-            val file = filesQueue.removeFirst()
-            if (file.isDirectory) {
-                filesQueue.addAll(file.listFiles())
-            } else {
-                val parcelFileDescriptor = context.contentResolver.openAssetFileDescriptor(file.uri, "rw")
-                    ?.parcelFileDescriptor
-                if (parcelFileDescriptor != null) {
-                    val projectFile = TypstProjectFilePathAndFd(
-                        file.uri.lastPathSegment?.removePrefix(
-                            projectFolderUri
-                                .lastPathSegment.orEmpty()
-                        ).orEmpty(), parcelFileDescriptor.detachFd()
-                    )
-                    if (projectFile.path == "/main.typ") {
-                        setMainTypstProjectFile(projectFile)
-                    } else {
-                        files.add(projectFile)
+            while (filesQueue.isNotEmpty()) {
+                val file = filesQueue.removeFirst()
+                if (file.isDirectory) {
+                    filesQueue.addAll(file.listFiles())
+                } else {
+                    val parcelFileDescriptor = context.contentResolver.openAssetFileDescriptor(file.uri, "rw")
+                        ?.parcelFileDescriptor
+                    if (parcelFileDescriptor != null) {
+                        val projectFile = PathAndPfd(
+                            file.uri.lastPathSegment?.removePrefix(
+                                projectFolderUri
+                                    .lastPathSegment.orEmpty()
+                            ).orEmpty(),
+                            parcelFileDescriptor
+                        )
+                        if (projectFile.path == "/main.typ") {
+                            rustService.awaitFirstNonNull()!!.setMainTypstProjectFile(projectFile)
+                        } else {
+                            files.add(projectFile)
+                        }
                     }
                 }
             }
-        }
 
-        addTypstProjectFiles(files)
+            rustService.awaitFirstNonNull()!!.addTypstProjectFiles(files)
+        }
     }
 
     fun updateProjectFileWithNewText(newText: String, path: String) {
-        _uiState.value.currentOpenedContent.value = updateTypstProjectFile(newText, path)
+        viewModelScope.launch {
+            _uiState.value.currentOpenedContent.value =
+                rustService.awaitFirstNonNull()!!.updateTypstProjectFile(newText, path)
+        }
     }
 
-    fun getTypstProjectFileText(path: String): String {
-        return dev.soupslurpr.beautyxt.getTypstProjectFileText(path)
+    fun setTypstProjectFileText(path: String) {
+        viewModelScope.launch {
+            _uiState.value.currentOpenedContent.value = rustService.awaitFirstNonNull()!!.getTypstProjectFileText(path)
+        }
     }
 
     /** Set uiState to default values */
     private fun clearUiState() {
-        _uiState.value = TypstProjectUiState()
-        clearTypstProjectFiles()
+        viewModelScope.launch {
+            _uiState.value = TypstProjectUiState()
+            rustService.awaitFirstNonNull()!!.clearTypstProjectFiles()
+        }
     }
 
     override fun onCleared() {
         super.onCleared()
         clearUiState()
+        unbindService()
     }
 }

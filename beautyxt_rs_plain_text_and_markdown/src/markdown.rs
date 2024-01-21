@@ -49,7 +49,7 @@ const MARKDOWN_PARSE_OPTIONS: ParseOptions = ParseOptions {
 #[uniffi::export]
 pub fn markdown_to_html(markdown: &str) -> String {
     markdown::to_html_with_options(
-        &markdown,
+        markdown,
         &Options {
             parse: MARKDOWN_PARSE_OPTIONS,
             compile: CompileOptions {
@@ -71,7 +71,7 @@ pub fn markdown_to_html(markdown: &str) -> String {
 
 #[uniffi::export]
 pub fn markdown_to_docx(markdown: &str) -> Vec<u8> {
-    let tree = markdown::to_mdast(&markdown, &MARKDOWN_PARSE_OPTIONS).unwrap();
+    let tree = markdown::to_mdast(markdown, &MARKDOWN_PARSE_OPTIONS).unwrap();
 
     let mut docx = Docx::new()
         // Add styles for headings.

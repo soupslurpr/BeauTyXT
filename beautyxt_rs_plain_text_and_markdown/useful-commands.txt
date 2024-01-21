@@ -1,0 +1,24 @@
+Remember to specify correct path for environment variables at ./.cargo/config.toml first!
+
+Build, copy compiled files to correct places, and generate bindings to "..\app\src\main\kotlin":
+
+cargo build --lib --release
+cargo build --lib --release --target aarch64-linux-android
+cargo build --lib --release --target x86_64-linux-android
+rm .\target\aarch64-linux-android\release\libbeautyxt_rs_plain_text_and_markdown_compressed.so
+rm .\target\x86_64-linux-android\release\libbeautyxt_rs_plain_text_and_markdown_compressed.so     
+./upx.exe --android-shlib .\target\aarch64-linux-android\release\libbeautyxt_rs_plain_text_and_markdown.so -o .\target\aarch64-linux-android\release\libbeautyxt_rs_plain_text_and_markdown_compressed.so --best --ultra-brute
+./upx.exe --android-shlib .\target\x86_64-linux-android\release\libbeautyxt_rs_plain_text_and_markdown.so -o .\target\x86_64-linux-android\release\libbeautyxt_rs_plain_text_and_markdown_compressed.so --best --ultra-brute
+copy .\target\aarch64-linux-android\release\libbeautyxt_rs_plain_text_and_markdown_compressed.so ..\app\src\main\jniLibs\arm64-v8a\libbeautyxt_rs_plain_text_and_markdown.so
+copy .\target\x86_64-linux-android\release\libbeautyxt_rs_plain_text_and_markdown_compressed.so ..\app\src\main\jniLibs\x86_64\libbeautyxt_rs_plain_text_and_markdown.so
+cargo run --features uniffi/cli --bin uniffi-bindgen generate --library target/release/beautyxt_rs_plain_text_and_markdown.dll --language kotlin --out-dir "..\app\src\main\kotlin"
+
+Update rust library licensing info:
+cargo about generate about.hbs > ../app/src/main/assets/beautyxt_rs_plain_text_and_markdown-third-party-licenses.html
+
+Quick testing commands:
+
+cargo build --lib --target aarch64-linux-android
+cargo run --features uniffi/cli --bin uniffi-bindgen generate --library target/aarch64-linux-android/debug/libbeautyxt_rs_plain_text_and_markdown.so --language kotlin --out-dir "..\app\src\main\kotlin"
+cargo build --lib --release --target aarch64-linux-android
+copy .\target\aarch64-linux-android\release\libbeautyxt_rs_plain_text_and_markdown.so ..\app\src\main\jniLibs\arm64-v8a\libbeautyxt_rs_plain_text_and_markdown.so

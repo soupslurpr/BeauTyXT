@@ -20,6 +20,11 @@
             android:exported="false"
             android:isolatedProcess="true"
             android:process=":file_view_model_rust_library_isolated_process"></service>
+        <service
+            android:name=".ui.TypstProjectViewModelRustLibraryIsolatedService"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":typst_project_view_model_rust_library_isolated_process"></service>
         <activity
             android:name="dev.soupslurpr.beautyxt.MainActivity"
             android:exported="true"

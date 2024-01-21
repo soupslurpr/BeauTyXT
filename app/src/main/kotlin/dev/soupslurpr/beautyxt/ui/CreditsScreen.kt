@@ -1,6 +1,10 @@
 package dev.soupslurpr.beautyxt.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -226,7 +230,8 @@ const val APACHE2LICENSE = "\n" +
 
 @Composable
 fun CreditsScreen(
-    onRustLibraryCreditsButtonClicked: () -> Unit,
+    onPlainTextAndMarkdownRustLibraryCreditsButtonClicked: () -> Unit,
+    onTypstRustLibraryCreditsButtonClicked: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -1155,9 +1160,21 @@ fun CreditsScreen(
         }
         item {
             Button(
-                onClick = { onRustLibraryCreditsButtonClicked() },
-                content = { Text(stringResource(R.string.view_credits_for_rust_library)) }
+                onClick = { onPlainTextAndMarkdownRustLibraryCreditsButtonClicked() },
+                content = { Text(stringResource(R.string.view_credits_for_rust_library_for_plain_text_and_markdown_support)) }
             )
+        }
+        item {
+            Button(
+                onClick = { onTypstRustLibraryCreditsButtonClicked() },
+                content = { Text(stringResource(R.string.view_credits_for_rust_library_for_typst_support)) }
+            )
+        }
+
+
+        // This must always remain at the bottom!
+        item {
+            Spacer(Modifier.padding(WindowInsets.navigationBars.asPaddingValues()))
         }
     }
 }

@@ -32,7 +32,7 @@ import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
 import coil.request.ImageRequest
 import dev.soupslurpr.beautyxt.R
-import dev.soupslurpr.beautyxt.TypstCustomSourceDiagnostic
+import dev.soupslurpr.beautyxt.bindings.TypstCustomSourceDiagnostic
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 import kotlinx.coroutines.Dispatchers
 

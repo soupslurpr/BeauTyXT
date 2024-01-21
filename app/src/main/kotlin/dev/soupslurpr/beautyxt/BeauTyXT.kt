@@ -83,12 +83,13 @@ import dev.soupslurpr.beautyxt.ui.DonationScreen
 import dev.soupslurpr.beautyxt.ui.FileEditScreen
 import dev.soupslurpr.beautyxt.ui.FileViewModel
 import dev.soupslurpr.beautyxt.ui.LicenseScreen
+import dev.soupslurpr.beautyxt.ui.PlainTextAndMarkdownRustLibraryCreditsScreen
 import dev.soupslurpr.beautyxt.ui.PrivacyPolicyScreen
-import dev.soupslurpr.beautyxt.ui.RustLibraryCreditsScreen
 import dev.soupslurpr.beautyxt.ui.SettingsScreen
 import dev.soupslurpr.beautyxt.ui.StartupScreen
 import dev.soupslurpr.beautyxt.ui.TypstProjectScreen
 import dev.soupslurpr.beautyxt.ui.TypstProjectViewModel
+import dev.soupslurpr.beautyxt.ui.TypstRustLibraryCreditsScreen
 import java.time.LocalDateTime
 import kotlin.random.Random
 
@@ -100,7 +101,8 @@ enum class BeauTyXTScreens(@StringRes val title: Int) {
     License(title = R.string.license),
     PrivacyPolicy(title = R.string.privacy_policy),
     Credits(title = R.string.credits),
-    RustLibraryCredits(title = R.string.rust_library_credits),
+    PlainTextAndMarkdownRustLibraryCredits(title = R.string.plain_text_and_markdown_rust_library_credits),
+    TypstRustLibraryCredits(title = R.string.typst_rust_library_credits),
     Donation(title = R.string.donation),
 }
 
@@ -603,7 +605,7 @@ fun BeauTyXTApp(
         if (it != null) {
             typstProjectViewModel.refreshProjectFiles(context)
             typstProjectViewModel.setCurrentOpenedPath(it, context.contentResolver)
-            typstProjectUiState.currentOpenedContent.value = typstProjectViewModel.getTypstProjectFileText(
+            typstProjectViewModel.setTypstProjectFileText(
                 typstProjectUiState.currentOpenedPath.value
             )
         }
@@ -618,7 +620,7 @@ fun BeauTyXTApp(
             typstProjectViewModel.refreshProjectFiles(context)
             typstProjectViewModel.setCurrentOpenedPath(it, context.contentResolver)
             typstProjectViewModel.refreshProjectFiles(context)
-            typstProjectUiState.currentOpenedContent.value = typstProjectViewModel.getTypstProjectFileText(
+            typstProjectViewModel.setTypstProjectFileText(
                 typstProjectUiState.currentOpenedPath.value
             )
         }
@@ -634,6 +636,7 @@ fun BeauTyXTApp(
             0 -> "Text, but beautiful."
             1 -> "TeXTacular!"
             2 -> "In Rust We Trust."
+            3, 4, 5, 6, 7 -> "Supremely sandboxed!"
             else -> "Text, but beautiful."
         }
     }
@@ -1413,12 +1416,20 @@ ${
                 PrivacyPolicyScreen()
             }
             composable(route = BeauTyXTScreens.Credits.name) {
-                CreditsScreen(onRustLibraryCreditsButtonClicked = {
-                    navController.navigate(BeauTyXTScreens.RustLibraryCredits.name)
-                })
+                CreditsScreen(
+                    onPlainTextAndMarkdownRustLibraryCreditsButtonClicked = {
+                        navController.navigate(BeauTyXTScreens.PlainTextAndMarkdownRustLibraryCredits.name)
+                    },
+                    onTypstRustLibraryCreditsButtonClicked = {
+                        navController.navigate(BeauTyXTScreens.TypstRustLibraryCredits.name)
+                    }
+                )
             }
-            composable(route = BeauTyXTScreens.RustLibraryCredits.name) {
-                RustLibraryCreditsScreen()
+            composable(route = BeauTyXTScreens.PlainTextAndMarkdownRustLibraryCredits.name) {
+                PlainTextAndMarkdownRustLibraryCreditsScreen()
+            }
+            composable(route = BeauTyXTScreens.TypstRustLibraryCredits.name) {
+                TypstRustLibraryCreditsScreen()
             }
             composable(route = BeauTyXTScreens.Donation.name) {
                 DonationScreen()

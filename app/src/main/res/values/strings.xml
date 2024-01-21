@@ -54,7 +54,8 @@
         option in the open an existing file dialog.\nWARNING PLEASE READ OR RISK LOSING DATA: Do NOT edit files
         that have binary content in them or else you will risk corruption! Some examples of such files are pdf\'s,
         odt\'s, and more.</string>
-    <string name="rust_library_credits" tools:ignore="MissingTranslation">Rust Library Credits</string>
+    <string name="plain_text_and_markdown_rust_library_credits" tools:ignore="MissingTranslation">Plain Text and
+        Markdown Rust Library Credits</string>
     <string name="view_credits_for_rust_library" tools:ignore="MissingTranslation">View Credits for Rust library</string>
     <string name="docx" tools:ignore="MissingTranslation">Office Open XML (.docx)</string>
     <string name="export_markdown_to_docx_setting_name" tools:ignore="MissingTranslation">Export %1$s to %2$s</string>
@@ -94,4 +95,7 @@
     <string name="donation" tools:ignore="MissingTranslation">Donation</string>
     <string name="donation_setting_name" tools:ignore="MissingTranslation">Donation</string>
     <string name="donation_setting_description" tools:ignore="MissingTranslation">View how to donate to BeauTyXT\'s lead developer in-app</string>
+    <string name="view_credits_for_rust_library_for_plain_text_and_markdown_support" tools:ignore="MissingTranslation">View Credits for Rust library for Plain Text and Markdown support</string>
+    <string name="view_credits_for_rust_library_for_typst_support" tools:ignore="MissingTranslation">View Credits for Rust library for Typst support</string>
+    <string name="typst_rust_library_credits">Typst Rust Library Credits</string>
 </resources>

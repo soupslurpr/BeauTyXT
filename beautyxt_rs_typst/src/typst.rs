@@ -23,7 +23,8 @@ use typst::{foundations::Datetime, text::FontInfo};
 
 static MAIN_TYPST_PROJECT_FILE: Lazy<Mutex<Option<TypstProjectFilePathAndFile>>> =
     Lazy::new(|| Mutex::new(None));
-static TYPST_PROJECT_FILES: Lazy<Mutex<Vec<TypstProjectFilePathAndFile>>> = Lazy::new(|| Mutex::new(vec![]));
+static TYPST_PROJECT_FILES: Lazy<Mutex<Vec<TypstProjectFilePathAndFile>>> =
+    Lazy::new(|| Mutex::new(vec![]));
 
 static TYPST_WORLD: Lazy<Mutex<Option<SomeTypstWorld>>> = Lazy::new(|| Mutex::new(None));
 
@@ -47,7 +48,9 @@ pub struct TypstProjectFilePathAndFile {
 
 impl TypstProjectFilePathAndFile {
     #[allow(unreachable_code)]
-    pub fn from_project_file_path_and_fd(project_file_path_and_fd: &TypstProjectFilePathAndFd) -> Self {
+    pub fn from_project_file_path_and_fd(
+        project_file_path_and_fd: &TypstProjectFilePathAndFd,
+    ) -> Self {
         TypstProjectFilePathAndFile {
             path: project_file_path_and_fd.path.clone(),
             file: {
@@ -131,7 +134,7 @@ pub fn update_typst_project_file(new_text: &str, path: String) -> Result<String,
 
         let mut file = &main_project_file.file;
 
-        source.replace(&new_text);
+        source.replace(new_text);
 
         let text = source.text().to_owned();
 
@@ -177,7 +180,7 @@ pub fn update_typst_project_file(new_text: &str, path: String) -> Result<String,
         {
             Some(project_file_path_and_file) => match &mut project_file_path_and_file.source {
                 Some(source) => {
-                    source.replace(&new_text);
+                    source.replace(new_text);
                     let text = source.text().to_owned();
 
                     let mut file = &project_file_path_and_file.file;
@@ -246,7 +249,7 @@ pub fn update_typst_project_file(new_text: &str, path: String) -> Result<String,
                     let mut source =
                         Source::new(FileId::new(None, VirtualPath::new(path)), old_text);
 
-                    source.replace(&new_text);
+                    source.replace(new_text);
 
                     project_file_path_and_file.source = Some(source.clone());
 
@@ -378,10 +381,12 @@ pub fn get_typst_svg() -> Result<Vec<u8>, RenderError> {
                                         .as_ref()
                                         .map(|eco_string| eco_string.to_string()),
                                 },
-                                Tracepoint::Show(show_rule_application) => TypstCustomTracepoint::Show {
-                                    string: show_rule_application.to_string(),
-                                    span,
-                                },
+                                Tracepoint::Show(show_rule_application) => {
+                                    TypstCustomTracepoint::Show {
+                                        string: show_rule_application.to_string(),
+                                        span,
+                                    }
+                                }
                                 Tracepoint::Import => TypstCustomTracepoint::Import { span },
                             }
                         })

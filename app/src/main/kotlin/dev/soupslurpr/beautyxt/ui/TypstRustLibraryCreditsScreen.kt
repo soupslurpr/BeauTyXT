@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 
 @Composable
-fun RustLibraryCreditsScreen() {
+fun TypstRustLibraryCreditsScreen() {
     val colorScheme = MaterialTheme.colorScheme
 
     AndroidView(
@@ -21,7 +21,7 @@ fun RustLibraryCreditsScreen() {
             }
         },
         update = { view ->
-            view.loadUrl("file:///android_asset/beautyxt_rs-third-party-licenses.html")
+            view.loadUrl("file:///android_asset/beautyxt_rs_typst-third-party-licenses.html")
         }
     )
 }
