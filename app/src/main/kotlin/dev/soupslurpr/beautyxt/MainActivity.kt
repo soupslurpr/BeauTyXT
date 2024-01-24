@@ -43,7 +43,10 @@ class MainActivity : ComponentActivity() {
 
                 fileViewModel.setReadOnly(readOnly)
 
-                intent.data?.let { fileViewModel.setUri(it, LocalContext.current) }
+                intent.data?.let {
+                    fileViewModel.bindIsolatedService(it)
+                    fileViewModel.setUri(it, LocalContext.current)
+                }
             }
 
             val preferencesUiState by preferencesViewModel.uiState.collectAsState()

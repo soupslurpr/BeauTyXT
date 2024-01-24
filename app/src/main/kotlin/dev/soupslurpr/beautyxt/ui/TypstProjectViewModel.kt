@@ -9,30 +9,29 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.database.Cursor
 import android.net.Uri
+import android.os.DeadObjectException
 import android.os.IBinder
 import android.provider.OpenableColumns
+import android.util.Log
 import androidx.compose.runtime.mutableStateListOf
+import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.Observer
 import androidx.lifecycle.viewModelScope
 import dev.soupslurpr.beautyxt.ITypstProjectViewModelRustLibraryAidlInterface
 import dev.soupslurpr.beautyxt.PathAndPfd
-import dev.soupslurpr.beautyxt.bindings.TypstCustomSeverity
-import dev.soupslurpr.beautyxt.bindings.TypstCustomSourceDiagnostic
-import dev.soupslurpr.beautyxt.bindings.TypstCustomTracepoint
+import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomSeverity
+import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomSourceDiagnostic
+import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomTracepoint
 import dev.soupslurpr.beautyxt.data.TypstProjectUiState
-import kotlinx.coroutines.Dispatchers
+import dev.soupslurpr.beautyxt.returnHashSha256
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import java.io.FileOutputStream
-import kotlin.coroutines.resume
+
+private const val TAG = "TypstProjectViewModel"
 
 class TypstProjectViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -42,62 +41,48 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
     private val _uiState = MutableStateFlow(TypstProjectUiState())
     val uiState: StateFlow<TypstProjectUiState> = _uiState.asStateFlow()
 
-    private var rustService: MutableLiveData<ITypstProjectViewModelRustLibraryAidlInterface?> = MutableLiveData(null)
+    var rustService: ITypstProjectViewModelRustLibraryAidlInterface? = null
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val rustService = ITypstProjectViewModelRustLibraryAidlInterface.Stub.asInterface(service)
 
-            this@TypstProjectViewModel.rustService.postValue(rustService)
+            this@TypstProjectViewModel.rustService = rustService
+
+            rustService.initializeTypstWorld()
+
+            openProject(application.applicationContext)
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            rustService.postValue(null)
+            rustService = null
         }
     }
 
     private var intentService = Intent(getApplication(), TypstProjectViewModelRustLibraryIsolatedService::class.java)
 
-    private suspend fun <T> LiveData<T>.awaitFirstNonNull(): T {
-        return withContext(Dispatchers.Main.immediate) {
-            suspendCancellableCoroutine { continuation ->
-                val observer = object : Observer<T> {
-                    override fun onChanged(value: T) {
-                        if (value != null) {
-                            continuation.resume(value)
-                            this@awaitFirstNonNull.removeObserver(this)
-                        }
-                    }
-                }
+    fun bindService(projectFolderUri: Uri) {
+        _uiState.value.projectFolderUri.value = projectFolderUri
+        getApplication<Application>().bindIsolatedService(
+            intentService,
+            Context.BIND_AUTO_CREATE,
+            returnHashSha256(projectFolderUri.toString().toByteArray()),
+            ContextCompat.getMainExecutor(getApplication<Application>().applicationContext),
+            serviceConnection,
+        )
+    }
 
-                observeForever(observer)
-
-                // Handle coroutine cancellation
-                continuation.invokeOnCancellation {
-                    this@awaitFirstNonNull.removeObserver(observer)
-                }
-            }
+    private fun stopAndUnbindService() {
+        getApplication<Application>().stopService(intentService)
+        try {
+            getApplication<Application>().unbindService(serviceConnection)
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Failed to unbind service: $e")
         }
     }
 
-    private fun bindService() {
-        getApplication<Application>().bindService(intentService, serviceConnection, Context.BIND_AUTO_CREATE)
-    }
-
-    private fun unbindService() {
-        getApplication<Application>().unbindService(serviceConnection)
-    }
-
-    init {
-        bindService()
-    }
-
-    fun openProject(projectFolderUri: Uri, context: Context) {
+    fun openProject(context: Context) {
         viewModelScope.launch {
-            rustService.awaitFirstNonNull()!!.initializeTypstWorld()
-
-            _uiState.value.projectFolderUri.value = projectFolderUri
-
             val files: MutableList<PathAndPfd> = mutableListOf()
             val filesQueue = ArrayDeque<DocumentFile>()
 
@@ -123,9 +108,9 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
                         if (projectFile.path == "/main.typ") {
                             _uiState.value.currentOpenedPath.value = "/main.typ"
                             _uiState.value.currentOpenedDisplayName.value = "main.typ"
-                            rustService.awaitFirstNonNull()!!.setMainTypstProjectFile(projectFile)
+                            rustService!!.setMainTypstProjectFile(projectFile)
                             _uiState.value.currentOpenedContent.value =
-                                rustService.awaitFirstNonNull()!!.getTypstProjectFileText(
+                                rustService!!.getTypstProjectFileText(
                                     uiState.value
                                         .currentOpenedPath.value
                                 )
@@ -136,7 +121,7 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
                 }
             }
 
-            rustService.awaitFirstNonNull()!!.addTypstProjectFiles(files)
+            rustService!!.addTypstProjectFiles(files)
 
             if (uiState.value.currentOpenedPath.value == "") {
                 DocumentFile.fromTreeUri(context, uiState.value.projectFolderUri.value)?.createFile(
@@ -173,9 +158,9 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
                             if (projectFile.path == "/main.typ") {
                                 _uiState.value.currentOpenedPath.value = "/main.typ"
                                 _uiState.value.currentOpenedDisplayName.value = "main.typ"
-                                rustService.awaitFirstNonNull()!!.setMainTypstProjectFile(projectFile)
+                                rustService!!.setMainTypstProjectFile(projectFile)
                                 _uiState.value.currentOpenedContent.value =
-                                    rustService.awaitFirstNonNull()!!.getTypstProjectFileText(
+                                    rustService!!.getTypstProjectFileText(
                                         uiState.value.currentOpenedPath.value
                                     )
                             } else {
@@ -185,16 +170,16 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
                     }
                 }
 
-                rustService.awaitFirstNonNull()!!.addTypstProjectFiles(files)
+                rustService!!.addTypstProjectFiles(files)
             }
 
-            renderProjectToSvgs()
+            renderProjectToSvgs(rustService!!)
         }
     }
 
     fun exportDocumentToPdf(exportUri: Uri, context: Context) {
         viewModelScope.launch {
-            val pdf = rustService.awaitFirstNonNull()!!.getTypstPdf()
+            val pdf = rustService!!.getTypstPdf()
 
             try {
                 val contentResolver = context.contentResolver
@@ -210,11 +195,11 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun renderProjectToSvgs() {
+    fun renderProjectToSvgs(rustService: ITypstProjectViewModelRustLibraryAidlInterface) {
         viewModelScope.launch {
             var noException = true
 
-            val bundle = rustService.awaitFirstNonNull()!!.getTypstSvg()
+            val bundle = rustService.getTypstSvg()
 
             val svg = bundle.getByteArray("svg")
 
@@ -342,6 +327,7 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
                 if (file.isDirectory) {
                     filesQueue.addAll(file.listFiles())
                 } else {
+                    @SuppressLint("Recycle") // We close the file descriptor in the Rust code
                     val parcelFileDescriptor = context.contentResolver.openAssetFileDescriptor(file.uri, "rw")
                         ?.parcelFileDescriptor
                     if (parcelFileDescriptor != null) {
@@ -353,7 +339,7 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
                             parcelFileDescriptor
                         )
                         if (projectFile.path == "/main.typ") {
-                            rustService.awaitFirstNonNull()!!.setMainTypstProjectFile(projectFile)
+                            rustService!!.setMainTypstProjectFile(projectFile)
                         } else {
                             files.add(projectFile)
                         }
@@ -361,34 +347,41 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
                 }
             }
 
-            rustService.awaitFirstNonNull()!!.addTypstProjectFiles(files)
+            rustService!!.addTypstProjectFiles(files)
         }
     }
 
     fun updateProjectFileWithNewText(newText: String, path: String) {
         viewModelScope.launch {
             _uiState.value.currentOpenedContent.value =
-                rustService.awaitFirstNonNull()!!.updateTypstProjectFile(newText, path)
+                rustService!!.updateTypstProjectFile(newText, path)
         }
     }
 
     fun setTypstProjectFileText(path: String) {
         viewModelScope.launch {
-            _uiState.value.currentOpenedContent.value = rustService.awaitFirstNonNull()!!.getTypstProjectFileText(path)
+            _uiState.value.currentOpenedContent.value = rustService!!.getTypstProjectFileText(path)
         }
     }
 
     /** Set uiState to default values */
-    private fun clearUiState() {
+    fun clearUiState() {
         viewModelScope.launch {
             _uiState.value = TypstProjectUiState()
-            rustService.awaitFirstNonNull()!!.clearTypstProjectFiles()
+            try {
+                rustService!!.clearTypstProjectFiles()
+            } catch (e: DeadObjectException) {
+                Log.w(
+                    TAG,
+                    "Failed to call clearTypstProjectFiles(), might have already cleared as service is dead $e"
+                )
+            }
+            stopAndUnbindService()
         }
     }
 
     override fun onCleared() {
         super.onCleared()
         clearUiState()
-        unbindService()
     }
 }

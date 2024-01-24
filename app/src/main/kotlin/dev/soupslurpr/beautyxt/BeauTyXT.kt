@@ -519,6 +519,7 @@ fun BeauTyXTApp(
 
     val openFileLauncher = rememberLauncherForActivityResult(contract = OpenDocument()) {
         if (it != null) {
+            fileViewModel.bindIsolatedService(it)
             fileViewModel.setReadOnly(false)
             fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
@@ -527,6 +528,7 @@ fun BeauTyXTApp(
 
     val createTxtFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypePlainText)) {
         if (it != null) {
+            fileViewModel.bindIsolatedService(it)
             fileViewModel.setReadOnly(false)
             fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
@@ -535,6 +537,7 @@ fun BeauTyXTApp(
 
     val createMdFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypeMarkdown)) {
         if (it != null) {
+            fileViewModel.bindIsolatedService(it)
             fileViewModel.setReadOnly(false)
             fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
@@ -546,7 +549,7 @@ fun BeauTyXTApp(
             .OpenDocumentTree()
     ) { projectFolderUri ->
         if (projectFolderUri != null) {
-            typstProjectViewModel.openProject(projectFolderUri, context)
+            typstProjectViewModel.bindService(projectFolderUri)
             navController.navigate(BeauTyXTScreens.TypstProject.name)
         }
     }
@@ -556,7 +559,7 @@ fun BeauTyXTApp(
             .OpenDocumentTree()
     ) { projectFolderUri ->
         if (projectFolderUri != null) {
-            typstProjectViewModel.openProject(projectFolderUri, context)
+            typstProjectViewModel.bindService(projectFolderUri)
             navController.navigate(BeauTyXTScreens.TypstProject.name)
         }
     }
@@ -1355,6 +1358,7 @@ ${
                     },
                     fileViewModel = fileViewModel,
                     preferencesUiState = preferencesUiState,
+                    typstProjectViewModel = typstProjectViewModel,
                 )
             }
             composable(

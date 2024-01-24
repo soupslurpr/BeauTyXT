@@ -7,16 +7,28 @@ import dev.soupslurpr.beautyxt.IFileViewModelRustLibraryAidlInterface
 
 class FileViewModelRustLibraryIsolatedService : Service() {
     private val binder = object : IFileViewModelRustLibraryAidlInterface.Stub() {
-        override fun markdownToHtml(markdown: String?): String {
-            return dev.soupslurpr.beautyxt.bindings.markdownToHtml(markdown!!)
+        override fun markdownToHtml(markdown: String?): String? {
+            return markdown?.let {
+                dev.soupslurpr.beautyxt.beautyxt_rs_plain_text_and_markdown_bindings.markdownToHtml(
+                    it
+                )
+            }
         }
 
-        override fun markdownToDocx(markdown: String?): ByteArray {
-            return dev.soupslurpr.beautyxt.bindings.markdownToDocx(markdown!!)
+        override fun markdownToDocx(markdown: String?): ByteArray? {
+            return markdown?.let {
+                dev.soupslurpr.beautyxt.beautyxt_rs_plain_text_and_markdown_bindings.markdownToDocx(
+                    it
+                )
+            }
         }
 
-        override fun plainTextToDocx(plainText: String?): ByteArray {
-            return dev.soupslurpr.beautyxt.bindings.plainTextToDocx(plainText!!)
+        override fun plainTextToDocx(plainText: String?): ByteArray? {
+            return plainText?.let {
+                dev.soupslurpr.beautyxt.beautyxt_rs_plain_text_and_markdown_bindings.plainTextToDocx(
+                    it
+                )
+            }
         }
     }
 

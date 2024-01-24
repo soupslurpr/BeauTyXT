@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.soupslurpr.beautyxt.R
+import dev.soupslurpr.beautyxt.constants.mimeTypeMarkdown
 import dev.soupslurpr.beautyxt.data.FileUiState
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 
@@ -62,8 +63,13 @@ fun FileEditScreen(
          * and then turning it on again. Or else it only updates after a character gets typed.
          * Its also for updating the html when previewing using the fullscreen markdown preview
          * experimental feature while having render markdown at the bottom half of the screen off.*/
-        if (preferencesUiState.renderMarkdown.second.value or previewMarkdownRenderedToHtmlFullscreen) {
-            fileViewModel.setMarkdownToHtml()
+        if (
+            (preferencesUiState.renderMarkdown.second.value or previewMarkdownRenderedToHtmlFullscreen)
+            && mimeType == mimeTypeMarkdown
+        ) {
+            if (fileViewModel.rustService != null) {
+                fileViewModel.setMarkdownToHtml()
+            }
         }
     }
 
@@ -194,7 +200,7 @@ fun FileEditScreen(
                                      * The default text color is set to the current colorScheme's onBackground color
                                      * to match the TextField's text color.
                                      */
-                                    fileViewModel.setMarkdownToHtml()
+//                                    fileViewModel.setMarkdownToHtml()
                                     val html = """
                                 <!DOCTYPE html>
                                 <html>

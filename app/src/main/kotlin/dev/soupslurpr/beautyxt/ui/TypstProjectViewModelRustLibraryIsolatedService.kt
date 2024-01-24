@@ -7,19 +7,19 @@ import android.os.IBinder
 import androidx.core.os.bundleOf
 import dev.soupslurpr.beautyxt.ITypstProjectViewModelRustLibraryAidlInterface
 import dev.soupslurpr.beautyxt.PathAndPfd
-import dev.soupslurpr.beautyxt.bindings.RenderException
-import dev.soupslurpr.beautyxt.bindings.TypstCustomSeverity
-import dev.soupslurpr.beautyxt.bindings.TypstCustomTracepoint
-import dev.soupslurpr.beautyxt.bindings.TypstProjectFilePathAndFd
+import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.RenderException
+import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomSeverity
+import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomTracepoint
+import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstProjectFilePathAndFd
 
 class TypstProjectViewModelRustLibraryIsolatedService : Service() {
     private val binder = object : ITypstProjectViewModelRustLibraryAidlInterface.Stub() {
         override fun initializeTypstWorld() {
-            return dev.soupslurpr.beautyxt.bindings.initializeTypstWorld()
+            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.initializeTypstWorld()
         }
 
         override fun setMainTypstProjectFile(papfd: PathAndPfd?) {
-            return dev.soupslurpr.beautyxt.bindings.setMainTypstProjectFile(
+            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.setMainTypstProjectFile(
                 TypstProjectFilePathAndFd(
                     papfd!!.path,
                     papfd.pfd.detachFd()
@@ -28,7 +28,7 @@ class TypstProjectViewModelRustLibraryIsolatedService : Service() {
         }
 
         override fun addTypstProjectFiles(papfdList: MutableList<PathAndPfd>?) {
-            return dev.soupslurpr.beautyxt.bindings.addTypstProjectFiles(
+            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.addTypstProjectFiles(
                 papfdList!!.map { papfd ->
                     TypstProjectFilePathAndFd(
                         papfd.path,
@@ -39,7 +39,7 @@ class TypstProjectViewModelRustLibraryIsolatedService : Service() {
         }
 
         override fun getTypstProjectFileText(path: String?): String {
-            return dev.soupslurpr.beautyxt.bindings.getTypstProjectFileText(
+            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.getTypstProjectFileText(
                 path!!
             )
         }
@@ -48,7 +48,7 @@ class TypstProjectViewModelRustLibraryIsolatedService : Service() {
             val bundle = bundleOf()
 
             try {
-                bundle.putByteArray("svg", dev.soupslurpr.beautyxt.bindings.getTypstSvg())
+                bundle.putByteArray("svg", dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.getTypstSvg())
             } catch (e: RenderException.VecCustomSourceDiagnostic) {
                 e.customSourceDiagnostics.forEachIndexed { index, typstCustomSourceDiagnostic ->
                     bundle.putString(
@@ -93,15 +93,15 @@ class TypstProjectViewModelRustLibraryIsolatedService : Service() {
         }
 
         override fun getTypstPdf(): ByteArray {
-            return dev.soupslurpr.beautyxt.bindings.getTypstPdf()
+            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.getTypstPdf()
         }
 
         override fun updateTypstProjectFile(newText: String?, path: String?): String {
-            return dev.soupslurpr.beautyxt.bindings.updateTypstProjectFile(newText!!, path!!)
+            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.updateTypstProjectFile(newText!!, path!!)
         }
 
         override fun clearTypstProjectFiles() {
-            return dev.soupslurpr.beautyxt.bindings.clearTypstProjectFiles()
+            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.clearTypstProjectFiles()
         }
     }
 

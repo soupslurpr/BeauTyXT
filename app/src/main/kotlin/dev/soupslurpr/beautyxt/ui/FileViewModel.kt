@@ -7,31 +7,30 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.database.Cursor
 import android.net.Uri
+import android.os.DeadObjectException
 import android.os.IBinder
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.util.Log
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.Observer
 import androidx.lifecycle.viewModelScope
 import dev.soupslurpr.beautyxt.IFileViewModelRustLibraryAidlInterface
 import dev.soupslurpr.beautyxt.constants.mimeTypeMarkdown
 import dev.soupslurpr.beautyxt.data.FileUiState
-import kotlinx.coroutines.Dispatchers
+import dev.soupslurpr.beautyxt.returnHashSha256
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.FileOutputStream
 import java.io.InputStreamReader
-import kotlin.coroutines.resume
+
+private const val TAG = "FileViewModel"
 
 class FileViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -41,54 +40,43 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(FileUiState())
     val uiState: StateFlow<FileUiState> = _uiState.asStateFlow()
 
-    private var rustService: MutableLiveData<IFileViewModelRustLibraryAidlInterface?> = MutableLiveData(null)
+    var rustService: IFileViewModelRustLibraryAidlInterface? = null
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val rustService = IFileViewModelRustLibraryAidlInterface.Stub.asInterface(service)
 
-            this@FileViewModel.rustService.postValue(rustService)
+            this@FileViewModel.rustService = rustService
+
+            if (uiState.value.mimeType.value == mimeTypeMarkdown) {
+                _uiState.value.contentConvertedToHtml.value = rustService.markdownToHtml(uiState.value.content.value)
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            rustService.postValue(null)
+            rustService = null
         }
     }
 
     private val intentService = Intent(getApplication(), FileViewModelRustLibraryIsolatedService::class.java)
 
-    private suspend fun <T> LiveData<T>.awaitFirstNonNull(): T {
-        return withContext(Dispatchers.Main.immediate) {
-            suspendCancellableCoroutine { continuation ->
-                val observer = object : Observer<T> {
-                    override fun onChanged(value: T) {
-                        if (value != null) {
-                            continuation.resume(value)
-                            this@awaitFirstNonNull.removeObserver(this)
-                        }
-                    }
-                }
+    fun bindIsolatedService(uri: Uri) {
+        getApplication<Application>().bindIsolatedService(
+            intentService,
+            Context.BIND_AUTO_CREATE,
+            returnHashSha256(uri.toString().toByteArray()),
+            ContextCompat.getMainExecutor(getApplication<Application>().applicationContext),
+            serviceConnection
+        )
+    }
 
-                observeForever(observer)
-
-                // Handle coroutine cancellation
-                continuation.invokeOnCancellation {
-                    this@awaitFirstNonNull.removeObserver(observer)
-                }
-            }
+    private fun stopAndUnbindService() {
+        getApplication<Application>().stopService(intentService)
+        try {
+            getApplication<Application>().unbindService(serviceConnection)
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Failed to unbind service: $e")
         }
-    }
-
-    private fun bindService() {
-        getApplication<Application>().bindService(intentService, serviceConnection, Context.BIND_AUTO_CREATE)
-    }
-
-    private fun unbindService() {
-        getApplication<Application>().unbindService(serviceConnection)
-    }
-
-    init {
-        bindService()
     }
 
     /**
@@ -210,9 +198,13 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setMarkdownToHtml() {
         viewModelScope.launch {
-            _uiState.value.contentConvertedToHtml.value = rustService.awaitFirstNonNull()!!.markdownToHtml(
-                uiState.value.content.value
-            )
+            try {
+                _uiState.value.contentConvertedToHtml.value = rustService!!.markdownToHtml(
+                    uiState.value.content.value
+                )
+            } catch (e: DeadObjectException) {
+                Log.w(TAG, "setMarkdownToHtml() failed: $e")
+            }
         }
     }
 
@@ -241,6 +233,7 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
     /** Set uiState to default values */
     fun clearUiState() {
         _uiState.value = FileUiState()
+        stopAndUnbindService()
     }
 
     fun exportAsHtml(uri: Uri, context: Context) {
@@ -303,11 +296,11 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val docx = when (uiState.value.mimeType.value) {
                 mimeTypeMarkdown -> {
-                    rustService.awaitFirstNonNull()!!.markdownToDocx(uiState.value.content.value)
+                    rustService!!.markdownToDocx(uiState.value.content.value)
                 }
 
                 else -> {
-                    rustService.awaitFirstNonNull()!!.plainTextToDocx(uiState.value.content.value)
+                    rustService!!.plainTextToDocx(uiState.value.content.value)
                 }
             }
 
@@ -328,6 +321,5 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         clearUiState()
-        unbindService()
     }
 }

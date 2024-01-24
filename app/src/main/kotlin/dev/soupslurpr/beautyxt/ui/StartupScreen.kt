@@ -59,13 +59,19 @@ fun StartupScreen(
     onSettingsButtonClicked: () -> Unit,
     fileViewModel: FileViewModel,
     preferencesUiState: PreferencesUiState,
+    typstProjectViewModel: TypstProjectViewModel,
 ) {
     var isOpenFileTypeAlertDialogShown by remember { mutableStateOf(false) }
     var isCreateFileTypeAlertDialogShown by remember { mutableStateOf(false) }
 
     // clear FileUiState when exiting file editor and going back to startup screen.
     LaunchedEffect(key1 = Unit) {
-        fileViewModel.clearUiState()
+        if (fileViewModel.rustService != null) {
+            fileViewModel.clearUiState()
+        }
+        if (typstProjectViewModel.rustService != null) {
+            typstProjectViewModel.clearUiState()
+        }
     }
 
     Column(

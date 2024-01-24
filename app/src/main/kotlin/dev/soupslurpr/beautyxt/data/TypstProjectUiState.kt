@@ -4,7 +4,7 @@ import android.net.Uri
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import dev.soupslurpr.beautyxt.bindings.TypstCustomSourceDiagnostic
+import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomSourceDiagnostic
 
 data class TypstProjectUiState(
     /** Project folder uri */

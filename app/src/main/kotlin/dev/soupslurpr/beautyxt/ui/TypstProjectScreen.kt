@@ -32,7 +32,7 @@ import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
 import coil.request.ImageRequest
 import dev.soupslurpr.beautyxt.R
-import dev.soupslurpr.beautyxt.bindings.TypstCustomSourceDiagnostic
+import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomSourceDiagnostic
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 import kotlinx.coroutines.Dispatchers
 
@@ -90,7 +90,7 @@ fun TypstProjectScreen(
 
                 typstProjectViewModel.updateProjectFileWithNewText(it, currentOpenedPath)
 
-                typstProjectViewModel.renderProjectToSvgs()
+                typstProjectViewModel.renderProjectToSvgs(typstProjectViewModel.rustService!!)
             }
 
             Column(
@@ -151,7 +151,7 @@ fun TypstProjectScreen(
 
                 typstProjectViewModel.updateProjectFileWithNewText(it, currentOpenedPath)
 
-                typstProjectViewModel.renderProjectToSvgs()
+                typstProjectViewModel.renderProjectToSvgs(typstProjectViewModel.rustService!!)
             }
 
             Column(
