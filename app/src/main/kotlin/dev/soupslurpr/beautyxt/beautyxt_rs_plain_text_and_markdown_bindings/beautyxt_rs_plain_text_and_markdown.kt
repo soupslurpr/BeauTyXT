@@ -3,7 +3,7 @@
 
 @file:Suppress("NAME_SHADOWING")
 
-package dev.soupslurpr.beautyxt.bindings
+package dev.soupslurpr.beautyxt.beautyxt_rs_plain_text_and_markdown_bindings
 
 // Common helper code.
 //
@@ -17,6 +17,7 @@ package dev.soupslurpr.beautyxt.bindings
 // compile the Rust component. The easiest way to ensure this is to bundle the Kotlin
 // helpers directly inline like we're doing here.
 
+import com.sun.jna.Callback
 import com.sun.jna.IntegerType
 import com.sun.jna.Library
 import com.sun.jna.Native
@@ -34,7 +35,7 @@ import java.util.concurrent.ConcurrentHashMap
 // pointer to the underlying data.
 
 @Structure.FieldOrder("capacity", "len", "data")
-open class PlainTextAndMarkdownRustBuffer : Structure() {
+open class RustBuffer : Structure() {
     @JvmField
     var capacity: Int = 0
     @JvmField
@@ -42,15 +43,12 @@ open class PlainTextAndMarkdownRustBuffer : Structure() {
     @JvmField
     var data: Pointer? = null
 
-    class ByValue : PlainTextAndMarkdownRustBuffer(), Structure.ByValue
-    class ByReference : PlainTextAndMarkdownRustBuffer(), Structure.ByReference
+    class ByValue : RustBuffer(), Structure.ByValue
+    class ByReference : RustBuffer(), Structure.ByReference
 
     companion object {
-        internal fun alloc(size: Int = 0) = plainTextAndMarkdownUniffiRustCall { status ->
-            PlainTextAndMarkdownUniffiLib.INSTANCE.ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_alloc(
-                size,
-                status
-            )
+        internal fun alloc(size: Int = 0) = uniffiRustCall { status ->
+            UniffiLib.INSTANCE.ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_alloc(size, status)
         }.also {
             if (it.data == null) {
                 throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
@@ -65,13 +63,9 @@ open class PlainTextAndMarkdownRustBuffer : Structure() {
             return buf
         }
 
-        internal fun free(buf: ByValue) =
-            plainTextAndMarkdownUniffiRustCall { status ->
-                PlainTextAndMarkdownUniffiLib.INSTANCE.ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_free(
-                    buf,
-                    status
-                )
-            }
+        internal fun free(buf: ByValue) = uniffiRustCall { status ->
+            UniffiLib.INSTANCE.ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_free(buf, status)
+        }
     }
 
     @Suppress("TooGenericExceptionThrown")
@@ -87,11 +81,11 @@ open class PlainTextAndMarkdownRustBuffer : Structure() {
  *
  * Size is the sum of all values in the struct.
  */
-class PlainTextAndMarkdownRustBufferByReference : ByReference(16) {
+class RustBufferByReference : ByReference(16) {
     /**
      * Set the pointed-to `RustBuffer` to the given value.
      */
-    fun setValue(value: PlainTextAndMarkdownRustBuffer.ByValue) {
+    fun setValue(value: RustBuffer.ByValue) {
         // NOTE: The offsets are as they are in the C-like struct.
         val pointer = pointer
         pointer.setInt(0, value.capacity)
@@ -102,9 +96,9 @@ class PlainTextAndMarkdownRustBufferByReference : ByReference(16) {
     /**
      * Get a `RustBuffer.ByValue` from this reference.
      */
-    fun getValue(): PlainTextAndMarkdownRustBuffer.ByValue {
+    fun getValue(): RustBuffer.ByValue {
         val pointer = pointer
-        val value = PlainTextAndMarkdownRustBuffer.ByValue()
+        val value = RustBuffer.ByValue()
         value.writeField("capacity", pointer.getInt(0))
         value.writeField("len", pointer.getInt(4))
         value.writeField("data", pointer.getPointer(8))
@@ -120,20 +114,19 @@ class PlainTextAndMarkdownRustBufferByReference : ByReference(16) {
 // completeness.
 
 @Structure.FieldOrder("len", "data")
-open class PlainTextAndMarkdownForeignBytes : Structure() {
+open class ForeignBytes : Structure() {
     @JvmField
     var len: Int = 0
     @JvmField
     var data: Pointer? = null
 
-    class ByValue : PlainTextAndMarkdownForeignBytes(), Structure.ByValue
+    class ByValue : ForeignBytes(), Structure.ByValue
 }
-
 // The FfiConverter interface handles converter types to and from the FFI
 //
 // All implementing objects should be public to support external types.  When a
 // type is external we need to import it's FfiConverter.
-interface PlainTextAndMarkdownFfiConverter<KotlinType, FfiType> {
+interface FfiConverter<KotlinType, FfiType> {
     // Convert an FFI type to a Kotlin type
     fun lift(value: FfiType): KotlinType
 
@@ -162,8 +155,8 @@ interface PlainTextAndMarkdownFfiConverter<KotlinType, FfiType> {
     // FfiType.  It's used by the callback interface code.  Callback interface
     // returns are always serialized into a `RustBuffer` regardless of their
     // normal FFI type.
-    fun lowerIntoRustBuffer(value: KotlinType): PlainTextAndMarkdownRustBuffer.ByValue {
-        val rbuf = PlainTextAndMarkdownRustBuffer.alloc(allocationSize(value))
+    fun lowerIntoRustBuffer(value: KotlinType): RustBuffer.ByValue {
+        val rbuf = RustBuffer.alloc(allocationSize(value))
         try {
             val bbuf = rbuf.data!!.getByteBuffer(0, rbuf.capacity.toLong()).also {
                 it.order(ByteOrder.BIG_ENDIAN)
@@ -172,7 +165,7 @@ interface PlainTextAndMarkdownFfiConverter<KotlinType, FfiType> {
             rbuf.writeField("len", bbuf.position())
             return rbuf
         } catch (e: Throwable) {
-            PlainTextAndMarkdownRustBuffer.free(rbuf)
+            RustBuffer.free(rbuf)
             throw e
         }
     }
@@ -181,7 +174,7 @@ interface PlainTextAndMarkdownFfiConverter<KotlinType, FfiType> {
     //
     // This here mostly because of the symmetry with `lowerIntoRustBuffer()`.
     // It's currently only used by the `FfiConverterRustBuffer` class below.
-    fun liftFromRustBuffer(rbuf: PlainTextAndMarkdownRustBuffer.ByValue): KotlinType {
+    fun liftFromRustBuffer(rbuf: RustBuffer.ByValue): KotlinType {
         val byteBuf = rbuf.asByteBuffer()!!
         try {
             val item = read(byteBuf)
@@ -190,29 +183,27 @@ interface PlainTextAndMarkdownFfiConverter<KotlinType, FfiType> {
             }
             return item
         } finally {
-            PlainTextAndMarkdownRustBuffer.free(rbuf)
+            RustBuffer.free(rbuf)
         }
     }
 }
 
 // FfiConverter that uses `RustBuffer` as the FfiType
-interface PlainTextAndMarkdownFfiConverterRustBuffer<KotlinType> :
-    PlainTextAndMarkdownFfiConverter<KotlinType, PlainTextAndMarkdownRustBuffer.ByValue> {
-    override fun lift(value: PlainTextAndMarkdownRustBuffer.ByValue) = liftFromRustBuffer(value)
+interface FfiConverterRustBuffer<KotlinType> : FfiConverter<KotlinType, RustBuffer.ByValue> {
+    override fun lift(value: RustBuffer.ByValue) = liftFromRustBuffer(value)
     override fun lower(value: KotlinType) = lowerIntoRustBuffer(value)
 }
-
 // A handful of classes and functions to support the generated data structures.
 // This would be a good candidate for isolating in its own ffi-support lib.
 // Error runtime.
 @Structure.FieldOrder("code", "error_buf")
-internal open class PlainTextAndMarkdownUniffiRustCallStatus : Structure() {
+internal open class UniffiRustCallStatus : Structure() {
     @JvmField
     var code: Byte = 0
     @JvmField
-    var error_buf: PlainTextAndMarkdownRustBuffer.ByValue = PlainTextAndMarkdownRustBuffer.ByValue()
+    var error_buf: RustBuffer.ByValue = RustBuffer.ByValue()
 
-    class ByValue : PlainTextAndMarkdownUniffiRustCallStatus(), Structure.ByValue
+    class ByValue : UniffiRustCallStatus(), Structure.ByValue
 
     fun isSuccess(): Boolean {
         return code == 0.toByte()
@@ -227,11 +218,11 @@ internal open class PlainTextAndMarkdownUniffiRustCallStatus : Structure() {
     }
 }
 
-class PlainTextAndMarkdownInternalException(message: String) : Exception(message)
+class InternalException(message: String) : Exception(message)
 
 // Each top-level error class has a companion object that can lift the error from the call status's rust buffer
-interface PlainTextAndMarkdownUniffiRustCallStatusErrorHandler<E> {
-    fun lift(error_buf: PlainTextAndMarkdownRustBuffer.ByValue): E
+interface UniffiRustCallStatusErrorHandler<E> {
+    fun lift(error_buf: RustBuffer.ByValue): E
 }
 
 // Helpers for calling Rust
@@ -239,20 +230,20 @@ interface PlainTextAndMarkdownUniffiRustCallStatusErrorHandler<E> {
 // synchronize itself
 
 // Call a rust function that returns a Result<>.  Pass in the Error class companion that corresponds to the Err
-private inline fun <U, E : Exception> plainTextAndMarkdownUniffiRustCallWithError(
-    errorHandler: PlainTextAndMarkdownUniffiRustCallStatusErrorHandler<E>,
-    callback: (PlainTextAndMarkdownUniffiRustCallStatus) -> U
+private inline fun <U, E : Exception> uniffiRustCallWithError(
+    errorHandler: UniffiRustCallStatusErrorHandler<E>,
+    callback: (UniffiRustCallStatus) -> U
 ): U {
-    var status = PlainTextAndMarkdownUniffiRustCallStatus()
+    var status = UniffiRustCallStatus()
     val return_value = callback(status)
-    plainTextAndMarkdownUniffiCheckCallStatus(errorHandler, status)
+    uniffiCheckCallStatus(errorHandler, status)
     return return_value
 }
 
 // Check UniffiRustCallStatus and throw an error if the call wasn't successful
-private fun <E : Exception> plainTextAndMarkdownUniffiCheckCallStatus(
-    errorHandler: PlainTextAndMarkdownUniffiRustCallStatusErrorHandler<E>,
-    status: PlainTextAndMarkdownUniffiRustCallStatus
+private fun <E : Exception> uniffiCheckCallStatus(
+    errorHandler: UniffiRustCallStatusErrorHandler<E>,
+    status: UniffiRustCallStatus
 ) {
     if (status.isSuccess()) {
         return
@@ -263,37 +254,32 @@ private fun <E : Exception> plainTextAndMarkdownUniffiCheckCallStatus(
         // with the message.  but if that code panics, then it just sends back
         // an empty buffer.
         if (status.error_buf.len > 0) {
-            throw PlainTextAndMarkdownInternalException(PlainTextAndMarkdownFfiConverterString.lift(status.error_buf))
+            throw InternalException(FfiConverterString.lift(status.error_buf))
         } else {
-            throw PlainTextAndMarkdownInternalException("Rust panic")
+            throw InternalException("Rust panic")
         }
     } else {
-        throw PlainTextAndMarkdownInternalException("Unknown rust call status: $status.code")
+        throw InternalException("Unknown rust call status: $status.code")
     }
 }
 
 // UniffiRustCallStatusErrorHandler implementation for times when we don't expect a CALL_ERROR
-object PlainTextAndMarkdownUniffiNullRustCallStatusErrorHandler :
-    PlainTextAndMarkdownUniffiRustCallStatusErrorHandler<PlainTextAndMarkdownInternalException> {
-    override fun lift(error_buf: PlainTextAndMarkdownRustBuffer.ByValue): PlainTextAndMarkdownInternalException {
-        PlainTextAndMarkdownRustBuffer.free(error_buf)
-        return PlainTextAndMarkdownInternalException("Unexpected CALL_ERROR")
+object UniffiNullRustCallStatusErrorHandler : UniffiRustCallStatusErrorHandler<InternalException> {
+    override fun lift(error_buf: RustBuffer.ByValue): InternalException {
+        RustBuffer.free(error_buf)
+        return InternalException("Unexpected CALL_ERROR")
     }
 }
 
 // Call a rust function that returns a plain value
-private inline fun <U> plainTextAndMarkdownUniffiRustCall(callback: (PlainTextAndMarkdownUniffiRustCallStatus) -> U): U {
-    return plainTextAndMarkdownUniffiRustCallWithError(
-        PlainTextAndMarkdownUniffiNullRustCallStatusErrorHandler,
-        callback
-    )
+private inline fun <U> uniffiRustCall(callback: (UniffiRustCallStatus) -> U): U {
+    return uniffiRustCallWithError(UniffiNullRustCallStatusErrorHandler, callback)
 }
 
 // IntegerType that matches Rust's `usize` / C's `size_t`
-class PlainTextAndMarkdownUSize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZE, value, true) {
+class USize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZE, value, true) {
     // This is needed to fill in the gaps of IntegerType's implementation of Number for Kotlin.
     override fun toByte() = toInt().toByte()
-
     // Needed until https://youtrack.jetbrains.com/issue/KT-47902 is fixed.
     @Deprecated("`toInt().toChar()` is deprecated")
     override fun toChar() = toInt().toChar()
@@ -318,14 +304,14 @@ class PlainTextAndMarkdownUSize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZ
         val size: Int
             get() = Native.SIZE_T_SIZE
 
-        fun readFromBuffer(buf: ByteBuffer): PlainTextAndMarkdownUSize {
+        fun readFromBuffer(buf: ByteBuffer): USize {
             // Make sure we always read usize integers using native byte-order, since they may be
             // casted from pointer values
             buf.order(ByteOrder.nativeOrder())
             try {
                 return when (Native.SIZE_T_SIZE) {
-                    4 -> PlainTextAndMarkdownUSize(buf.getInt().toLong())
-                    8 -> PlainTextAndMarkdownUSize(buf.getLong())
+                    4 -> USize(buf.getInt().toLong())
+                    8 -> USize(buf.getLong())
                     else -> throw RuntimeException("Invalid SIZE_T_SIZE: ${Native.SIZE_T_SIZE}")
                 }
             } finally {
@@ -346,9 +332,8 @@ class PlainTextAndMarkdownUSize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZ
 // Rust when it needs an opaque pointer.
 //
 // TODO: refactor callbacks to use this class
-internal class PlainTextAndMarkdownUniFfiHandleMap<T : Any> {
-    private val map = ConcurrentHashMap<PlainTextAndMarkdownUSize, T>()
-
+internal class UniFfiHandleMap<T : Any> {
+    private val map = ConcurrentHashMap<USize, T>()
     // Use AtomicInteger for our counter, since we may be on a 32-bit system.  4 billion possible
     // values seems like enough. If somehow we generate 4 billion handles, then this will wrap
     // around back to zero and we can assume the first handle generated will have been dropped by
@@ -358,30 +343,30 @@ internal class PlainTextAndMarkdownUniFfiHandleMap<T : Any> {
     val size: Int
         get() = map.size
 
-    fun insert(obj: T): PlainTextAndMarkdownUSize {
-        val handle = PlainTextAndMarkdownUSize(counter.getAndAdd(1).toLong())
+    fun insert(obj: T): USize {
+        val handle = USize(counter.getAndAdd(1).toLong())
         map.put(handle, obj)
         return handle
     }
 
-    fun get(handle: PlainTextAndMarkdownUSize): T? {
+    fun get(handle: USize): T? {
         return map.get(handle)
     }
 
-    fun remove(handle: PlainTextAndMarkdownUSize): T? {
+    fun remove(handle: USize): T? {
         return map.remove(handle)
     }
 }
 
 // FFI type for Rust future continuations
-internal interface PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType : com.sun.jna.Callback {
-    fun callback(continuationHandle: PlainTextAndMarkdownUSize, pollResult: Byte)
+internal interface UniFffiRustFutureContinuationCallbackType : Callback {
+    fun callback(continuationHandle: USize, pollResult: Byte)
 }
 
 // Contains loading, initialization code,
 // and the FFI Function declarations in a com.sun.jna.Library.
 @Synchronized
-private fun plainTextAndMarkdownFindLibraryName(componentName: String): String {
+private fun findLibraryName(componentName: String): String {
     val libOverride = System.getProperty("uniffi.component.$componentName.libraryOverride")
     if (libOverride != null) {
         return libOverride
@@ -389,61 +374,57 @@ private fun plainTextAndMarkdownFindLibraryName(componentName: String): String {
     return "beautyxt_rs_plain_text_and_markdown"
 }
 
-private inline fun <reified Lib : Library> plainTextAndMarkdownLoadIndirect(
+private inline fun <reified Lib : Library> loadIndirect(
     componentName: String
 ): Lib {
-    return Native.load<Lib>(plainTextAndMarkdownFindLibraryName(componentName), Lib::class.java)
+    return Native.load<Lib>(findLibraryName(componentName), Lib::class.java)
 }
 
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
-internal interface PlainTextAndMarkdownUniffiLib : Library {
+internal interface UniffiLib : Library {
     companion object {
-        internal val INSTANCE: PlainTextAndMarkdownUniffiLib by lazy {
-            plainTextAndMarkdownLoadIndirect<PlainTextAndMarkdownUniffiLib>(componentName = "beautyxt_rs_plain_text_and_markdown")
-                .also { lib: PlainTextAndMarkdownUniffiLib ->
-                    plainTextAndMarkdownUniffiCheckContractApiVersion(lib)
-                    plainTextAndMarkdownUniffiCheckApiChecksums(lib)
+        internal val INSTANCE: UniffiLib by lazy {
+            loadIndirect<UniffiLib>(componentName = "beautyxt_rs_plain_text_and_markdown")
+                .also { lib: UniffiLib ->
+                    uniffiCheckContractApiVersion(lib)
+                    uniffiCheckApiChecksums(lib)
                 }
         }
 
     }
 
     fun uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_docx(
-        `markdown`: PlainTextAndMarkdownRustBuffer.ByValue, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
-    ): PlainTextAndMarkdownRustBuffer.ByValue
+        `markdown`: RustBuffer.ByValue, uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
 
     fun uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_html(
-        `markdown`: PlainTextAndMarkdownRustBuffer.ByValue, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
-    ): PlainTextAndMarkdownRustBuffer.ByValue
+        `markdown`: RustBuffer.ByValue, uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
 
     fun uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_plain_text_to_docx(
-        `plainText`: PlainTextAndMarkdownRustBuffer.ByValue, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
-    ): PlainTextAndMarkdownRustBuffer.ByValue
+        `plainText`: RustBuffer.ByValue, uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_alloc(
-        `size`: Int, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
-    ): PlainTextAndMarkdownRustBuffer.ByValue
+        `size`: Int, uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_from_bytes(
-        `bytes`: PlainTextAndMarkdownForeignBytes.ByValue, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
-    ): PlainTextAndMarkdownRustBuffer.ByValue
+        `bytes`: ForeignBytes.ByValue, uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_free(
-        `buf`: PlainTextAndMarkdownRustBuffer.ByValue, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
+        `buf`: RustBuffer.ByValue, uniffi_out_err: UniffiRustCallStatus,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_reserve(
-        `buf`: PlainTextAndMarkdownRustBuffer.ByValue,
-        `additional`: Int,
-        uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
-    ): PlainTextAndMarkdownRustBuffer.ByValue
+        `buf`: RustBuffer.ByValue, `additional`: Int, uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_u8(
-        `handle`: Pointer,
-        `callback`: PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType,
-        `callbackData`: PlainTextAndMarkdownUSize,
+        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_u8(
@@ -455,13 +436,11 @@ internal interface PlainTextAndMarkdownUniffiLib : Library {
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_u8(
-        `handle`: Pointer, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
+        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Byte
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_i8(
-        `handle`: Pointer,
-        `callback`: PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType,
-        `callbackData`: PlainTextAndMarkdownUSize,
+        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_i8(
@@ -473,13 +452,11 @@ internal interface PlainTextAndMarkdownUniffiLib : Library {
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_i8(
-        `handle`: Pointer, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
+        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Byte
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_u16(
-        `handle`: Pointer,
-        `callback`: PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType,
-        `callbackData`: PlainTextAndMarkdownUSize,
+        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_u16(
@@ -491,13 +468,11 @@ internal interface PlainTextAndMarkdownUniffiLib : Library {
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_u16(
-        `handle`: Pointer, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
+        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Short
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_i16(
-        `handle`: Pointer,
-        `callback`: PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType,
-        `callbackData`: PlainTextAndMarkdownUSize,
+        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_i16(
@@ -509,13 +484,11 @@ internal interface PlainTextAndMarkdownUniffiLib : Library {
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_i16(
-        `handle`: Pointer, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
+        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Short
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_u32(
-        `handle`: Pointer,
-        `callback`: PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType,
-        `callbackData`: PlainTextAndMarkdownUSize,
+        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_u32(
@@ -527,13 +500,11 @@ internal interface PlainTextAndMarkdownUniffiLib : Library {
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_u32(
-        `handle`: Pointer, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
+        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Int
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_i32(
-        `handle`: Pointer,
-        `callback`: PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType,
-        `callbackData`: PlainTextAndMarkdownUSize,
+        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_i32(
@@ -545,13 +516,11 @@ internal interface PlainTextAndMarkdownUniffiLib : Library {
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_i32(
-        `handle`: Pointer, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
+        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Int
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_u64(
-        `handle`: Pointer,
-        `callback`: PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType,
-        `callbackData`: PlainTextAndMarkdownUSize,
+        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_u64(
@@ -563,13 +532,11 @@ internal interface PlainTextAndMarkdownUniffiLib : Library {
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_u64(
-        `handle`: Pointer, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
+        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Long
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_i64(
-        `handle`: Pointer,
-        `callback`: PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType,
-        `callbackData`: PlainTextAndMarkdownUSize,
+        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_i64(
@@ -581,13 +548,11 @@ internal interface PlainTextAndMarkdownUniffiLib : Library {
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_i64(
-        `handle`: Pointer, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
+        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Long
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_f32(
-        `handle`: Pointer,
-        `callback`: PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType,
-        `callbackData`: PlainTextAndMarkdownUSize,
+        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_f32(
@@ -599,13 +564,11 @@ internal interface PlainTextAndMarkdownUniffiLib : Library {
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_f32(
-        `handle`: Pointer, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
+        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Float
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_f64(
-        `handle`: Pointer,
-        `callback`: PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType,
-        `callbackData`: PlainTextAndMarkdownUSize,
+        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_f64(
@@ -617,13 +580,11 @@ internal interface PlainTextAndMarkdownUniffiLib : Library {
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_f64(
-        `handle`: Pointer, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
+        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Double
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_pointer(
-        `handle`: Pointer,
-        `callback`: PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType,
-        `callbackData`: PlainTextAndMarkdownUSize,
+        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_pointer(
@@ -635,13 +596,11 @@ internal interface PlainTextAndMarkdownUniffiLib : Library {
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_pointer(
-        `handle`: Pointer, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
+        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Pointer
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_rust_buffer(
-        `handle`: Pointer,
-        `callback`: PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType,
-        `callbackData`: PlainTextAndMarkdownUSize,
+        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_rust_buffer(
@@ -653,13 +612,11 @@ internal interface PlainTextAndMarkdownUniffiLib : Library {
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_rust_buffer(
-        `handle`: Pointer, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
-    ): PlainTextAndMarkdownRustBuffer.ByValue
+        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    ): RustBuffer.ByValue
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_void(
-        `handle`: Pointer,
-        `callback`: PlainTextAndMarkdownUniFffiRustFutureContinuationCallbackType,
-        `callbackData`: PlainTextAndMarkdownUSize,
+        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_void(
@@ -671,24 +628,20 @@ internal interface PlainTextAndMarkdownUniffiLib : Library {
     ): Unit
 
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_void(
-        `handle`: Pointer, uniffi_out_err: PlainTextAndMarkdownUniffiRustCallStatus,
+        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-
     fun uniffi_beautyxt_rs_plain_text_and_markdown_checksum_func_markdown_to_docx(
     ): Short
-
     fun uniffi_beautyxt_rs_plain_text_and_markdown_checksum_func_markdown_to_html(
     ): Short
-
     fun uniffi_beautyxt_rs_plain_text_and_markdown_checksum_func_plain_text_to_docx(
     ): Short
-
     fun ffi_beautyxt_rs_plain_text_and_markdown_uniffi_contract_version(
     ): Int
 
 }
 
-private fun plainTextAndMarkdownUniffiCheckContractApiVersion(lib: PlainTextAndMarkdownUniffiLib) {
+private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
     // Get the bindings contract version from our ComponentInterface
     val bindings_contract_version = 25
     // Get the scaffolding contract version by calling the into the dylib
@@ -699,7 +652,7 @@ private fun plainTextAndMarkdownUniffiCheckContractApiVersion(lib: PlainTextAndM
 }
 
 @Suppress("UNUSED_PARAMETER")
-private fun plainTextAndMarkdownUniffiCheckApiChecksums(lib: PlainTextAndMarkdownUniffiLib) {
+private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_beautyxt_rs_plain_text_and_markdown_checksum_func_markdown_to_docx() != 54411.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -724,18 +677,17 @@ private fun plainTextAndMarkdownUniffiCheckApiChecksums(lib: PlainTextAndMarkdow
 //
 // The easiest way to ensure this method is called is to use the `.use`
 // helper method to execute a block and destroy the object at the end.
-interface PlainTextAndMarkdownDisposable {
+interface Disposable {
     fun destroy()
-
     companion object {
         fun destroy(vararg args: Any?) {
-            args.filterIsInstance<PlainTextAndMarkdownDisposable>()
-                .forEach(PlainTextAndMarkdownDisposable::destroy)
+            args.filterIsInstance<Disposable>()
+                .forEach(Disposable::destroy)
         }
     }
 }
 
-inline fun <T : PlainTextAndMarkdownDisposable?, R> T.use(block: (T) -> R) =
+inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
     try {
         block(this)
     } finally {
@@ -747,18 +699,17 @@ inline fun <T : PlainTextAndMarkdownDisposable?, R> T.use(block: (T) -> R) =
         }
     }
 
-object PlainTextAndMarkdownFfiConverterString :
-    PlainTextAndMarkdownFfiConverter<String, PlainTextAndMarkdownRustBuffer.ByValue> {
+object FfiConverterString : FfiConverter<String, RustBuffer.ByValue> {
     // Note: we don't inherit from FfiConverterRustBuffer, because we use a
     // special encoding when lowering/lifting.  We can use `RustBuffer.len` to
     // store our length and avoid writing it out to the buffer.
-    override fun lift(value: PlainTextAndMarkdownRustBuffer.ByValue): String {
+    override fun lift(value: RustBuffer.ByValue): String {
         try {
             val byteArr = ByteArray(value.len)
             value.asByteBuffer()!!.get(byteArr)
             return byteArr.toString(Charsets.UTF_8)
         } finally {
-            PlainTextAndMarkdownRustBuffer.free(value)
+            RustBuffer.free(value)
         }
     }
 
@@ -777,11 +728,11 @@ object PlainTextAndMarkdownFfiConverterString :
         }
     }
 
-    override fun lower(value: String): PlainTextAndMarkdownRustBuffer.ByValue {
+    override fun lower(value: String): RustBuffer.ByValue {
         val byteBuf = toUtf8(value)
         // Ideally we'd pass these bytes to `ffi_bytebuffer_from_bytes`, but doing so would require us
         // to copy them into a JNA `Memory`. So we might as well directly copy them into a `RustBuffer`.
-        val rbuf = PlainTextAndMarkdownRustBuffer.alloc(byteBuf.limit())
+        val rbuf = RustBuffer.alloc(byteBuf.limit())
         rbuf.asByteBuffer()!!.put(byteBuf)
         return rbuf
     }
@@ -802,18 +753,16 @@ object PlainTextAndMarkdownFfiConverterString :
     }
 }
 
-object PlainTextAndMarkdownFfiConverterByteArray : PlainTextAndMarkdownFfiConverterRustBuffer<ByteArray> {
+object FfiConverterByteArray : FfiConverterRustBuffer<ByteArray> {
     override fun read(buf: ByteBuffer): ByteArray {
         val len = buf.getInt()
         val byteArr = ByteArray(len)
         buf.get(byteArr)
         return byteArr
     }
-
     override fun allocationSize(value: ByteArray): Int {
         return 4 + value.size
     }
-
     override fun write(value: ByteArray, buf: ByteBuffer) {
         buf.putInt(value.size)
         buf.put(value)
@@ -821,33 +770,36 @@ object PlainTextAndMarkdownFfiConverterByteArray : PlainTextAndMarkdownFfiConver
 }
 
 fun `markdownToDocx`(`markdown`: String): ByteArray {
-    return PlainTextAndMarkdownFfiConverterByteArray.lift(
-        plainTextAndMarkdownUniffiRustCall { _status ->
-            PlainTextAndMarkdownUniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_docx(
-                PlainTextAndMarkdownFfiConverterString.lower(`markdown`),
-                _status
+    return FfiConverterByteArray.lift(
+        uniffiRustCall { _status ->
+            UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_docx(
+                FfiConverterString.lower(
+                    `markdown`
+                ), _status
             )
         })
 }
 
 
 fun `markdownToHtml`(`markdown`: String): String {
-    return PlainTextAndMarkdownFfiConverterString.lift(
-        plainTextAndMarkdownUniffiRustCall { _status ->
-            PlainTextAndMarkdownUniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_html(
-                PlainTextAndMarkdownFfiConverterString.lower(`markdown`),
-                _status
+    return FfiConverterString.lift(
+        uniffiRustCall { _status ->
+            UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_html(
+                FfiConverterString.lower(
+                    `markdown`
+                ), _status
             )
         })
 }
 
 
 fun `plainTextToDocx`(`plainText`: String): ByteArray {
-    return PlainTextAndMarkdownFfiConverterByteArray.lift(
-        plainTextAndMarkdownUniffiRustCall { _status ->
-            PlainTextAndMarkdownUniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_plain_text_to_docx(
-                PlainTextAndMarkdownFfiConverterString.lower(`plainText`),
-                _status
+    return FfiConverterByteArray.lift(
+        uniffiRustCall { _status ->
+            UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_plain_text_to_docx(
+                FfiConverterString.lower(
+                    `plainText`
+                ), _status
             )
         })
 }

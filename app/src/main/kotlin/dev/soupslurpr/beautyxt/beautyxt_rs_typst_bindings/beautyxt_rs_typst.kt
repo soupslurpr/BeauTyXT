@@ -3,7 +3,7 @@
 
 @file:Suppress("NAME_SHADOWING")
 
-package dev.soupslurpr.beautyxt.bindings
+package dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings
 
 // Common helper code.
 //
@@ -17,6 +17,7 @@ package dev.soupslurpr.beautyxt.bindings
 // compile the Rust component. The easiest way to ensure this is to bundle the Kotlin
 // helpers directly inline like we're doing here.
 
+import com.sun.jna.Callback
 import com.sun.jna.IntegerType
 import com.sun.jna.Library
 import com.sun.jna.Native
@@ -183,7 +184,7 @@ interface FfiConverter<KotlinType, FfiType> {
 }
 
 // FfiConverter that uses `RustBuffer` as the FfiType
-interface FfiConverterRustBuffer<KotlinType>: FfiConverter<KotlinType, RustBuffer.ByValue> {
+interface FfiConverterRustBuffer<KotlinType> : FfiConverter<KotlinType, RustBuffer.ByValue> {
     override fun lift(value: RustBuffer.ByValue) = liftFromRustBuffer(value)
     override fun lower(value: KotlinType) = lowerIntoRustBuffer(value)
 }
@@ -351,7 +352,7 @@ internal class UniFfiHandleMap<T: Any> {
 }
 
 // FFI type for Rust future continuations
-internal interface UniFffiRustFutureContinuationCallbackType : com.sun.jna.Callback {
+internal interface UniFffiRustFutureContinuationCallbackType : Callback {
     fun callback(continuationHandle: USize, pollResult: Byte)
 }
 
@@ -646,34 +647,24 @@ internal interface UniffiLib : Library {
     fun ffi_beautyxt_rs_typst_rust_future_complete_void(
         `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Unit
-
     fun uniffi_beautyxt_rs_typst_checksum_func_add_typst_project_files(
     ): Short
-
     fun uniffi_beautyxt_rs_typst_checksum_func_clear_typst_project_files(
     ): Short
-
     fun uniffi_beautyxt_rs_typst_checksum_func_get_typst_pdf(
     ): Short
-
     fun uniffi_beautyxt_rs_typst_checksum_func_get_typst_project_file_text(
     ): Short
-
     fun uniffi_beautyxt_rs_typst_checksum_func_get_typst_svg(
     ): Short
-
     fun uniffi_beautyxt_rs_typst_checksum_func_initialize_typst_world(
     ): Short
-
     fun uniffi_beautyxt_rs_typst_checksum_func_remove_typst_project_files(
     ): Short
-
     fun uniffi_beautyxt_rs_typst_checksum_func_set_main_typst_project_file(
     ): Short
-
     fun uniffi_beautyxt_rs_typst_checksum_func_update_typst_project_file(
     ): Short
-
     fun ffi_beautyxt_rs_typst_uniffi_contract_version(
     ): Int
     
@@ -755,7 +746,7 @@ inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
         }
     }
 
-object FfiConverterInt: FfiConverter<Int, Int> {
+object FfiConverterInt : FfiConverter<Int, Int> {
     override fun lift(value: Int): Int {
         return value
     }
@@ -775,7 +766,7 @@ object FfiConverterInt: FfiConverter<Int, Int> {
     }
 }
 
-object FfiConverterULong: FfiConverter<ULong, Long> {
+object FfiConverterULong : FfiConverter<ULong, Long> {
     override fun lift(value: Long): ULong {
         return value.toULong()
     }
@@ -795,7 +786,7 @@ object FfiConverterULong: FfiConverter<ULong, Long> {
     }
 }
 
-object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
+object FfiConverterString : FfiConverter<String, RustBuffer.ByValue> {
     // Note: we don't inherit from FfiConverterRustBuffer, because we use a
     // special encoding when lowering/lifting.  We can use `RustBuffer.len` to
     // store our length and avoid writing it out to the buffer.
@@ -849,7 +840,7 @@ object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     }
 }
 
-object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
+object FfiConverterByteArray : FfiConverterRustBuffer<ByteArray> {
     override fun read(buf: ByteBuffer): ByteArray {
         val len = buf.getInt()
         val byteArr = ByteArray(len)
@@ -894,7 +885,7 @@ data class TypstCustomSourceDiagnostic (
     companion object
 }
 
-object FfiConverterTypeTypstCustomSourceDiagnostic: FfiConverterRustBuffer<TypstCustomSourceDiagnostic> {
+object FfiConverterTypeTypstCustomSourceDiagnostic : FfiConverterRustBuffer<TypstCustomSourceDiagnostic> {
     override fun read(buf: ByteBuffer): TypstCustomSourceDiagnostic {
         return TypstCustomSourceDiagnostic(
             FfiConverterTypeTypstCustomSeverity.read(buf),
@@ -932,7 +923,7 @@ data class TypstProjectFilePathAndFd (
     companion object
 }
 
-object FfiConverterTypeTypstProjectFilePathAndFd: FfiConverterRustBuffer<TypstProjectFilePathAndFd> {
+object FfiConverterTypeTypstProjectFilePathAndFd : FfiConverterRustBuffer<TypstProjectFilePathAndFd> {
     override fun read(buf: ByteBuffer): TypstProjectFilePathAndFd {
         return TypstProjectFilePathAndFd(
             FfiConverterString.read(buf),
@@ -964,7 +955,7 @@ sealed class CustomFileException: Exception() {
         override val message
             get() = "path=${ `path` }"
     }
-    
+
     class InvalidUtf8 : CustomFileException() {
         override val message
             get() = ""
@@ -1113,7 +1104,7 @@ enum class TypstCustomSeverity {
     companion object
 }
 
-object FfiConverterTypeTypstCustomSeverity: FfiConverterRustBuffer<TypstCustomSeverity> {
+object FfiConverterTypeTypstCustomSeverity : FfiConverterRustBuffer<TypstCustomSeverity> {
     override fun read(buf: ByteBuffer) = try {
         TypstCustomSeverity.values()[buf.getInt() - 1]
     } catch (e: IndexOutOfBoundsException) {
@@ -1190,7 +1181,7 @@ sealed class TypstCustomTracepoint {
     companion object
 }
 
-object FfiConverterTypeTypstCustomTracepoint : FfiConverterRustBuffer<TypstCustomTracepoint>{
+object FfiConverterTypeTypstCustomTracepoint : FfiConverterRustBuffer<TypstCustomTracepoint> {
     override fun read(buf: ByteBuffer): TypstCustomTracepoint {
         return when(buf.getInt()) {
             1 -> TypstCustomTracepoint.Call(
@@ -1255,11 +1246,7 @@ object FfiConverterTypeTypstCustomTracepoint : FfiConverterRustBuffer<TypstCusto
 }
 
 
-
-
-
-
-object FfiConverterOptionalString: FfiConverterRustBuffer<String?> {
+object FfiConverterOptionalString : FfiConverterRustBuffer<String?> {
     override fun read(buf: ByteBuffer): String? {
         if (buf.get().toInt() == 0) {
             return null
@@ -1286,9 +1273,7 @@ object FfiConverterOptionalString: FfiConverterRustBuffer<String?> {
 }
 
 
-
-
-object FfiConverterSequenceString: FfiConverterRustBuffer<List<String>> {
+object FfiConverterSequenceString : FfiConverterRustBuffer<List<String>> {
     override fun read(buf: ByteBuffer): List<String> {
         val len = buf.getInt()
         return List<String>(len) {
@@ -1311,9 +1296,8 @@ object FfiConverterSequenceString: FfiConverterRustBuffer<List<String>> {
 }
 
 
-
-
-object FfiConverterSequenceTypeTypstCustomSourceDiagnostic: FfiConverterRustBuffer<List<TypstCustomSourceDiagnostic>> {
+object FfiConverterSequenceTypeTypstCustomSourceDiagnostic :
+    FfiConverterRustBuffer<List<TypstCustomSourceDiagnostic>> {
     override fun read(buf: ByteBuffer): List<TypstCustomSourceDiagnostic> {
         val len = buf.getInt()
         return List<TypstCustomSourceDiagnostic>(len) {
@@ -1336,9 +1320,8 @@ object FfiConverterSequenceTypeTypstCustomSourceDiagnostic: FfiConverterRustBuff
 }
 
 
-
-
-object FfiConverterSequenceTypeTypstProjectFilePathAndFd: FfiConverterRustBuffer<List<TypstProjectFilePathAndFd>> {
+object FfiConverterSequenceTypeTypstProjectFilePathAndFd :
+    FfiConverterRustBuffer<List<TypstProjectFilePathAndFd>> {
     override fun read(buf: ByteBuffer): List<TypstProjectFilePathAndFd> {
         val len = buf.getInt()
         return List<TypstProjectFilePathAndFd>(len) {
@@ -1361,9 +1344,7 @@ object FfiConverterSequenceTypeTypstProjectFilePathAndFd: FfiConverterRustBuffer
 }
 
 
-
-
-object FfiConverterSequenceTypeTypstCustomTracepoint: FfiConverterRustBuffer<List<TypstCustomTracepoint>> {
+object FfiConverterSequenceTypeTypstCustomTracepoint : FfiConverterRustBuffer<List<TypstCustomTracepoint>> {
     override fun read(buf: ByteBuffer): List<TypstCustomTracepoint> {
         val len = buf.getInt()
         return List<TypstCustomTracepoint>(len) {
