@@ -46,6 +46,8 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val rustService = IFileViewModelRustLibraryAidlInterface.Stub.asInterface(service)
 
+            rustService.apply_seccomp_bpf()
+
             this@FileViewModel.rustService = rustService
 
             if (uiState.value.mimeType.value == mimeTypeMarkdown) {

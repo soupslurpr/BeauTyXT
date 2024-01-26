@@ -47,9 +47,9 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val rustService = ITypstProjectViewModelRustLibraryAidlInterface.Stub.asInterface(service)
 
-            this@TypstProjectViewModel.rustService = rustService
-
             rustService.initializeTypstWorld()
+
+            this@TypstProjectViewModel.rustService = rustService
 
             openProject(application.applicationContext)
         }

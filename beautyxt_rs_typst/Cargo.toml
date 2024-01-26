@@ -7,7 +7,7 @@ license-file = "./LICENSE.txt"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = "0.4.31"
+chrono = "0.4.33"
 comemo = "0.3.1"
 libc = "0.2.152"
 once_cell = "1.19.0"
@@ -16,10 +16,13 @@ typst = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70c
 typst-pdf = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
 typst-svg = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
 typst-render = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
-uniffi = { git = "https://github.com/mozilla/uniffi-rs/", rev = "f1894337eaa8cbb1a139a178ab1bd4b8f88e07c5", version = "0.25.3" }
+uniffi = "0.26.1"
+
+[target.'cfg(unix)'.dependencies]
+seccompiler = "0.4.0"
 
 [build-dependencies]
-uniffi = { git = "https://github.com/mozilla/uniffi-rs/", rev = "f1894337eaa8cbb1a139a178ab1bd4b8f88e07c5", version = "0.25.3", features = ["build"] }
+uniffi = "0.26.1"
 
 [lib]
 crate-type = ["cdylib"]

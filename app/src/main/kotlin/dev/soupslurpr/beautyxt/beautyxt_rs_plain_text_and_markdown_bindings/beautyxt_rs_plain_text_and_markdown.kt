@@ -395,6 +395,10 @@ internal interface UniffiLib : Library {
 
     }
 
+    fun uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_apply_seccomp_bpf(
+        uniffi_out_err: UniffiRustCallStatus,
+    ): Unit
+
     fun uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_docx(
         `markdown`: RustBuffer.ByValue, uniffi_out_err: UniffiRustCallStatus,
     ): RustBuffer.ByValue
@@ -630,6 +634,9 @@ internal interface UniffiLib : Library {
     fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_void(
         `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
     ): Unit
+
+    fun uniffi_beautyxt_rs_plain_text_and_markdown_checksum_func_apply_seccomp_bpf(
+    ): Short
     fun uniffi_beautyxt_rs_plain_text_and_markdown_checksum_func_markdown_to_docx(
     ): Short
     fun uniffi_beautyxt_rs_plain_text_and_markdown_checksum_func_markdown_to_html(
@@ -653,6 +660,9 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_beautyxt_rs_plain_text_and_markdown_checksum_func_apply_seccomp_bpf() != 28260.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_beautyxt_rs_plain_text_and_markdown_checksum_func_markdown_to_docx() != 54411.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -768,6 +778,14 @@ object FfiConverterByteArray : FfiConverterRustBuffer<ByteArray> {
         buf.put(value)
     }
 }
+
+fun `applySeccompBpf`() =
+
+    uniffiRustCall { _status ->
+        UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_apply_seccomp_bpf(_status)
+    }
+
+
 
 fun `markdownToDocx`(`markdown`: String): ByteArray {
     return FfiConverterByteArray.lift(

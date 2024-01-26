@@ -7,6 +7,10 @@ import dev.soupslurpr.beautyxt.IFileViewModelRustLibraryAidlInterface
 
 class FileViewModelRustLibraryIsolatedService : Service() {
     private val binder = object : IFileViewModelRustLibraryAidlInterface.Stub() {
+        override fun apply_seccomp_bpf() {
+            dev.soupslurpr.beautyxt.beautyxt_rs_plain_text_and_markdown_bindings.applySeccompBpf()
+        }
+
         override fun markdownToHtml(markdown: String?): String? {
             return markdown?.let {
                 dev.soupslurpr.beautyxt.beautyxt_rs_plain_text_and_markdown_bindings.markdownToHtml(

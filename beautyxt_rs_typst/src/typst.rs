@@ -2,6 +2,11 @@ use chrono::{Datelike, FixedOffset, Local, TimeZone, Timelike, Utc};
 use comemo::Prehashed;
 use once_cell::sync::Lazy;
 #[cfg(target_family = "unix")]
+use seccompiler::{
+    BpfProgram, apply_filter, SeccompAction, SeccompCmpArgLen, SeccompCmpOp, SeccompCondition, SeccompFilter, SeccompRule,
+};
+use std::convert::TryInto;
+#[cfg(target_family = "unix")]
 use std::os::fd::FromRawFd;
 use std::{
     fs::File,
@@ -30,7 +35,52 @@ static TYPST_WORLD: Lazy<Mutex<Option<SomeTypstWorld>>> = Lazy::new(|| Mutex::ne
 
 #[uniffi::export]
 pub fn initialize_typst_world() {
+    #[cfg(target_family = "unix")]
+    let filter: BpfProgram = SeccompFilter::new(
+        vec![
+            (libc::SYS_getrandom, vec![]),
+            (libc::SYS_mprotect, vec![]),
+            (222, vec![]), // mmap
+            // Not sure why prctl is required
+            (libc::SYS_prctl, vec![]),
+            (libc::SYS_ioctl, vec![]),
+            (libc::SYS_fcntl, vec![]),
+            (libc::SYS_getuid, vec![]),
+            (libc::SYS_writev, vec![]),
+            (libc::SYS_read, vec![]),
+            (libc::SYS_write, vec![]),
+            (libc::SYS_getsockopt, vec![]),
+            (libc::SYS_close, vec![]),
+            (80, vec![]), // fstat
+            (62, vec![]), // lseek
+            (libc::SYS_futex, vec![]),
+            (46, vec![]), // ftruncate
+            (libc::SYS_clock_gettime, vec![]),
+            (libc::SYS_openat, vec![]),
+            (79, vec![]), // newfstatat
+            (libc::SYS_munmap, vec![]),
+        ]
+        .into_iter()
+        .collect(),
+        // mismatch_action
+        // SeccompAction::Log, // Useful for testing which syscalls are needed
+        SeccompAction::KillProcess,
+        // match_action
+        SeccompAction::Allow,
+        // target architecture of filter
+        std::env::consts::ARCH.try_into().unwrap(),
+    )
+    .unwrap()
+    .try_into()
+    .unwrap();
+
+    #[cfg(target_family = "unix")]
+    apply_filter(&filter).unwrap();
+
     *TYPST_WORLD.lock().unwrap() = Some(SomeTypstWorld::new());
+
+    #[cfg(not(target_family = "unix"))]
+    panic!("seccomp is only available on the unix family!")
 }
 
 #[derive(uniffi::Record, PartialEq)]
