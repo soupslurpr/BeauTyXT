@@ -44,7 +44,11 @@ class MainActivity : ComponentActivity() {
                 fileViewModel.setReadOnly(readOnly)
 
                 intent.data?.let {
-                    fileViewModel.bindIsolatedService(it)
+                    fileViewModel.bindIsolatedService(
+                        it,
+                        preferencesViewModel.uiState.value.renderMarkdown.second.value,
+                        false,
+                    )
                     fileViewModel.setUri(it, LocalContext.current)
                 }
             }

@@ -517,9 +517,15 @@ fun BeauTyXTApp(
 
     val preferencesUiState by preferencesViewModel.uiState.collectAsState()
 
+    var previewMarkdownRenderedToFullscreen by rememberSaveable { mutableStateOf(false) }
+
     val openFileLauncher = rememberLauncherForActivityResult(contract = OpenDocument()) {
         if (it != null) {
-            fileViewModel.bindIsolatedService(it)
+            fileViewModel.bindIsolatedService(
+                it,
+                preferencesUiState.renderMarkdown.second.value,
+                previewMarkdownRenderedToFullscreen
+            )
             fileViewModel.setReadOnly(false)
             fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
@@ -528,7 +534,11 @@ fun BeauTyXTApp(
 
     val createTxtFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypePlainText)) {
         if (it != null) {
-            fileViewModel.bindIsolatedService(it)
+            fileViewModel.bindIsolatedService(
+                it,
+                preferencesUiState.renderMarkdown.second.value,
+                previewMarkdownRenderedToFullscreen
+            )
             fileViewModel.setReadOnly(false)
             fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
@@ -537,7 +547,11 @@ fun BeauTyXTApp(
 
     val createMdFileLauncher = rememberLauncherForActivityResult(contract = CreateDocument(mimeTypeMarkdown)) {
         if (it != null) {
-            fileViewModel.bindIsolatedService(it)
+            fileViewModel.bindIsolatedService(
+                it,
+                preferencesUiState.renderMarkdown.second.value,
+                previewMarkdownRenderedToFullscreen
+            )
             fileViewModel.setReadOnly(false)
             fileViewModel.setUri(it, context)
             navController.navigate(BeauTyXTScreens.FileEdit.name)
@@ -628,8 +642,6 @@ fun BeauTyXTApp(
             )
         }
     }
-
-    var previewMarkdownRenderedToFullscreen by rememberSaveable { mutableStateOf(false) }
 
     var previewTypstProjectRenderedToFullscreen by rememberSaveable { mutableStateOf(false) }
 

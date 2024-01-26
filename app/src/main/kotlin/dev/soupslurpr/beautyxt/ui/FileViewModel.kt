@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import java.io.BufferedReader
 import java.io.FileOutputStream
 import java.io.InputStreamReader
+import kotlin.properties.Delegates
 
 private const val TAG = "FileViewModel"
 
@@ -42,6 +43,9 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
 
     var rustService: IFileViewModelRustLibraryAidlInterface? = null
 
+    private var renderMarkdown by Delegates.notNull<Boolean>()
+    private var previewMarkdownRenderedToHtmlFullscreen by Delegates.notNull<Boolean>()
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val rustService = IFileViewModelRustLibraryAidlInterface.Stub.asInterface(service)
@@ -50,7 +54,9 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
 
             this@FileViewModel.rustService = rustService
 
-            if (uiState.value.mimeType.value == mimeTypeMarkdown) {
+            if ((renderMarkdown or previewMarkdownRenderedToHtmlFullscreen)
+                && uiState.value.mimeType.value == mimeTypeMarkdown
+            ) {
                 _uiState.value.contentConvertedToHtml.value = rustService.markdownToHtml(uiState.value.content.value)
             }
         }
@@ -62,7 +68,10 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
 
     private val intentService = Intent(getApplication(), FileViewModelRustLibraryIsolatedService::class.java)
 
-    fun bindIsolatedService(uri: Uri) {
+    fun bindIsolatedService(uri: Uri, renderMarkdown: Boolean, previewMarkdownRenderedToHtmlFullscreen: Boolean) {
+        this.renderMarkdown = renderMarkdown
+        this.previewMarkdownRenderedToHtmlFullscreen = previewMarkdownRenderedToHtmlFullscreen
+
         getApplication<Application>().bindIsolatedService(
             intentService,
             Context.BIND_AUTO_CREATE,
