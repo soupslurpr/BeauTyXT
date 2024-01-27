@@ -2,9 +2,7 @@ use chrono::{Datelike, FixedOffset, Local, TimeZone, Timelike, Utc};
 use comemo::Prehashed;
 use once_cell::sync::Lazy;
 #[cfg(target_family = "unix")]
-use seccompiler::{
-    BpfProgram, apply_filter, SeccompAction, SeccompCmpArgLen, SeccompCmpOp, SeccompCondition, SeccompFilter, SeccompRule,
-};
+use seccompiler::{apply_filter_all_threads, BpfProgram, SeccompAction, SeccompFilter};
 use std::convert::TryInto;
 #[cfg(target_family = "unix")]
 use std::os::fd::FromRawFd;
@@ -75,7 +73,7 @@ pub fn initialize_typst_world() {
     .unwrap();
 
     #[cfg(target_family = "unix")]
-    apply_filter(&filter).unwrap();
+    apply_filter_all_threads(&filter).unwrap();
 
     *TYPST_WORLD.lock().unwrap() = Some(SomeTypstWorld::new());
 

@@ -4,10 +4,7 @@ mod plain_text;
 uniffi::setup_scaffolding!();
 
 #[cfg(target_family = "unix")]
-use seccompiler::{
-    apply_filter, BpfProgram, SeccompAction,
-    SeccompFilter,
-};
+use seccompiler::{apply_filter_all_threads, BpfProgram, SeccompAction, SeccompFilter};
 
 // Required for UPX to work
 #[no_mangle]
@@ -40,7 +37,7 @@ pub fn apply_seccomp_bpf() {
     .unwrap();
 
     #[cfg(target_family = "unix")]
-    apply_filter(&filter).unwrap();
+    apply_filter_all_threads(&filter).unwrap();
 
     #[cfg(not(target_family = "unix"))]
     panic!("seccomp is only available on the unix family!")

@@ -3,7 +3,7 @@
 
 @file:Suppress("NAME_SHADOWING")
 
-package dev.soupslurpr.beautyxt.beautyxt_rs_plain_text_and_markdown_bindings
+package dev.soupslurpr.beautyxt.beautyxt_rs_plain_text_and_markdown_bindings;
 
 // Common helper code.
 //
@@ -36,34 +36,31 @@ import java.util.concurrent.ConcurrentHashMap
 
 @Structure.FieldOrder("capacity", "len", "data")
 open class RustBuffer : Structure() {
-    @JvmField
-    var capacity: Int = 0
-    @JvmField
-    var len: Int = 0
-    @JvmField
-    var data: Pointer? = null
+    @JvmField var capacity: Int = 0
+    @JvmField var len: Int = 0
+    @JvmField var data: Pointer? = null
 
-    class ByValue : RustBuffer(), Structure.ByValue
-    class ByReference : RustBuffer(), Structure.ByReference
+    class ByValue: RustBuffer(), Structure.ByValue
+    class ByReference: RustBuffer(), Structure.ByReference
 
     companion object {
-        internal fun alloc(size: Int = 0) = uniffiRustCall { status ->
+        internal fun alloc(size: Int = 0) = uniffiRustCall() { status ->
             UniffiLib.INSTANCE.ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_alloc(size, status)
         }.also {
-            if (it.data == null) {
-                throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
-            }
+            if(it.data == null) {
+               throw RuntimeException("RustBuffer.alloc() returned null data pointer (size=${size})")
+           }
         }
 
-        internal fun create(capacity: Int, len: Int, data: Pointer?): ByValue {
-            var buf = ByValue()
+        internal fun create(capacity: Int, len: Int, data: Pointer?): RustBuffer.ByValue {
+            var buf = RustBuffer.ByValue()
             buf.capacity = capacity
             buf.len = len
             buf.data = data
             return buf
         }
 
-        internal fun free(buf: ByValue) = uniffiRustCall { status ->
+        internal fun free(buf: RustBuffer.ByValue) = uniffiRustCall() { status ->
             UniffiLib.INSTANCE.ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_free(buf, status)
         }
     }
@@ -87,7 +84,7 @@ class RustBufferByReference : ByReference(16) {
      */
     fun setValue(value: RustBuffer.ByValue) {
         // NOTE: The offsets are as they are in the C-like struct.
-        val pointer = pointer
+        val pointer = getPointer()
         pointer.setInt(0, value.capacity)
         pointer.setInt(4, value.len)
         pointer.setPointer(8, value.data)
@@ -97,7 +94,7 @@ class RustBufferByReference : ByReference(16) {
      * Get a `RustBuffer.ByValue` from this reference.
      */
     fun getValue(): RustBuffer.ByValue {
-        val pointer = pointer
+        val pointer = getPointer()
         val value = RustBuffer.ByValue()
         value.writeField("capacity", pointer.getInt(0))
         value.writeField("len", pointer.getInt(4))
@@ -115,10 +112,8 @@ class RustBufferByReference : ByReference(16) {
 
 @Structure.FieldOrder("len", "data")
 open class ForeignBytes : Structure() {
-    @JvmField
-    var len: Int = 0
-    @JvmField
-    var data: Pointer? = null
+    @JvmField var len: Int = 0
+    @JvmField var data: Pointer? = null
 
     class ByValue : ForeignBytes(), Structure.ByValue
 }
@@ -126,7 +121,7 @@ open class ForeignBytes : Structure() {
 //
 // All implementing objects should be public to support external types.  When a
 // type is external we need to import it's FfiConverter.
-interface FfiConverter<KotlinType, FfiType> {
+public interface FfiConverter<KotlinType, FfiType> {
     // Convert an FFI type to a Kotlin type
     fun lift(value: FfiType): KotlinType
 
@@ -177,11 +172,11 @@ interface FfiConverter<KotlinType, FfiType> {
     fun liftFromRustBuffer(rbuf: RustBuffer.ByValue): KotlinType {
         val byteBuf = rbuf.asByteBuffer()!!
         try {
-            val item = read(byteBuf)
-            if (byteBuf.hasRemaining()) {
-                throw RuntimeException("junk remaining in buffer after lifting, something is very wrong!!")
-            }
-            return item
+           val item = read(byteBuf)
+           if (byteBuf.hasRemaining()) {
+               throw RuntimeException("junk remaining in buffer after lifting, something is very wrong!!")
+           }
+           return item
         } finally {
             RustBuffer.free(rbuf)
         }
@@ -189,7 +184,7 @@ interface FfiConverter<KotlinType, FfiType> {
 }
 
 // FfiConverter that uses `RustBuffer` as the FfiType
-interface FfiConverterRustBuffer<KotlinType> : FfiConverter<KotlinType, RustBuffer.ByValue> {
+public interface FfiConverterRustBuffer<KotlinType>: FfiConverter<KotlinType, RustBuffer.ByValue> {
     override fun lift(value: RustBuffer.ByValue) = liftFromRustBuffer(value)
     override fun lower(value: KotlinType) = lowerIntoRustBuffer(value)
 }
@@ -198,12 +193,10 @@ interface FfiConverterRustBuffer<KotlinType> : FfiConverter<KotlinType, RustBuff
 // Error runtime.
 @Structure.FieldOrder("code", "error_buf")
 internal open class UniffiRustCallStatus : Structure() {
-    @JvmField
-    var code: Byte = 0
-    @JvmField
-    var error_buf: RustBuffer.ByValue = RustBuffer.ByValue()
+    @JvmField var code: Byte = 0
+    @JvmField var error_buf: RustBuffer.ByValue = RustBuffer.ByValue()
 
-    class ByValue : UniffiRustCallStatus(), Structure.ByValue
+    class ByValue: UniffiRustCallStatus(), Structure.ByValue
 
     fun isSuccess(): Boolean {
         return code == 0.toByte()
@@ -222,7 +215,7 @@ class InternalException(message: String) : Exception(message)
 
 // Each top-level error class has a companion object that can lift the error from the call status's rust buffer
 interface UniffiRustCallStatusErrorHandler<E> {
-    fun lift(error_buf: RustBuffer.ByValue): E
+    fun lift(error_buf: RustBuffer.ByValue): E;
 }
 
 // Helpers for calling Rust
@@ -230,21 +223,15 @@ interface UniffiRustCallStatusErrorHandler<E> {
 // synchronize itself
 
 // Call a rust function that returns a Result<>.  Pass in the Error class companion that corresponds to the Err
-private inline fun <U, E : Exception> uniffiRustCallWithError(
-    errorHandler: UniffiRustCallStatusErrorHandler<E>,
-    callback: (UniffiRustCallStatus) -> U
-): U {
-    var status = UniffiRustCallStatus()
+private inline fun <U, E: Exception> uniffiRustCallWithError(errorHandler: UniffiRustCallStatusErrorHandler<E>, callback: (UniffiRustCallStatus) -> U): U {
+    var status = UniffiRustCallStatus();
     val return_value = callback(status)
     uniffiCheckCallStatus(errorHandler, status)
     return return_value
 }
 
 // Check UniffiRustCallStatus and throw an error if the call wasn't successful
-private fun <E : Exception> uniffiCheckCallStatus(
-    errorHandler: UniffiRustCallStatusErrorHandler<E>,
-    status: UniffiRustCallStatus
-) {
+private fun<E: Exception> uniffiCheckCallStatus(errorHandler: UniffiRustCallStatusErrorHandler<E>, status: UniffiRustCallStatus) {
     if (status.isSuccess()) {
         return
     } else if (status.isError()) {
@@ -264,7 +251,7 @@ private fun <E : Exception> uniffiCheckCallStatus(
 }
 
 // UniffiRustCallStatusErrorHandler implementation for times when we don't expect a CALL_ERROR
-object UniffiNullRustCallStatusErrorHandler : UniffiRustCallStatusErrorHandler<InternalException> {
+object UniffiNullRustCallStatusErrorHandler: UniffiRustCallStatusErrorHandler<InternalException> {
     override fun lift(error_buf: RustBuffer.ByValue): InternalException {
         RustBuffer.free(error_buf)
         return InternalException("Unexpected CALL_ERROR")
@@ -273,11 +260,11 @@ object UniffiNullRustCallStatusErrorHandler : UniffiRustCallStatusErrorHandler<I
 
 // Call a rust function that returns a plain value
 private inline fun <U> uniffiRustCall(callback: (UniffiRustCallStatus) -> U): U {
-    return uniffiRustCallWithError(UniffiNullRustCallStatusErrorHandler, callback)
+    return uniffiRustCallWithError(UniffiNullRustCallStatusErrorHandler, callback);
 }
 
 // IntegerType that matches Rust's `usize` / C's `size_t`
-class USize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZE, value, true) {
+public class USize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZE, value, true) {
     // This is needed to fill in the gaps of IntegerType's implementation of Number for Kotlin.
     override fun toByte() = toInt().toByte()
     // Needed until https://youtrack.jetbrains.com/issue/KT-47902 is fixed.
@@ -304,7 +291,7 @@ class USize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZE, value, true) {
         val size: Int
             get() = Native.SIZE_T_SIZE
 
-        fun readFromBuffer(buf: ByteBuffer): USize {
+        fun readFromBuffer(buf: ByteBuffer) : USize {
             // Make sure we always read usize integers using native byte-order, since they may be
             // casted from pointer values
             buf.order(ByteOrder.nativeOrder())
@@ -332,7 +319,7 @@ class USize(value: Long = 0) : IntegerType(Native.SIZE_T_SIZE, value, true) {
 // Rust when it needs an opaque pointer.
 //
 // TODO: refactor callbacks to use this class
-internal class UniFfiHandleMap<T : Any> {
+internal class UniFfiHandleMap<T: Any> {
     private val map = ConcurrentHashMap<USize, T>()
     // Use AtomicInteger for our counter, since we may be on a 32-bit system.  4 billion possible
     // values seems like enough. If somehow we generate 4 billion handles, then this will wrap
@@ -359,8 +346,8 @@ internal class UniFfiHandleMap<T : Any> {
 }
 
 // FFI type for Rust future continuations
-internal interface UniFffiRustFutureContinuationCallbackType : Callback {
-    fun callback(continuationHandle: USize, pollResult: Byte)
+internal interface UniFffiRustFutureContinuationCallbackType : com.sun.jna.Callback {
+    fun callback(continuationHandle: USize, pollResult: Byte);
 }
 
 // Contains loading, initialization code,
@@ -387,254 +374,134 @@ internal interface UniffiLib : Library {
     companion object {
         internal val INSTANCE: UniffiLib by lazy {
             loadIndirect<UniffiLib>(componentName = "beautyxt_rs_plain_text_and_markdown")
-                .also { lib: UniffiLib ->
-                    uniffiCheckContractApiVersion(lib)
-                    uniffiCheckApiChecksums(lib)
+            .also { lib: UniffiLib ->
+                uniffiCheckContractApiVersion(lib)
+                uniffiCheckApiChecksums(lib)
                 }
         }
-
+        
     }
 
-    fun uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_apply_seccomp_bpf(
-        uniffi_out_err: UniffiRustCallStatus,
+    fun uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_apply_seccomp_bpf(uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-
-    fun uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_docx(
-        `markdown`: RustBuffer.ByValue, uniffi_out_err: UniffiRustCallStatus,
+    fun uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_docx(`markdown`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-
-    fun uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_html(
-        `markdown`: RustBuffer.ByValue, uniffi_out_err: UniffiRustCallStatus,
+    fun uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_html(`markdown`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-
-    fun uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_plain_text_to_docx(
-        `plainText`: RustBuffer.ByValue, uniffi_out_err: UniffiRustCallStatus,
+    fun uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_plain_text_to_docx(`plainText`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_alloc(
-        `size`: Int, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_alloc(`size`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_from_bytes(
-        `bytes`: ForeignBytes.ByValue, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_free(
-        `buf`: RustBuffer.ByValue, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_reserve(
-        `buf`: RustBuffer.ByValue, `additional`: Int, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_u8(
-        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_u8(`handle`: Pointer,`callback`: UniFffiRustFutureContinuationCallbackType,`callbackData`: USize,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_u8(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_u8(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_u8(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_u8(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_u8(
-        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_u8(`handle`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_i8(
-        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_i8(`handle`: Pointer,`callback`: UniFffiRustFutureContinuationCallbackType,`callbackData`: USize,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_i8(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_i8(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_i8(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_i8(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_i8(
-        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_i8(`handle`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_u16(
-        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_u16(`handle`: Pointer,`callback`: UniFffiRustFutureContinuationCallbackType,`callbackData`: USize,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_u16(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_u16(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_u16(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_u16(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_u16(
-        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_u16(`handle`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Short
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_i16(
-        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_i16(`handle`: Pointer,`callback`: UniFffiRustFutureContinuationCallbackType,`callbackData`: USize,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_i16(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_i16(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_i16(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_i16(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_i16(
-        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_i16(`handle`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Short
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_u32(
-        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_u32(`handle`: Pointer,`callback`: UniFffiRustFutureContinuationCallbackType,`callbackData`: USize,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_u32(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_u32(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_u32(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_u32(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_u32(
-        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_u32(`handle`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_i32(
-        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_i32(`handle`: Pointer,`callback`: UniFffiRustFutureContinuationCallbackType,`callbackData`: USize,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_i32(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_i32(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_i32(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_i32(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_i32(
-        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_i32(`handle`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_u64(
-        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_u64(`handle`: Pointer,`callback`: UniFffiRustFutureContinuationCallbackType,`callbackData`: USize,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_u64(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_u64(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_u64(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_u64(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_u64(
-        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_u64(`handle`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_i64(
-        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_i64(`handle`: Pointer,`callback`: UniFffiRustFutureContinuationCallbackType,`callbackData`: USize,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_i64(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_i64(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_i64(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_i64(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_i64(
-        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_i64(`handle`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_f32(
-        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_f32(`handle`: Pointer,`callback`: UniFffiRustFutureContinuationCallbackType,`callbackData`: USize,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_f32(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_f32(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_f32(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_f32(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_f32(
-        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_f32(`handle`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Float
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_f64(
-        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_f64(`handle`: Pointer,`callback`: UniFffiRustFutureContinuationCallbackType,`callbackData`: USize,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_f64(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_f64(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_f64(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_f64(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_f64(
-        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_f64(`handle`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Double
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_pointer(
-        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_pointer(`handle`: Pointer,`callback`: UniFffiRustFutureContinuationCallbackType,`callbackData`: USize,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_pointer(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_pointer(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_pointer(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_pointer(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_pointer(
-        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_pointer(`handle`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_rust_buffer(
-        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_rust_buffer(`handle`: Pointer,`callback`: UniFffiRustFutureContinuationCallbackType,`callbackData`: USize,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_rust_buffer(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_rust_buffer(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_rust_buffer(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_rust_buffer(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_rust_buffer(
-        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_rust_buffer(`handle`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_void(
-        `handle`: Pointer, `callback`: UniFffiRustFutureContinuationCallbackType, `callbackData`: USize,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_poll_void(`handle`: Pointer,`callback`: UniFffiRustFutureContinuationCallbackType,`callbackData`: USize,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_void(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_cancel_void(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_void(
-        `handle`: Pointer,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_free_void(`handle`: Pointer,
     ): Unit
-
-    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_void(
-        `handle`: Pointer, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_plain_text_and_markdown_rust_future_complete_void(`handle`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-
     fun uniffi_beautyxt_rs_plain_text_and_markdown_checksum_func_apply_seccomp_bpf(
     ): Short
     fun uniffi_beautyxt_rs_plain_text_and_markdown_checksum_func_markdown_to_docx(
@@ -645,7 +512,7 @@ internal interface UniffiLib : Library {
     ): Short
     fun ffi_beautyxt_rs_plain_text_and_markdown_uniffi_contract_version(
     ): Int
-
+    
 }
 
 private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
@@ -709,7 +576,7 @@ inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
         }
     }
 
-object FfiConverterString : FfiConverter<String, RustBuffer.ByValue> {
+public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     // Note: we don't inherit from FfiConverterRustBuffer, because we use a
     // special encoding when lowering/lifting.  We can use `RustBuffer.len` to
     // store our length and avoid writing it out to the buffer.
@@ -763,7 +630,7 @@ object FfiConverterString : FfiConverter<String, RustBuffer.ByValue> {
     }
 }
 
-object FfiConverterByteArray : FfiConverterRustBuffer<ByteArray> {
+public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
     override fun read(buf: ByteBuffer): ByteArray {
         val len = buf.getInt()
         val byteArr = ByteArray(len)
@@ -780,46 +647,34 @@ object FfiConverterByteArray : FfiConverterRustBuffer<ByteArray> {
 }
 
 fun `applySeccompBpf`() =
-
-    uniffiRustCall { _status ->
-        UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_apply_seccomp_bpf(_status)
-    }
+    
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_apply_seccomp_bpf(_status)
+}
 
 
 
 fun `markdownToDocx`(`markdown`: String): ByteArray {
     return FfiConverterByteArray.lift(
-        uniffiRustCall { _status ->
-            UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_docx(
-                FfiConverterString.lower(
-                    `markdown`
-                ), _status
-            )
-        })
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_docx(FfiConverterString.lower(`markdown`),_status)
+})
 }
 
 
 fun `markdownToHtml`(`markdown`: String): String {
     return FfiConverterString.lift(
-        uniffiRustCall { _status ->
-            UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_html(
-                FfiConverterString.lower(
-                    `markdown`
-                ), _status
-            )
-        })
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_html(FfiConverterString.lower(`markdown`),_status)
+})
 }
 
 
 fun `plainTextToDocx`(`plainText`: String): ByteArray {
     return FfiConverterByteArray.lift(
-        uniffiRustCall { _status ->
-            UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_plain_text_to_docx(
-                FfiConverterString.lower(
-                    `plainText`
-                ), _status
-            )
-        })
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_plain_text_to_docx(FfiConverterString.lower(`plainText`),_status)
+})
 }
 
 
