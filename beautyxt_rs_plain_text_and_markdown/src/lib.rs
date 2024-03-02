@@ -21,6 +21,7 @@ pub fn apply_seccomp_bpf() {
             (libc::SYS_mprotect, vec![]),
             (libc::SYS_getrandom, vec![]),
             (libc::SYS_clock_gettime, vec![]),
+            (222, vec![]), // mmap
         ]
         .into_iter()
         .collect(),
