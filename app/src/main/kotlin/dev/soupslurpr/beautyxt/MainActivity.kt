@@ -2,6 +2,7 @@ package dev.soupslurpr.beautyxt
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -36,24 +37,49 @@ class MainActivity : ComponentActivity() {
                 factory = PreferencesViewModel.PreferencesViewModelFactory(dataStore)
             )
 
-            val isActionViewOrEdit = (intent.action == Intent.ACTION_VIEW) or (intent.action == Intent.ACTION_EDIT)
+            val preferencesUiState by preferencesViewModel.uiState.collectAsState()
+
+            val isActionViewOrEdit = (intent.action == Intent.ACTION_VIEW) or
+                    (intent.action == Intent.ACTION_EDIT)
+
+            val isActionSend = intent.action == Intent.ACTION_SEND
 
             if (isActionViewOrEdit) {
                 val readOnly = intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION == 0
 
                 fileViewModel.setReadOnly(readOnly)
 
-                intent.data?.let {
+                val uri: Uri = intent.data ?: intent.getParcelableExtra(Intent.EXTRA_STREAM) ?: throw RuntimeException(
+                    "intent" +
+                            ".data was" +
+                            " unexpectedly null!"
+                )
+
+                fileViewModel.bindIsolatedService(
+                    uri,
+                    preferencesUiState.renderMarkdown.second.value,
+                    false,
+                )
+                fileViewModel.setUri(uri, LocalContext.current)
+            } else if (isActionSend) {
+                val extraText = intent.getStringExtra(Intent.EXTRA_TEXT)
+                val extraStream: Uri? = intent.getParcelableExtra(Intent.EXTRA_STREAM)
+
+                if (extraStream != null) {
+                    val readOnly = intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION == 0
+
+                    fileViewModel.setReadOnly(readOnly)
+
                     fileViewModel.bindIsolatedService(
-                        it,
-                        preferencesViewModel.uiState.value.renderMarkdown.second.value,
+                        extraStream,
+                        preferencesUiState.renderMarkdown.second.value,
                         false,
                     )
-                    fileViewModel.setUri(it, LocalContext.current)
+                    fileViewModel.setUri(extraStream, LocalContext.current)
+                } else if (extraText != null) {
+                    throw RuntimeException("Sharing text is not supported yet!") // TODO: Handle this
                 }
             }
-
-            val preferencesUiState by preferencesViewModel.uiState.collectAsState()
 
             BeauTyXTTheme(
                 preferencesViewModel = preferencesViewModel
@@ -67,6 +93,7 @@ class MainActivity : ComponentActivity() {
                         typstProjectViewModel = typstProjectViewModel,
                         preferencesViewModel = preferencesViewModel,
                         isActionViewOrEdit = isActionViewOrEdit,
+                        isActionSend = isActionSend,
                     )
                 }
             }

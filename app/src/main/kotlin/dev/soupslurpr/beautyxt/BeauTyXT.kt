@@ -30,7 +30,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
@@ -181,7 +180,7 @@ fun BeauTyXTAppBar(
             if (canNavigateBack) {
                 IconButton(onClick =  navigateUp) {
                     Icon(
-                        imageVector = Icons.Filled.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = stringResource(R.string.back_button)
                     )
                 }
@@ -498,6 +497,7 @@ fun BeauTyXTApp(
     typstProjectViewModel: TypstProjectViewModel,
     preferencesViewModel: PreferencesViewModel,
     isActionViewOrEdit: Boolean,
+    isActionSend: Boolean,
 ) {
     val navController = rememberNavController()
 
@@ -1302,7 +1302,7 @@ ${
             // it goes to the app this app was opened by. Deeplinks not doing
             // that is intentional, see figure 4 at
             // https://developer.android.com/guide/navigation/principles#deep-link
-            startDestination = if (isActionViewOrEdit) {
+            startDestination = if (isActionViewOrEdit || isActionSend) {
                 BeauTyXTScreens.FileEdit.name
             } else {
                 BeauTyXTScreens.Start.name
