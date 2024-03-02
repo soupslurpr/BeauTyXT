@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    android:targetSandboxVersion="2"
-    tools:targetApi="o">
+    android:targetSandboxVersion="2">
 
     <application
         android:allowBackup="true"
@@ -39,28 +38,23 @@
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:scheme="content"/>
-                <data android:mimeType="text/plain"/>
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.EDIT"/>
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <data android:scheme="content"/>
+                <data android:mimeType="text/*" />
+                <data android:mimeType="application/xml" />
                 <data android:mimeType="application/json"/>
+                <data android:mimeType="application/javascript" />
+                <data android:mimeType="application/css" />
+                <data android:mimeType="application/html" />
             </intent-filter>
             <intent-filter>
-                <action android:name="android.intent.action.EDIT"/>
-                <action android:name="android.intent.action.VIEW"/>
+                <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT"/>
-                <data android:scheme="content"/>
+
+                <data android:mimeType="text/*" />
                 <data android:mimeType="application/xml"/>
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.EDIT"/>
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <data android:scheme="content"/>
-                <data android:mimeType="text/markdown"/>
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/javascript" />
+                <data android:mimeType="application/css" />
+                <data android:mimeType="application/html" />
             </intent-filter>
         </activity>
 
