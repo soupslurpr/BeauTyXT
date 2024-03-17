@@ -11,7 +11,7 @@ use std::{
     io::{Read, Seek, Write},
     sync::Mutex,
 };
-use typst::layout::Abs;
+use typst::{foundations::{Dict, Smart}, layout::Abs, model::Document, syntax::package::PackageSpec};
 use typst::text::Font;
 use typst::text::FontBook;
 use typst::Library;
@@ -19,7 +19,7 @@ use typst::{diag::EcoString, foundations::Bytes};
 use typst::{
     diag::{FileError, FileResult, Severity, Tracepoint},
     eval::Tracer,
-    syntax::{FileId, PackageSpec, Source, VirtualPath},
+    syntax::{FileId, Source, VirtualPath},
     World,
 };
 use typst::{foundations::Datetime, text::FontInfo};
@@ -335,7 +335,7 @@ pub fn get_typst_pdf() -> Vec<u8> {
 
     let document = typst::compile(world, &mut tracer).unwrap();
 
-    typst_pdf::pdf(&document, None, None)
+    typst_pdf::pdf(&document, Smart::Auto, None)
 }
 
 /// The severity of a [`SourceDiagnostic`].
@@ -402,9 +402,7 @@ pub fn get_typst_svg() -> Result<Vec<u8>, RenderError> {
 
     match typst::compile(world, &mut tracer) {
         Ok(document) => {
-            let frames = document.pages;
-
-            Ok(typst_svg::svg_merged(&frames, Abs::default()).into_bytes())
+            Ok(typst_svg::svg_merged(&document, Abs::default()).into_bytes())
         }
         // Convert the errors to our custom errors that can be returned to Kotlin code
         Err(errors) => Err(RenderError::VecCustomSourceDiagnostic {
@@ -458,7 +456,7 @@ pub struct SomeTypstWorld {
 impl SomeTypstWorld {
     pub fn new() -> SomeTypstWorld {
         Self {
-            library: Prehashed::new(typst::Library::build()),
+            library: Prehashed::new(typst::Library::builder().build()),
             fonts: Prehashed::new(FontBook::from_infos(vec![
                 // Noto Serif
                 FontInfo::new(include_bytes!("../Noto_Serif/NotoSerif-Regular.ttf"), 0).unwrap(),
@@ -484,12 +482,12 @@ impl SomeTypstWorld {
 
 impl World for SomeTypstWorld {
     #[doc = " The standard library."]
-    fn library(&self) -> &Prehashed<Library> {
+    fn library(&self) -> &Prehashed<Library>   {
         &self.library
     }
 
     #[doc = " Metadata about all known fonts."]
-    fn book(&self) -> &Prehashed<FontBook> {
+    fn book(&self) -> &Prehashed<FontBook>  {
         &self.fonts
     }
 
