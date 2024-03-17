@@ -7,22 +7,22 @@ license-file = "./LICENSE.txt"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = "0.4.33"
-comemo = "0.3.1"
-libc = "0.2.152"
-once_cell = "1.19.0"
-thiserror = "1.0.56"
-typst = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
-typst-pdf = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
-typst-svg = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
-typst-render = { git = "https://github.com/typst/typst", version = "0.10.0", rev = "70ca0d257bb4ba927f63260e20443f244e0bb58c" }
-uniffi = "0.26.1"
+chrono = "0"
+comemo = "0"
+libc = "0"
+once_cell = "1"
+thiserror = "1"
+typst = { git = "https://github.com/typst/typst", version = "0.11.0", rev = "2bf9f95dd83f2ceef1e32ae1847a162c7d193f76" }
+typst-pdf = { git = "https://github.com/typst/typst", version = "0.11.0", rev = "2bf9f95dd83f2ceef1e32ae1847a162c7d193f76" }
+typst-svg = { git = "https://github.com/typst/typst", version = "0.11.0", rev = "2bf9f95dd83f2ceef1e32ae1847a162c7d193f76" }
+typst-render = { git = "https://github.com/typst/typst", version = "0.11.0", rev = "2bf9f95dd83f2ceef1e32ae1847a162c7d193f76" }
+uniffi = "0"
 
 [target.'cfg(unix)'.dependencies]
-seccompiler = "0.4.0"
+seccompiler = "0"
 
 [build-dependencies]
-uniffi = "0.26.1"
+uniffi = "0"
 
 [lib]
 crate-type = ["cdylib"]
