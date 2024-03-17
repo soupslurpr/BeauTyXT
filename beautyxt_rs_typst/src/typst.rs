@@ -11,7 +11,7 @@ use std::{
     io::{Read, Seek, Write},
     sync::Mutex,
 };
-use typst::{foundations::{Dict, Smart}, layout::Abs, model::Document, syntax::package::PackageSpec};
+use typst::{foundations::Smart, layout::Abs, syntax::package::PackageSpec};
 use typst::text::Font;
 use typst::text::FontBook;
 use typst::Library;
@@ -33,52 +33,112 @@ static TYPST_WORLD: Lazy<Mutex<Option<SomeTypstWorld>>> = Lazy::new(|| Mutex::ne
 
 #[uniffi::export]
 pub fn initialize_typst_world() {
-    #[cfg(target_family = "unix")]
-    let filter: BpfProgram = SeccompFilter::new(
-        vec![
-            (libc::SYS_getrandom, vec![]),
-            (libc::SYS_mprotect, vec![]),
-            (222, vec![]), // mmap
-            // Not sure why prctl is required
-            (libc::SYS_prctl, vec![]),
-            (libc::SYS_ioctl, vec![]),
-            (libc::SYS_fcntl, vec![]),
-            (libc::SYS_getuid, vec![]),
-            (libc::SYS_writev, vec![]),
-            (libc::SYS_read, vec![]),
-            (libc::SYS_write, vec![]),
-            (libc::SYS_getsockopt, vec![]),
-            (libc::SYS_close, vec![]),
-            (80, vec![]), // fstat
-            (62, vec![]), // lseek
-            (libc::SYS_futex, vec![]),
-            (46, vec![]), // ftruncate
-            (libc::SYS_clock_gettime, vec![]),
-            (libc::SYS_openat, vec![]),
-            (79, vec![]), // newfstatat
-            (libc::SYS_munmap, vec![]),
-        ]
-        .into_iter()
-        .collect(),
-        // mismatch_action
-        // SeccompAction::Log, // Useful for testing which syscalls are needed
-        SeccompAction::KillProcess,
-        // match_action
-        SeccompAction::Allow,
-        // target architecture of filter
-        std::env::consts::ARCH.try_into().unwrap(),
-    )
-    .unwrap()
-    .try_into()
-    .unwrap();
-
-    #[cfg(target_family = "unix")]
-    apply_filter_all_threads(&filter).unwrap();
-
-    *TYPST_WORLD.lock().unwrap() = Some(SomeTypstWorld::new());
-
     #[cfg(not(target_family = "unix"))]
-    panic!("seccomp is only available on the unix family!")
+    panic!("seccomp is only available on the unix family! Also, only unix is currently supported.");
+
+    #[cfg(target_family = "unix")]
+    {
+        let SYS_mmap: i64 = {
+            if std::env::consts::ARCH == "x86_64" {
+                9
+            } else if std::env::consts::ARCH == "aarch64" {
+                222
+            } else {
+                panic!()
+            }
+        };
+        let SYS_fstat: i64 = {
+            if std::env::consts::ARCH == "x86_64" {
+                5
+            } else if std::env::consts::ARCH == "aarch64" {
+                80
+            } else {
+                panic!()
+            }
+        };
+        let SYS_lseek: i64 = {
+            if std::env::consts::ARCH == "x86_64" {
+                8
+            } else if std::env::consts::ARCH == "aarch64" {
+                62
+            } else {
+                panic!()
+            }
+        };
+        let SYS_ftruncate: i64 = {
+            if std::env::consts::ARCH == "x86_64" {
+                77
+            } else if std::env::consts::ARCH == "aarch64" {
+                46
+            } else {
+                panic!()
+            }
+        };
+        let SYS_newfstatat: i64 = {
+            if std::env::consts::ARCH == "x86_64" {
+                262
+            } else if std::env::consts::ARCH == "aarch64" {
+                79
+            } else {
+                panic!()
+            }
+        };
+        let SYS_membarrier: i64 = {
+            if std::env::consts::ARCH == "x86_64" {
+                324
+            } else if std::env::consts::ARCH == "aarch64" {
+                283
+            } else {
+                panic!()
+            }
+        };
+
+        let filter: BpfProgram = SeccompFilter::new(
+            vec![
+                (libc::SYS_getrandom, vec![]),
+                (libc::SYS_mprotect, vec![]),
+                (SYS_mmap, vec![]),
+                (libc::SYS_prctl, vec![]),
+                (libc::SYS_ioctl, vec![]),
+                (libc::SYS_fcntl, vec![]),
+                (libc::SYS_getuid, vec![]),
+                (libc::SYS_writev, vec![]),
+                (libc::SYS_read, vec![]),
+                (libc::SYS_write, vec![]),
+                (libc::SYS_getsockopt, vec![]),
+                (libc::SYS_close, vec![]),
+                (SYS_fstat, vec![]),
+                (SYS_lseek, vec![]),
+                (libc::SYS_futex, vec![]),
+                (SYS_ftruncate, vec![]),
+                (libc::SYS_clock_gettime, vec![]),
+                (libc::SYS_openat, vec![]),
+                (SYS_newfstatat, vec![]),
+                (libc::SYS_munmap, vec![]),
+                (SYS_membarrier, vec![]),
+            ]
+            .into_iter()
+            .collect(),
+            // mismatch_action
+            // SeccompAction::Log, // Useful for testing which syscalls are needed
+            SeccompAction::KillProcess,
+            // match_action
+            SeccompAction::Allow,
+            // target architecture of filter
+            std::env::consts::ARCH.try_into().unwrap(),
+        )
+        .unwrap()
+        .try_into()
+        .unwrap();
+    
+        #[cfg(target_family = "unix")]
+        apply_filter_all_threads(&filter).unwrap();
+    }
+
+    #[allow(unreachable_code)]
+    {
+        *TYPST_WORLD.lock().unwrap() = Some(SomeTypstWorld::new());
+    }
 }
 
 #[derive(uniffi::Record, PartialEq)]
