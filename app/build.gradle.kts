@@ -70,6 +70,12 @@ android {
             enableSplit = false
         }
     }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    ndkVersion = "26.2.11394342"
+    buildToolsVersion = "34.0.0"
 }
 
 dependencies {
