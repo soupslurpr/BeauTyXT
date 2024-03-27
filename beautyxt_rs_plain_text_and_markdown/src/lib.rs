@@ -35,6 +35,12 @@ pub fn apply_seccomp_bpf() {
                 (libc::SYS_getrandom, vec![]),
                 (libc::SYS_clock_gettime, vec![]),
                 (SYS_mmap, vec![]),
+                (libc::SYS_futex, vec![]),
+                (libc::SYS_membarrier, vec![]),
+                (libc::SYS_write, vec![]),
+                (libc::SYS_read, vec![]),
+                (libc::SYS_getuid, vec![]),
+                (libc::SYS_epoll_pwait, vec![])
             ]
             .into_iter()
             .collect(),
