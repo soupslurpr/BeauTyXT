@@ -83,15 +83,6 @@ pub fn initialize_typst_world() {
                 panic!()
             }
         };
-        let SYS_membarrier: i64 = {
-            if std::env::consts::ARCH == "x86_64" {
-                324
-            } else if std::env::consts::ARCH == "aarch64" {
-                283
-            } else {
-                panic!()
-            }
-        };
 
         let filter: BpfProgram = SeccompFilter::new(
             vec![
@@ -115,7 +106,7 @@ pub fn initialize_typst_world() {
                 (libc::SYS_openat, vec![]),
                 (SYS_newfstatat, vec![]),
                 (libc::SYS_munmap, vec![]),
-                (SYS_membarrier, vec![]),
+                (libc::SYS_membarrier, vec![]),
             ]
             .into_iter()
             .collect(),
