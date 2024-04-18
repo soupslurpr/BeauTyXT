@@ -14,9 +14,6 @@ markdown = "1.0.0-alpha.16"
 scraper = "0"
 uniffi = "0"
 
-[target.'cfg(unix)'.dependencies]
-seccompiler = "0"
-
 [build-dependencies]
 uniffi = "0"
 

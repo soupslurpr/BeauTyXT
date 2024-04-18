@@ -18,9 +18,6 @@ typst-svg = { git = "https://github.com/typst/typst", version = "0.11.0", rev = 
 typst-render = { git = "https://github.com/typst/typst", version = "0.11.0", rev = "2bf9f95dd83f2ceef1e32ae1847a162c7d193f76" }
 uniffi = "0"
 
-[target.'cfg(unix)'.dependencies]
-seccompiler = "0"
-
 [build-dependencies]
 uniffi = "0"
 
