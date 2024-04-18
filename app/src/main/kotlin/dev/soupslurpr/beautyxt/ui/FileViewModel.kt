@@ -57,7 +57,7 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
             if ((renderMarkdown or previewMarkdownRenderedToHtmlFullscreen)
                 && uiState.value.mimeType.value == mimeTypeMarkdown
             ) {
-                _uiState.value.contentConvertedToHtml.value = rustService.markdownToHtml(uiState.value.content.value)
+                setMarkdownToHtml()
             }
         }
 
@@ -215,6 +215,16 @@ class FileViewModel(application: Application) : AndroidViewModel(application) {
                 )
             } catch (e: DeadObjectException) {
                 Log.w(TAG, "setMarkdownToHtml() failed: $e")
+                _uiState.value.contentConvertedToHtml.value = "<h3>Error rendering Markdown! Please report to the " +
+                        "developers by going to Settings > Source code > Issues, then make an issue describing how " +
+                        "you got this error.</h3><br>" +
+                        "<p>Error: $e</p>"
+            } catch (e: NullPointerException) {
+                Log.w(TAG, "setMarkdownToHtml() failed: $e")
+                _uiState.value.contentConvertedToHtml.value = "<h3>Error rendering Markdown! Please report to the " +
+                        "developers by going to Settings > Source code > Issues, then make an issue describing how " +
+                        "you got this error.</h3><br>" +
+                        "<p>Error: $e</p>"
             }
         }
     }
