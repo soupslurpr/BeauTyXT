@@ -159,9 +159,9 @@ dependencies = [
 
 [[package]]
 name = "docx-rs"
-version = "0.4.15"
+version = "0.4.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7875e65e60e9fa43cc54c0ca6c20ba2bb96d98971b4e3cd8c5973d76c9ce531e"
+checksum = "e593b51d4fe95d69d70fd40da4b314b029736302c986c3c760826e842fd27dc3"
 dependencies = [
  "base64",
  "image",
