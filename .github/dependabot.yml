@@ -6,6 +6,10 @@
 version: 2
 updates:
   - package-ecosystem: "cargo" # See documentation for possible values
-    directory: "/beautyxt_rs" # Location of package manifests
+    directory: "/beautyxt_rs_plain_text_and_markdown" # Location of package manifests
+    schedule:
+      interval: "daily"
+  - package-ecosystem: "cargo" # See documentation for possible values
+    directory: "/beautyxt_rs_typst" # Location of package manifests
     schedule:
       interval: "daily"
