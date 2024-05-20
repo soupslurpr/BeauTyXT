@@ -105,6 +105,23 @@ fun SettingsScreen(
                     }
                 }
             )
+            SettingsItem(
+                name = stringResource(R.string.auto_preview_on_typing_setting_name),
+                description = stringResource(
+                    R.string.auto_preview_on_typing_setting_description,
+                    stringResource(R.string.typst_project)
+                ),
+                hasSwitch = true,
+                checked = preferencesUiState.autoPreviewOnTyping.second.value,
+                onCheckedChange = {
+                    coroutineScope.launch {
+                        preferencesViewModel.setPreference(
+                            preferencesUiState.autoPreviewOnTyping
+                                .first, it
+                        )
+                    }
+                }
+            )
         }
 
         Column {

@@ -64,6 +64,13 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
                                 .typstProjectShowWarningsAndErrors.second.value
                         )
                     ),
+                    autoPreviewOnTyping = Pair(
+                        uiState.value.autoPreviewOnTyping.first,
+                        mutableStateOf(
+                            settings[uiState.value.autoPreviewOnTyping.first] ?: uiState.value.autoPreviewOnTyping
+                                .second.value
+                        )
+                    ),
                     experimentalFeaturePreviewRenderedMarkdownInFullscreen = Pair(
                         uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first,
                         mutableStateOf(

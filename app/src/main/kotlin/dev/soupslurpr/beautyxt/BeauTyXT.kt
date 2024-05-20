@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -167,6 +168,7 @@ fun BeauTyXTAppBar(
     deleteFileDialogConfirmButton: @Composable () -> Unit,
     deleteFileDialogDismissButton: @Composable () -> Unit,
 
+    onTypstProjectRefreshButtonClicked: () -> Unit,
     onTypstProjectOpenAnotherFileInTheProjectButtonClicked: () -> Unit,
     onTypstProjectCreateAndOpenAnotherFileInTheProjectButtonClicked: () -> Unit,
 
@@ -225,6 +227,15 @@ fun BeauTyXTAppBar(
                             }
                         )
                     }
+                    IconButton(
+                        onClick = onTypstProjectRefreshButtonClicked,
+                        content = {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = stringResource(R.string.refresh)
+                            )
+                        }
+                    )
                     IconButton(
                         onClick = onTypstProjectCreateAndOpenAnotherFileInTheProjectButtonClicked,
                         content = {
@@ -618,6 +629,7 @@ fun BeauTyXTApp(
                 ()
     ) {
         if (it != null) {
+            Log.d("BeauTyXT", "setTypstCurrentOpenedPathLauncher: $it")
             typstProjectViewModel.refreshProjectFiles(context)
             typstProjectViewModel.setCurrentOpenedPath(it, context.contentResolver)
             typstProjectViewModel.setTypstProjectFileText(
@@ -1271,6 +1283,12 @@ ${
                     )
                 },
 
+                onTypstProjectRefreshButtonClicked = {
+                    // Refresh the Typst project files
+                    typstProjectViewModel.refreshProjectFiles(context)
+                    // Refresh the preview (SVG rendering)
+                    typstProjectViewModel.renderProjectToSvgs(typstProjectViewModel.rustService!!)
+                },
                 onTypstProjectOpenAnotherFileInTheProjectButtonClicked = {
                     setTypstCurrentOpenedPathLauncher.launch(arrayOf("*/*"))
                 },

@@ -90,7 +90,9 @@ fun TypstProjectScreen(
 
                 typstProjectViewModel.updateProjectFileWithNewText(it, currentOpenedPath)
 
-                typstProjectViewModel.renderProjectToSvgs(typstProjectViewModel.rustService!!)
+                if (preferencesUiState.autoPreviewOnTyping.second.value) {
+                    typstProjectViewModel.renderProjectToSvgs(typstProjectViewModel.rustService!!)
+                }
             }
 
             Column(
@@ -151,7 +153,9 @@ fun TypstProjectScreen(
 
                 typstProjectViewModel.updateProjectFileWithNewText(it, currentOpenedPath)
 
-                typstProjectViewModel.renderProjectToSvgs(typstProjectViewModel.rustService!!)
+                if (preferencesUiState.autoPreviewOnTyping.second.value) {
+                    typstProjectViewModel.renderProjectToSvgs(typstProjectViewModel.rustService!!)
+                }
             }
 
             Column(
