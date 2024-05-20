@@ -391,7 +391,7 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
                     "Failed to call clearTypstProjectFiles(), might have already cleared as service is dead $e"
                 )
             }
-            //stopAndUnbindService()
+            stopAndUnbindService()
         }
     }
 
