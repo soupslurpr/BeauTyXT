@@ -568,16 +568,6 @@ fun BeauTyXTApp(
         }
     }
 
-    val openTypstProjectLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts
-            .OpenDocumentTree()
-    ) { projectFolderUri ->
-        if (projectFolderUri != null) {
-            typstProjectViewModel.bindService(projectFolderUri)
-            navController.navigate(BeauTyXTScreens.TypstProject.name)
-        }
-    }
-
     val createTypstProjectLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts
             .OpenDocumentTree()
