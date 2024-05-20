@@ -30,6 +30,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.FileOutputStream
+import com.anggrayudi.storage.SimpleStorageHelper
+import com.anggrayudi.storage.file.*
 
 private const val TAG = "TypstProjectViewModel"
 
@@ -45,9 +47,22 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            val rustService = ITypstProjectViewModelRustLibraryAidlInterface.Stub.asInterface(service)
+            var rustService = ITypstProjectViewModelRustLibraryAidlInterface.Stub.asInterface(service)
 
-            rustService.initializeTypstWorld()
+            try {
+                rustService?.initializeTypstWorld()
+            } catch (e: DeadObjectException) {
+                Log.w(
+                    TAG,
+                    "Failed to call initializeTypstWorld(), seems like the service" +
+                            " is dead $e"
+                )
+                // If service is dead, we try to kill and restart it
+                stopAndUnbindService()
+                rustService = ITypstProjectViewModelRustLibraryAidlInterface.Stub.asInterface(service)
+                rustService!!.initializeTypstWorld()
+                bindService(_uiState.value.projectFolderUri.value)
+            }
 
             this@TypstProjectViewModel.rustService = rustService
 
@@ -376,7 +391,7 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
                     "Failed to call clearTypstProjectFiles(), might have already cleared as service is dead $e"
                 )
             }
-            stopAndUnbindService()
+            //stopAndUnbindService()
         }
     }
 

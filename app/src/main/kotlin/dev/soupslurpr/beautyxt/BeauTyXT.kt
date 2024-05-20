@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.print.PrintAttributes
 import android.print.PrintManager
+import android.util.Log
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -13,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
+import androidx.activity.ComponentActivity
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -71,6 +73,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.anggrayudi.storage.SimpleStorageHelper
+import com.anggrayudi.storage.file.DocumentFileCompat
+import com.anggrayudi.storage.file.FileFullPath
+import com.anggrayudi.storage.file.StorageId
+import com.anggrayudi.storage.file.getAbsolutePath
+import com.anggrayudi.storage.file.makeFile
 import dev.soupslurpr.beautyxt.constants.mimeTypeDocx
 import dev.soupslurpr.beautyxt.constants.mimeTypeHtml
 import dev.soupslurpr.beautyxt.constants.mimeTypeMarkdown
@@ -493,6 +501,7 @@ fun FileTypeSelectionDialogItem(
 
 @Composable
 fun BeauTyXTApp(
+    activity: MainActivity,
     modifier: Modifier,
     fileViewModel: FileViewModel,
     typstProjectViewModel: TypstProjectViewModel,
@@ -1331,7 +1340,35 @@ ${
                         )
                     },
                     onOpenTypstProjectButtonClicked = {
-                        openTypstProjectLauncher.launch(Uri.EMPTY)
+                        //openTypstProjectLauncher.launch(Uri.EMPTY)
+                        activity.storageHelper.onFolderSelected =
+                            { _, projectFolder -> // could also use simpleStorageHelper.onStorageAccessGranted()
+                                Log.d("APP", "Callback Success Folder Pick! Now requesting " +
+                                        "permission from" +
+                                        " OS and launch the Rust service...")
+                                // Get absolute path to folder
+                                val fpath = projectFolder.getAbsolutePath(activity)
+                                // Request write access to the folder using DocumentFileCompat (this
+                                // is the magic sauce to avoid crashing upon opening an already existing folder, and
+                                // yes it is counter-intuitive that we use an object called
+                                // DocumentFileCompat to request write access on a folder)
+                                val folder = DocumentFileCompat.fromFullPath(activity,
+                                    fpath,
+                                    requiresWriteAccess = true)
+                                // We can create any file with the following method
+                                //val file = folder?.makeFile(activity, "notes", "text/plain")
+                                typstProjectViewModel.bindService(projectFolder.uri)
+                                navController.navigate(BeauTyXTScreens.TypstProject.name)
+                            }
+                        Log.d("APP", "Ask user to get Storage Access permission")
+                        activity.storageHelper.openFolderPicker(
+                            // We could also use simpleStorageHelper.requestStorageAccess()
+                            //initialPath = FileFullPath(
+                            //    activity,
+                            //    StorageId.PRIMARY,
+                            //    "TypstProjects"
+                            //)
+                        )
                     },
                     onOpenAnyButtonClicked = {
                         openFileLauncher.launch(

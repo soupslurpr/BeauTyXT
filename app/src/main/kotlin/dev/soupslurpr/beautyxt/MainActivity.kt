@@ -20,10 +20,12 @@ import dev.soupslurpr.beautyxt.ui.FileViewModel
 import dev.soupslurpr.beautyxt.ui.ReviewPrivacyPolicyAndLicense
 import dev.soupslurpr.beautyxt.ui.TypstProjectViewModel
 import dev.soupslurpr.beautyxt.ui.theme.BeauTyXTTheme
+import com.anggrayudi.storage.SimpleStorageHelper
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 class MainActivity : ComponentActivity() {
+    val storageHelper = SimpleStorageHelper(this) // for scoped storage permission management on Android 10+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -88,6 +90,7 @@ class MainActivity : ComponentActivity() {
                     ReviewPrivacyPolicyAndLicense(preferencesViewModel = preferencesViewModel)
                 } else if (preferencesUiState.acceptedPrivacyPolicyAndLicense.second.value) {
                     BeauTyXTApp(
+                        activity = this@MainActivity, // provide the parent, MainActivity
                         modifier = Modifier,
                         fileViewModel = fileViewModel,
                         typstProjectViewModel = typstProjectViewModel,
@@ -98,5 +101,24 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        // Save scoped storage permission on Android 10+
+        storageHelper.onSaveInstanceState(outState)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        // Restore scoped storage permission on Android 10+
+        super.onRestoreInstanceState(savedInstanceState)
+        storageHelper.onRestoreInstanceState(savedInstanceState)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        // Restore scoped storage permission on Android 10+
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        // Mandatory for Activity, but not for Fragment & ComponentActivity
+        storageHelper.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 }

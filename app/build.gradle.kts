@@ -97,4 +97,6 @@ dependencies {
 
     implementation("androidx.datastore:datastore-preferences:1.1.0")
     implementation("net.java.dev.jna:jna:5.14.0@aar")
+
+    implementation("com.anggrayudi:storage:1.5.5")
 }
