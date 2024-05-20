@@ -30,8 +30,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.FileOutputStream
-import com.anggrayudi.storage.SimpleStorageHelper
-import com.anggrayudi.storage.file.*
 
 private const val TAG = "TypstProjectViewModel"
 
