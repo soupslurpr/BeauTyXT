@@ -14,7 +14,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
-import androidx.activity.ComponentActivity
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -73,12 +72,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.anggrayudi.storage.SimpleStorageHelper
 import com.anggrayudi.storage.file.DocumentFileCompat
 import com.anggrayudi.storage.file.FileFullPath
 import com.anggrayudi.storage.file.StorageId
 import com.anggrayudi.storage.file.getAbsolutePath
-import com.anggrayudi.storage.file.makeFile
+//import com.anggrayudi.storage.file.makeFile
 import dev.soupslurpr.beautyxt.constants.mimeTypeDocx
 import dev.soupslurpr.beautyxt.constants.mimeTypeHtml
 import dev.soupslurpr.beautyxt.constants.mimeTypeMarkdown
@@ -1330,9 +1328,22 @@ ${
                         )
                     },
                     onOpenTypstProjectButtonClicked = {
-                        //openTypstProjectLauncher.launch(Uri.EMPTY)
+                        // Getting access to a folder using SAF (Storage Access Framework)
+                        // requires 3 different steps:
+                        // 1. Requesting access to the storage root folder
+                        // 2. Opening the folder picker to select the Typst project folder
+                        // 3. Requesting write access to the Typst project folder and using this
+                        // access to launch the Rust service
+                        //
+                        // Due to how this works (with callbacks), these steps are defined below
+                        // in reverse order.
+
+                        // Third step
                         activity.storageHelper.onFolderSelected =
                             { _, projectFolder -> // could also use simpleStorageHelper.onStorageAccessGranted()
+                                // Third step, after the user granted access to storage root AND
+                                // selected the Typst project folder, we now request write access
+                                // and launch the Rust service
                                 Log.d("APP", "Callback Success Folder Pick! Now requesting " +
                                         "permission from" +
                                         " OS and launch the Rust service...")
@@ -1350,15 +1361,32 @@ ${
                                 typstProjectViewModel.bindService(projectFolder.uri)
                                 navController.navigate(BeauTyXTScreens.TypstProject.name)
                             }
+                        // Second step
+                        activity.storageHelper.onStorageAccessGranted =
+                            { requestCode, root ->
+                                // Secondly, after the user granted access to the storage root
+                                // folder, we can now open the folder picker to select where is
+                                // the Typst project
+                                activity.storageHelper.openFolderPicker(
+                                    initialPath = FileFullPath(
+                                        activity,
+                                        StorageId.PRIMARY,
+                                        "Download"
+                                    )
+                                )
+                            }
+                        // First step, ask user to get Storage Access permission (this replaces the
+                        // READ_STORAGE_PERMISSION of older Android versions)
                         Log.d("APP", "Ask user to get Storage Access permission")
-                        activity.storageHelper.openFolderPicker(
-                            // We could also use simpleStorageHelper.requestStorageAccess()
-                            //initialPath = FileFullPath(
-                            //    activity,
-                            //    StorageId.PRIMARY,
-                            //    "TypstProjects"
-                            //)
-                        )
+                        activity.storageHelper.requestStorageAccess()
+                        // Note that normally storageHelper.openFolderPicker should call
+                        // requestStorageAccess() when necessary, but in the case of
+                        // this app, for some reason it fails to do that sometimes,
+                        // and this results in a crash because of silent denied access.
+                        // So that's why we have an explicit call here.
+                        // Otherwise, if only openFolderPicker() is called, it will work at
+                        // first, but then after a while the OS will remove the storage permission silently and the app will restart
+                        // crashing, one big sign is that the app stops asking for storage root access permission
                     },
                     onOpenAnyButtonClicked = {
                         openFileLauncher.launch(
