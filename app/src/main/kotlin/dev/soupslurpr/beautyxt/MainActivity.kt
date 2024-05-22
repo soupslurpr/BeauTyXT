@@ -138,6 +138,13 @@ class MainActivity : ComponentActivity() {
         storageHelper.onRestoreInstanceState(savedInstanceState)
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        // Mandatory for direct subclasses of android.app.Activity,
+        // but not for subclasses of androidx.fragment.app.Fragment, androidx.activity.ComponentActivity, androidx.appcompat.app.AppCompatActivity
+        storageHelper.storage.onActivityResult(requestCode, resultCode, data)
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         // Restore scoped storage permission on Android 10+
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)

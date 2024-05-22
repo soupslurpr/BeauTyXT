@@ -77,7 +77,6 @@ import com.anggrayudi.storage.file.DocumentFileCompat
 import com.anggrayudi.storage.file.FileFullPath
 import com.anggrayudi.storage.file.StorageId
 import com.anggrayudi.storage.file.getAbsolutePath
-//import com.anggrayudi.storage.file.makeFile
 import dev.soupslurpr.beautyxt.constants.mimeTypeDocx
 import dev.soupslurpr.beautyxt.constants.mimeTypeHtml
 import dev.soupslurpr.beautyxt.constants.mimeTypeMarkdown
@@ -1379,6 +1378,7 @@ ${
                                 typstProjectViewModel.bindService(projectFolder.uri)
                                 navController.navigate(BeauTyXTScreens.TypstProject.name)
                             }
+
                         // Second step
                         activity.storageHelper.onStorageAccessGranted =
                             { requestCode, root ->
@@ -1393,8 +1393,10 @@ ${
                                     )
                                 )
                             }
+                        
                         // First step, ask user to get Storage Access permission (this replaces the
                         // READ_STORAGE_PERMISSION of older Android versions)
+                        // TODO: This step is likely only necessary for Android 10 exactly (before there was no SAF, and later there is no difference between this call and folderpicker) - but I cannot test in an emulator right now so I prefer to make this step unconditional
                         Log.d("APP", "Ask user to get Storage Access permission")
                         activity.storageHelper.requestStorageAccess()
                         // Note that normally storageHelper.openFolderPicker should call
