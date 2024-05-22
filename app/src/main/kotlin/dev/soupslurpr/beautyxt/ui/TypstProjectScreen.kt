@@ -90,7 +90,8 @@ fun TypstProjectScreen(
 
                 typstProjectViewModel.updateProjectFileWithNewText(it, currentOpenedPath)
 
-                if (preferencesUiState.autoPreviewOnTyping.second.value) {
+                // Refresh preview render on typing
+                if (preferencesUiState.autoPreviewRefresh.second.value) {
                     typstProjectViewModel.renderProjectToSvgs(typstProjectViewModel.rustService!!)
                 }
             }
@@ -153,7 +154,8 @@ fun TypstProjectScreen(
 
                 typstProjectViewModel.updateProjectFileWithNewText(it, currentOpenedPath)
 
-                if (preferencesUiState.autoPreviewOnTyping.second.value) {
+                // Refresh preview render on typing
+                if (preferencesUiState.autoPreviewRefresh.second.value) {
                     typstProjectViewModel.renderProjectToSvgs(typstProjectViewModel.rustService!!)
                 }
             }

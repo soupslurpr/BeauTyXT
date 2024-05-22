@@ -25,6 +25,7 @@ import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomSourceDiagn
 import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomTracepoint
 import dev.soupslurpr.beautyxt.data.TypstProjectUiState
 import dev.soupslurpr.beautyxt.returnHashSha256
+import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,7 +34,7 @@ import java.io.FileOutputStream
 
 private const val TAG = "TypstProjectViewModel"
 
-class TypstProjectViewModel(application: Application) : AndroidViewModel(application) {
+class TypstProjectViewModel(application: Application, val preferencesViewModel: PreferencesViewModel) : AndroidViewModel(application) {
 
     /**
      * File state for this file
@@ -94,7 +95,7 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun openProject(context: Context) {
+    fun openProject(context: Context, refreshPreview: Boolean = true) {
         viewModelScope.launch {
             val files: MutableList<PathAndPfd> = mutableListOf()
             val filesQueue = ArrayDeque<DocumentFile>()
@@ -186,7 +187,10 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
                 rustService!!.addTypstProjectFiles(files)
             }
 
-            renderProjectToSvgs(rustService!!)
+            // Refresh the preview render on project loading, but only if the user has enabled it
+            if (preferencesViewModel.uiState.value.autoPreviewRefresh.second.value) {
+                renderProjectToSvgs(rustService!!)
+            }
         }
     }
 

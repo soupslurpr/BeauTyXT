@@ -106,17 +106,17 @@ fun SettingsScreen(
                 }
             )
             SettingsItem(
-                name = stringResource(R.string.auto_preview_on_typing_setting_name),
+                name = stringResource(R.string.typst_project_auto_preview_setting_name),
                 description = stringResource(
-                    R.string.auto_preview_on_typing_setting_description,
+                    R.string.typst_project_auto_preview_setting_description,
                     stringResource(R.string.typst_project)
                 ),
                 hasSwitch = true,
-                checked = preferencesUiState.autoPreviewOnTyping.second.value,
+                checked = preferencesUiState.autoPreviewRefresh.second.value,
                 onCheckedChange = {
                     coroutineScope.launch {
                         preferencesViewModel.setPreference(
-                            preferencesUiState.autoPreviewOnTyping
+                            preferencesUiState.autoPreviewRefresh
                                 .first, it
                         )
                     }

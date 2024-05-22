@@ -31,9 +31,9 @@ data class PreferencesUiState(
         mutableStateOf(true)
     ),
 
-    /** Automatically refresh the render of the preview on typing (can be slow on big documents)
+    /** Automatically refresh the render of the preview on typing and on project loading (can be slow on big documents)
      */
-    val autoPreviewOnTyping: Pair<Preferences.Key<Boolean>, MutableState<Boolean>> = Pair(
+    val autoPreviewRefresh: Pair<Preferences.Key<Boolean>, MutableState<Boolean>> = Pair(
         (booleanPreferencesKey("AUTO_PREVIEW_ON_TYPING")),
         mutableStateOf(true)
     ),

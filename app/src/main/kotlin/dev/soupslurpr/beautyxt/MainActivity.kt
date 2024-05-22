@@ -35,13 +35,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             val fileViewModel: FileViewModel = viewModel()
 
-            typstProjectViewModel = viewModel()
-
             val preferencesViewModel: PreferencesViewModel = viewModel(
                 factory = PreferencesViewModel.PreferencesViewModelFactory(dataStore)
             )
 
             val preferencesUiState by preferencesViewModel.uiState.collectAsState()
+
+            typstProjectViewModel = viewModel{
+                TypstProjectViewModel(
+                    application = application,
+                    preferencesViewModel = preferencesViewModel
+                )}
 
             val isActionViewOrEdit = (intent.action == Intent.ACTION_VIEW) or
                     (intent.action == Intent.ACTION_EDIT)

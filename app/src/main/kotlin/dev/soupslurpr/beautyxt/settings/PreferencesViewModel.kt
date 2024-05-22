@@ -64,10 +64,10 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
                                 .typstProjectShowWarningsAndErrors.second.value
                         )
                     ),
-                    autoPreviewOnTyping = Pair(
-                        uiState.value.autoPreviewOnTyping.first,
+                    autoPreviewRefresh = Pair(
+                        uiState.value.autoPreviewRefresh.first,
                         mutableStateOf(
-                            settings[uiState.value.autoPreviewOnTyping.first] ?: uiState.value.autoPreviewOnTyping
+                            settings[uiState.value.autoPreviewRefresh.first] ?: uiState.value.autoPreviewRefresh
                                 .second.value
                         )
                     ),
