@@ -5,12 +5,8 @@ Build, copy compiled files to correct places, and generate bindings to "..\app\s
 cargo build --lib --target aarch64-linux-android
 cargo build --lib --release --target aarch64-linux-android
 cargo build --lib --release --target x86_64-linux-android
-rm .\target\aarch64-linux-android\release\libbeautyxt_rs_typst_compressed.so
-rm .\target\x86_64-linux-android\release\libbeautyxt_rs_typst_compressed.so     
-upx --android-shlib .\target\aarch64-linux-android\release\libbeautyxt_rs_typst.so -o .\target\aarch64-linux-android\release\libbeautyxt_rs_typst_compressed.so --best --ultra-brute
-upx --android-shlib .\target\x86_64-linux-android\release\libbeautyxt_rs_typst.so -o .\target\x86_64-linux-android\release\libbeautyxt_rs_typst_compressed.so --best --ultra-brute
-copy .\target\aarch64-linux-android\release\libbeautyxt_rs_typst_compressed.so ..\app\src\main\jniLibs\arm64-v8a\libbeautyxt_rs_typst.so
-copy .\target\x86_64-linux-android\release\libbeautyxt_rs_typst_compressed.so ..\app\src\main\jniLibs\x86_64\libbeautyxt_rs_typst.so
+copy .\target\aarch64-linux-android\release\libbeautyxt_rs_typst.so ..\app\src\main\jniLibs\arm64-v8a\libbeautyxt_rs_typst.so
+copy .\target\x86_64-linux-android\release\libbeautyxt_rs_typst.so ..\app\src\main\jniLibs\x86_64\libbeautyxt_rs_typst.so
 cargo run --features uniffi/cli --bin uniffi-bindgen generate --library target/aarch64-linux-android/debug/libbeautyxt_rs_typst.so --language kotlin --out-dir "..\app\src\main\kotlin"
 
 Update rust library licensing info:

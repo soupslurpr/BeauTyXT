@@ -11,7 +11,7 @@ Check out the official website at https://beautyxt.app/ for more info and downlo
 ## Contributing
 
 Check [CONTRIBUTING.md](https://github.com/soupslurpr/BeauTyXT/blob/master/CONTRIBUTING.md) for things to know
-if you want to contribute.
+if you want to contribute. Also points to build instructions.
 
 ## Donation
 
