@@ -217,6 +217,15 @@ fun FileEditScreen(
                                             table, th, td {
                                                 border: thin solid;
                                             }
+                                            a:link {
+                                                color: ${colorScheme.primary.toCssColor()}
+                                            }
+                                            a:visited {
+                                                color: ${colorScheme.secondary.toCssColor()}
+                                            }
+                                            a:hover {
+                                                color: ${colorScheme.tertiary.toCssColor()}
+                                            }
                                         </style>
                                     </head>
                                     <body>
@@ -372,6 +381,15 @@ fun FileEditScreen(
                                             }
                                             table, th, td {
                                                 border: thin solid;
+                                            }
+                                            a:link {
+                                                color: ${colorScheme.primary.toCssColor()}
+                                            }
+                                            a:visited {
+                                                color: ${colorScheme.secondary.toCssColor()}
+                                            }
+                                            a:hover {
+                                                color: ${colorScheme.tertiary.toCssColor()}
                                             }
                                         </style>
                                     </head>
