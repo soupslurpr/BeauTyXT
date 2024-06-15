@@ -10,12 +10,12 @@ license-file = "./LICENSE.txt"
 docx-rs = "0"
 ego-tree = "0"
 libc = "0"
-markdown = "1.0.0-alpha.16"
+markdown = "1.0.0-alpha.17"
 scraper = "0"
 uniffi = "0"
 
 [build-dependencies]
-uniffi = "0"
+uniffi = { version = "0", features = ["build"] }
 
 [lib]
 crate-type = ["cdylib"]

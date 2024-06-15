@@ -18,17 +18,14 @@ package dev.soupslurpr.beautyxt.beautyxt_rs_plain_text_and_markdown_bindings
 // helpers directly inline like we're doing here.
 
 import com.sun.jna.Library
-import com.sun.jna.IntegerType
 import com.sun.jna.Native
 import com.sun.jna.Pointer
 import com.sun.jna.Structure
-import com.sun.jna.Callback
-import com.sun.jna.ptr.*
+import com.sun.jna.ptr.ByReference
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.ConcurrentHashMap
 
 // This is a helper for safely working with byte buffers returned from the Rust code.
@@ -196,7 +193,7 @@ interface FfiConverter<KotlinType, FfiType> {
 }
 
 // FfiConverter that uses `RustBuffer` as the FfiType
-interface FfiConverterRustBuffer<KotlinType>: FfiConverter<KotlinType, RustBuffer.ByValue> {
+interface FfiConverterRustBuffer<KotlinType> : FfiConverter<KotlinType, RustBuffer.ByValue> {
     override fun lift(value: RustBuffer.ByValue) = liftFromRustBuffer(value)
     override fun lower(value: KotlinType) = lowerIntoRustBuffer(value)
 }
@@ -248,7 +245,10 @@ interface UniffiRustCallStatusErrorHandler<E> {
 // synchronize itself
 
 // Call a rust function that returns a Result<>.  Pass in the Error class companion that corresponds to the Err
-private inline fun <U, E: Exception> uniffiRustCallWithError(errorHandler: UniffiRustCallStatusErrorHandler<E>, callback: (UniffiRustCallStatus) -> U): U {
+private inline fun <U, E : Exception> uniffiRustCallWithError(
+    errorHandler: UniffiRustCallStatusErrorHandler<E>,
+    callback: (UniffiRustCallStatus) -> U
+): U {
     var status = UniffiRustCallStatus()
     val return_value = callback(status)
     uniffiCheckCallStatus(errorHandler, status)
@@ -256,7 +256,10 @@ private inline fun <U, E: Exception> uniffiRustCallWithError(errorHandler: Uniff
 }
 
 // Check UniffiRustCallStatus and throw an error if the call wasn't successful
-private fun<E: Exception> uniffiCheckCallStatus(errorHandler: UniffiRustCallStatusErrorHandler<E>, status: UniffiRustCallStatus) {
+private fun <E : Exception> uniffiCheckCallStatus(
+    errorHandler: UniffiRustCallStatusErrorHandler<E>,
+    status: UniffiRustCallStatus
+) {
     if (status.isSuccess()) {
         return
     } else if (status.isError()) {
@@ -324,7 +327,7 @@ internal inline fun <T, reified E : Throwable> uniffiTraitInterfaceCallWithError
 // This is used pass an opaque 64-bit handle representing a foreign object to the Rust code.
 internal class UniffiHandleMap<T : Any> {
     private val map = ConcurrentHashMap<Long, T>()
-    private val counter = AtomicLong(0)
+    private val counter = java.util.concurrent.atomic.AtomicLong(0)
 
     val size: Int
         get() = map.size
@@ -365,18 +368,17 @@ private inline fun <reified Lib : Library> loadIndirect(
 }
 
 // Define FFI callback types
-internal interface UniffiRustFutureContinuationCallback : Callback {
+internal interface UniffiRustFutureContinuationCallback : com.sun.jna.Callback {
     fun callback(`data`: Long, `pollResult`: Byte)
 }
 
-internal interface UniffiForeignFutureFree : Callback {
+internal interface UniffiForeignFutureFree : com.sun.jna.Callback {
     fun callback(`handle`: Long)
 }
 
-internal interface UniffiCallbackInterfaceFree : Callback {
+internal interface UniffiCallbackInterfaceFree : com.sun.jna.Callback {
     fun callback(`handle`: Long)
 }
-
 @Structure.FieldOrder("handle", "free")
 internal open class UniffiForeignFuture(
     @JvmField internal var `handle`: Long = 0.toLong(),
@@ -393,7 +395,6 @@ internal open class UniffiForeignFuture(
     }
 
 }
-
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructU8(
     @JvmField internal var `returnValue`: Byte = 0.toByte(),
@@ -411,10 +412,9 @@ internal open class UniffiForeignFutureStructU8(
 
 }
 
-internal interface UniffiForeignFutureCompleteU8 : Callback {
+internal interface UniffiForeignFutureCompleteU8 : com.sun.jna.Callback {
     fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructU8.UniffiByValue)
 }
-
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructI8(
     @JvmField internal var `returnValue`: Byte = 0.toByte(),
@@ -432,10 +432,9 @@ internal open class UniffiForeignFutureStructI8(
 
 }
 
-internal interface UniffiForeignFutureCompleteI8 : Callback {
+internal interface UniffiForeignFutureCompleteI8 : com.sun.jna.Callback {
     fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructI8.UniffiByValue)
 }
-
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructU16(
     @JvmField internal var `returnValue`: Short = 0.toShort(),
@@ -453,10 +452,9 @@ internal open class UniffiForeignFutureStructU16(
 
 }
 
-internal interface UniffiForeignFutureCompleteU16 : Callback {
+internal interface UniffiForeignFutureCompleteU16 : com.sun.jna.Callback {
     fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructU16.UniffiByValue)
 }
-
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructI16(
     @JvmField internal var `returnValue`: Short = 0.toShort(),
@@ -474,10 +472,9 @@ internal open class UniffiForeignFutureStructI16(
 
 }
 
-internal interface UniffiForeignFutureCompleteI16 : Callback {
+internal interface UniffiForeignFutureCompleteI16 : com.sun.jna.Callback {
     fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructI16.UniffiByValue)
 }
-
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructU32(
     @JvmField internal var `returnValue`: Int = 0,
@@ -495,10 +492,9 @@ internal open class UniffiForeignFutureStructU32(
 
 }
 
-internal interface UniffiForeignFutureCompleteU32 : Callback {
+internal interface UniffiForeignFutureCompleteU32 : com.sun.jna.Callback {
     fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructU32.UniffiByValue)
 }
-
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructI32(
     @JvmField internal var `returnValue`: Int = 0,
@@ -516,10 +512,9 @@ internal open class UniffiForeignFutureStructI32(
 
 }
 
-internal interface UniffiForeignFutureCompleteI32 : Callback {
+internal interface UniffiForeignFutureCompleteI32 : com.sun.jna.Callback {
     fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructI32.UniffiByValue)
 }
-
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructU64(
     @JvmField internal var `returnValue`: Long = 0.toLong(),
@@ -537,10 +532,9 @@ internal open class UniffiForeignFutureStructU64(
 
 }
 
-internal interface UniffiForeignFutureCompleteU64 : Callback {
+internal interface UniffiForeignFutureCompleteU64 : com.sun.jna.Callback {
     fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructU64.UniffiByValue)
 }
-
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructI64(
     @JvmField internal var `returnValue`: Long = 0.toLong(),
@@ -558,10 +552,9 @@ internal open class UniffiForeignFutureStructI64(
 
 }
 
-internal interface UniffiForeignFutureCompleteI64 : Callback {
+internal interface UniffiForeignFutureCompleteI64 : com.sun.jna.Callback {
     fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructI64.UniffiByValue)
 }
-
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructF32(
     @JvmField internal var `returnValue`: Float = 0.0f,
@@ -579,10 +572,9 @@ internal open class UniffiForeignFutureStructF32(
 
 }
 
-internal interface UniffiForeignFutureCompleteF32 : Callback {
+internal interface UniffiForeignFutureCompleteF32 : com.sun.jna.Callback {
     fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructF32.UniffiByValue)
 }
-
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructF64(
     @JvmField internal var `returnValue`: Double = 0.0,
@@ -600,10 +592,9 @@ internal open class UniffiForeignFutureStructF64(
 
 }
 
-internal interface UniffiForeignFutureCompleteF64 : Callback {
+internal interface UniffiForeignFutureCompleteF64 : com.sun.jna.Callback {
     fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructF64.UniffiByValue)
 }
-
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructPointer(
     @JvmField internal var `returnValue`: Pointer = Pointer.NULL,
@@ -621,10 +612,9 @@ internal open class UniffiForeignFutureStructPointer(
 
 }
 
-internal interface UniffiForeignFutureCompletePointer : Callback {
+internal interface UniffiForeignFutureCompletePointer : com.sun.jna.Callback {
     fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructPointer.UniffiByValue)
 }
-
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructRustBuffer(
     @JvmField internal var `returnValue`: RustBuffer.ByValue = RustBuffer.ByValue(),
@@ -642,10 +632,9 @@ internal open class UniffiForeignFutureStructRustBuffer(
 
 }
 
-internal interface UniffiForeignFutureCompleteRustBuffer : Callback {
+internal interface UniffiForeignFutureCompleteRustBuffer : com.sun.jna.Callback {
     fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructRustBuffer.UniffiByValue)
 }
-
 @Structure.FieldOrder("callStatus")
 internal open class UniffiForeignFutureStructVoid(
     @JvmField internal var `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
@@ -660,7 +649,7 @@ internal open class UniffiForeignFutureStructVoid(
 
 }
 
-internal interface UniffiForeignFutureCompleteVoid : Callback {
+internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
     fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructVoid.UniffiByValue)
 }
 
@@ -1038,7 +1027,7 @@ inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
 /** Used to instantiate an interface without an actual pointer, for fakes in tests, mostly. */
 object NoPointer
 
-object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
+object FfiConverterString : FfiConverter<String, RustBuffer.ByValue> {
     // Note: we don't inherit from FfiConverterRustBuffer, because we use a
     // special encoding when lowering/lifting.  We can use `RustBuffer.len` to
     // store our length and avoid writing it out to the buffer.
@@ -1092,7 +1081,7 @@ object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     }
 }
 
-object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
+object FfiConverterByteArray : FfiConverterRustBuffer<ByteArray> {
     override fun read(buf: ByteBuffer): ByteArray {
         val len = buf.getInt()
         val byteArr = ByteArray(len)
@@ -1110,30 +1099,30 @@ object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
 
 fun `markdownToDocx`(`markdown`: String): ByteArray {
     return FfiConverterByteArray.lift(
-    uniffiRustCall { _status ->
-        UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_docx(
-            FfiConverterString.lower(`markdown`), _status
-        )
+        uniffiRustCall { _status ->
+            UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_docx(
+                FfiConverterString.lower(`markdown`), _status
+            )
 }
     )
 }
 
 fun `markdownToHtml`(`markdown`: String): String {
     return FfiConverterString.lift(
-    uniffiRustCall { _status ->
-        UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_html(
-            FfiConverterString.lower(`markdown`), _status
-        )
+        uniffiRustCall { _status ->
+            UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_markdown_to_html(
+                FfiConverterString.lower(`markdown`), _status
+            )
 }
     )
 }
 
 fun `plainTextToDocx`(`plainText`: String): ByteArray {
     return FfiConverterByteArray.lift(
-    uniffiRustCall { _status ->
-        UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_plain_text_to_docx(
-            FfiConverterString.lower(`plainText`), _status
-        )
+        uniffiRustCall { _status ->
+            UniffiLib.INSTANCE.uniffi_beautyxt_rs_plain_text_and_markdown_fn_func_plain_text_to_docx(
+                FfiConverterString.lower(`plainText`), _status
+            )
 }
     )
 }

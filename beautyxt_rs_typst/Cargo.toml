@@ -12,14 +12,14 @@ comemo = "0"
 libc = "0"
 once_cell = "1"
 thiserror = "1"
-typst = { git = "https://github.com/typst/typst", version = "0.11.0", rev = "2bf9f95dd83f2ceef1e32ae1847a162c7d193f76" }
-typst-pdf = { git = "https://github.com/typst/typst", version = "0.11.0", rev = "2bf9f95dd83f2ceef1e32ae1847a162c7d193f76" }
-typst-svg = { git = "https://github.com/typst/typst", version = "0.11.0", rev = "2bf9f95dd83f2ceef1e32ae1847a162c7d193f76" }
-typst-render = { git = "https://github.com/typst/typst", version = "0.11.0", rev = "2bf9f95dd83f2ceef1e32ae1847a162c7d193f76" }
+typst = { git = "https://github.com/typst/typst", version = "0.11.1", rev = "5011510270c2c23f0ab019af486b26db0d62261b" }
+typst-pdf = { git = "https://github.com/typst/typst", version = "0.11.1", rev = "5011510270c2c23f0ab019af486b26db0d62261b" }
+typst-svg = { git = "https://github.com/typst/typst", version = "0.11.1", rev = "5011510270c2c23f0ab019af486b26db0d62261b" }
+typst-render = { git = "https://github.com/typst/typst", version = "0.11.1", rev = "5011510270c2c23f0ab019af486b26db0d62261b" }
 uniffi = "0"
 
 [build-dependencies]
-uniffi = "0"
+uniffi = { version = "0", features = ["build"] }
 
 [lib]
 crate-type = ["cdylib"]
