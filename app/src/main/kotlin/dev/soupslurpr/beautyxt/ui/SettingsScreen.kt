@@ -105,6 +105,23 @@ fun SettingsScreen(
                     }
                 }
             )
+            SettingsItem(
+                name = stringResource(R.string.typst_project_auto_preview_setting_name),
+                description = stringResource(
+                    R.string.typst_project_auto_preview_setting_description,
+                    stringResource(R.string.typst_project)
+                ),
+                hasSwitch = true,
+                checked = preferencesUiState.autoPreviewRefresh.second.value,
+                onCheckedChange = {
+                    coroutineScope.launch {
+                        preferencesViewModel.setPreference(
+                            preferencesUiState.autoPreviewRefresh
+                                .first, it
+                        )
+                    }
+                }
+            )
         }
 
         Column {

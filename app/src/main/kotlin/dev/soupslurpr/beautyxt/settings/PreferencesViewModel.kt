@@ -64,6 +64,13 @@ class PreferencesViewModel(private val dataStore: DataStore<Preferences>) : View
                                 .typstProjectShowWarningsAndErrors.second.value
                         )
                     ),
+                    autoPreviewRefresh = Pair(
+                        uiState.value.autoPreviewRefresh.first,
+                        mutableStateOf(
+                            settings[uiState.value.autoPreviewRefresh.first] ?: uiState.value.autoPreviewRefresh
+                                .second.value
+                        )
+                    ),
                     experimentalFeaturePreviewRenderedMarkdownInFullscreen = Pair(
                         uiState.value.experimentalFeaturePreviewRenderedMarkdownInFullscreen.first,
                         mutableStateOf(

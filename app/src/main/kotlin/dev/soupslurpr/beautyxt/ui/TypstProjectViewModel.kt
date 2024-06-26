@@ -25,15 +25,20 @@ import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomSourceDiagn
 import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomTracepoint
 import dev.soupslurpr.beautyxt.data.TypstProjectUiState
 import dev.soupslurpr.beautyxt.returnHashSha256
+import dev.soupslurpr.beautyxt.settings.PreferencesViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.FileOutputStream
 
 private const val TAG = "TypstProjectViewModel"
 
-class TypstProjectViewModel(application: Application) : AndroidViewModel(application) {
+class TypstProjectViewModel(application: Application, val preferencesViewModel: PreferencesViewModel) : AndroidViewModel(application) {
 
     /**
      * File state for this file
@@ -43,11 +48,26 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
 
     var rustService: ITypstProjectViewModelRustLibraryAidlInterface? = null
 
+    val renderPreviewMutex = Mutex()
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            val rustService = ITypstProjectViewModelRustLibraryAidlInterface.Stub.asInterface(service)
+            var rustService = ITypstProjectViewModelRustLibraryAidlInterface.Stub.asInterface(service)
 
-            rustService.initializeTypstWorld()
+            try {
+                rustService?.initializeTypstWorld()
+            } catch (e: DeadObjectException) {
+                Log.w(
+                    TAG,
+                    "Failed to call initializeTypstWorld(), seems like the service" +
+                            " is dead $e"
+                )
+                // If service is dead, we try to kill and restart it
+                stopAndUnbindService()
+                rustService = ITypstProjectViewModelRustLibraryAidlInterface.Stub.asInterface(service)
+                rustService!!.initializeTypstWorld()
+                bindService(_uiState.value.projectFolderUri.value)
+            }
 
             this@TypstProjectViewModel.rustService = rustService
 
@@ -173,7 +193,10 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
                 rustService!!.addTypstProjectFiles(files)
             }
 
-            renderProjectToSvgs(rustService!!)
+            // Refresh the preview render on project loading, but only if the user has enabled it
+            if (preferencesViewModel.uiState.value.autoPreviewRefresh.second.value) {
+                renderProjectToSvgs(rustService!!)
+            }
         }
     }
 
@@ -197,87 +220,93 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
 
     fun renderProjectToSvgs(rustService: ITypstProjectViewModelRustLibraryAidlInterface) {
         viewModelScope.launch {
-            var noException = true
+            renderPreviewMutex.withLock {  // ensure the withContext() background thread is not called repetitively (eg, autorefresh preview on typing), otherwise it will crash the whole app
+                var noException = true
 
-            val bundle = rustService.getTypstSvg()
+                withContext(Dispatchers.IO) {  // Offload to a background thread because the computation for big documents can be heavy and freeze the whole UI
+                    val bundle = rustService.getTypstSvg()
 
-            val svg = bundle.getByteArray("svg")
+                    val svg = bundle.getByteArray("svg")
 
-            if (svg != null) {
-                _uiState.value.renderedProjectSvg.value = svg
-            } else {
-                var sourceDiagnostics: MutableList<TypstCustomSourceDiagnostic> = mutableStateListOf()
-
-                var index = 0
-                while (true) {
-                    val severity = bundle.getString("severity$index")
-                    val span = if (bundle.containsKey("span$index")) {
-                        bundle.getLong("span$index")
+                    if (svg != null) {
+                        _uiState.value.renderedProjectSvg.value = svg
                     } else {
-                        null
-                    }
-                    val message = bundle.getString("message$index")
-                    val trace = bundle.getInt("trace$index")
+                        var sourceDiagnostics: MutableList<TypstCustomSourceDiagnostic> =
+                            mutableStateListOf()
 
-                    val sourceDiagnostic = TypstCustomSourceDiagnostic(
-                        severity = when (severity) {
-                            "WARNING" -> TypstCustomSeverity.WARNING
-                            "ERROR" -> TypstCustomSeverity.ERROR
-                            else -> break
-                        },
-                        span = when (span) {
-                            null -> break
-                            else -> span.toULong()
-                        },
-                        message = when (message) {
-                            null -> break
-                            else -> message
-                        },
-                        trace = if (trace >= 0) {
-                            val traceList: MutableList<TypstCustomTracepoint> = mutableListOf()
-                            trace.downTo(0).reversed().forEach { traceIndex ->
-                                val prefix = "trace${index}name${traceIndex}"
-                                traceList.add(
-                                    when (bundle.getString(prefix)) {
-                                        "Call" -> TypstCustomTracepoint.Call(
-                                            string = bundle.getString("${prefix}string"),
-                                            span = bundle.getLong("${prefix}span").toULong(),
-                                        )
-
-                                        "Import" -> TypstCustomTracepoint.Import(
-                                            bundle.getLong("${prefix}span").toULong()
-                                        )
-
-                                        "Show" -> TypstCustomTracepoint.Show(
-                                            bundle.getString("${prefix}string") ?: return@forEach,
-                                            bundle.getLong("${prefix}span").toULong()
-                                        )
-
-                                        null -> return@forEach
-                                        else -> return@forEach
-                                    }
-                                )
+                        var index = 0
+                        while (true) {
+                            val severity = bundle.getString("severity$index")
+                            val span = if (bundle.containsKey("span$index")) {
+                                bundle.getLong("span$index")
+                            } else {
+                                null
                             }
-                            traceList
-                        } else {
-                            listOf()
-                        },
-                        hints = bundle.getStringArrayList("hints$index").let {
-                            it ?: ArrayList()
-                        }
-                    )
-                    sourceDiagnostics.add(sourceDiagnostic)
+                            val message = bundle.getString("message$index")
+                            val trace = bundle.getInt("trace$index")
 
-                    index += 1
+                            val sourceDiagnostic = TypstCustomSourceDiagnostic(
+                                severity = when (severity) {
+                                    "WARNING" -> TypstCustomSeverity.WARNING
+                                    "ERROR" -> TypstCustomSeverity.ERROR
+                                    else -> break
+                                },
+                                span = when (span) {
+                                    null -> break
+                                    else -> span.toULong()
+                                },
+                                message = when (message) {
+                                    null -> break
+                                    else -> message
+                                },
+                                trace = if (trace >= 0) {
+                                    val traceList: MutableList<TypstCustomTracepoint> = mutableListOf()
+                                    trace.downTo(0).reversed().forEach { traceIndex ->
+                                        val prefix = "trace${index}name${traceIndex}"
+                                        traceList.add(
+                                            when (bundle.getString(prefix)) {
+                                                "Call" -> TypstCustomTracepoint.Call(
+                                                    string = bundle.getString("${prefix}string"),
+                                                    span = bundle.getLong("${prefix}span").toULong(),
+                                                )
+
+                                                "Import" -> TypstCustomTracepoint.Import(
+                                                    bundle.getLong("${prefix}span").toULong()
+                                                )
+
+                                                "Show" -> TypstCustomTracepoint.Show(
+                                                    bundle.getString("${prefix}string")
+                                                        ?: return@forEach,
+                                                    bundle.getLong("${prefix}span").toULong()
+                                                )
+
+                                                null -> return@forEach
+                                                else -> return@forEach
+                                            }
+                                        )
+                                    }
+                                    traceList
+                                } else {
+                                    listOf()
+                                },
+                                hints = bundle.getStringArrayList("hints$index").let {
+                                    it ?: ArrayList()
+                                }
+                            )
+                            sourceDiagnostics.add(sourceDiagnostic)
+
+                            index += 1
+                        }
+
+                        _uiState.value.sourceDiagnostics.clear()
+                        _uiState.value.sourceDiagnostics.addAll(sourceDiagnostics)
+                        noException = false
+                    }
                 }
 
-                _uiState.value.sourceDiagnostics.clear()
-                _uiState.value.sourceDiagnostics.addAll(sourceDiagnostics)
-                noException = false
-            }
-
-            if (noException) {
-                _uiState.value.sourceDiagnostics.clear()
+                if (noException) {
+                    _uiState.value.sourceDiagnostics.clear()
+                }
             }
         }
     }

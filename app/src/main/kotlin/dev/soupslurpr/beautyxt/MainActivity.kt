@@ -20,10 +20,14 @@ import dev.soupslurpr.beautyxt.ui.FileViewModel
 import dev.soupslurpr.beautyxt.ui.ReviewPrivacyPolicyAndLicense
 import dev.soupslurpr.beautyxt.ui.TypstProjectViewModel
 import dev.soupslurpr.beautyxt.ui.theme.BeauTyXTTheme
+import com.anggrayudi.storage.SimpleStorageHelper
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 class MainActivity : ComponentActivity() {
+    val storageHelper = SimpleStorageHelper(this) // for scoped storage permission management on Android 10+
+    private var typstProjectViewModel: TypstProjectViewModel? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -31,13 +35,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             val fileViewModel: FileViewModel = viewModel()
 
-            val typstProjectViewModel: TypstProjectViewModel = viewModel()
-
             val preferencesViewModel: PreferencesViewModel = viewModel(
                 factory = PreferencesViewModel.PreferencesViewModelFactory(dataStore)
             )
 
             val preferencesUiState by preferencesViewModel.uiState.collectAsState()
+
+            typstProjectViewModel = viewModel{
+                TypstProjectViewModel(
+                    application = application,
+                    preferencesViewModel = preferencesViewModel
+                )}
 
             val isActionViewOrEdit = (intent.action == Intent.ACTION_VIEW) or
                     (intent.action == Intent.ACTION_EDIT)
@@ -88,9 +96,10 @@ class MainActivity : ComponentActivity() {
                     ReviewPrivacyPolicyAndLicense(preferencesViewModel = preferencesViewModel)
                 } else if (preferencesUiState.acceptedPrivacyPolicyAndLicense.second.value) {
                     BeauTyXTApp(
+                        activity = this@MainActivity, // provide the parent, MainActivity
                         modifier = Modifier,
                         fileViewModel = fileViewModel,
-                        typstProjectViewModel = typstProjectViewModel,
+                        typstProjectViewModel = typstProjectViewModel!!,
                         preferencesViewModel = preferencesViewModel,
                         isActionViewOrEdit = isActionViewOrEdit,
                         isActionSend = isActionSend,
@@ -98,5 +107,48 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // When app regains focus, refresh the project and especially the text content (if project is already opened)
+
+        // Beware, the app will regain focus after each steps of SAF permission requests, so there is an intermediate state
+        // where the app regains focus but the user has not yet granted the permission
+
+        typstProjectViewModel?.uiState?.value?.currentOpenedPath?.value.let {
+            if (!it.isNullOrEmpty()) {
+                // Refresh project files
+                typstProjectViewModel?.refreshProjectFiles(this)
+                // Refresh the content of the text editor
+                typstProjectViewModel?.setTypstProjectFileText(it)
+            }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        // Save scoped storage permission on Android 10+
+        storageHelper.onSaveInstanceState(outState)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        // Restore scoped storage permission on Android 10+
+        super.onRestoreInstanceState(savedInstanceState)
+        storageHelper.onRestoreInstanceState(savedInstanceState)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        // Mandatory for direct subclasses of android.app.Activity,
+        // but not for subclasses of androidx.fragment.app.Fragment, androidx.activity.ComponentActivity, androidx.appcompat.app.AppCompatActivity
+        storageHelper.storage.onActivityResult(requestCode, resultCode, data)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        // Restore scoped storage permission on Android 10+
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        // Mandatory for Activity, but not for Fragment & ComponentActivity
+        storageHelper.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 }
