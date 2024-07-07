@@ -10,6 +10,8 @@ If you need help with development or have questions it's recommended to join the
 https://matrix.to/#/#beautyxt:matrix.org and ask for help there from [soupslurpr](https://github.com/soupslurpr),
 the lead developer.
 
+As of now, translations are not accepted.
+
 Here are some things to know so that your time isn't potentially wasted.
 BeauTyXT depends on a Rust library that you must compile or the app will crash on most operations. The source code
 for the Rust library can be found at the beautyxt_rs folder. Look at useful-commands.txt for useful commands and
