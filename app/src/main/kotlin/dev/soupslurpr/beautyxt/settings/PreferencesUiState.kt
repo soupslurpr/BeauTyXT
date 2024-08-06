@@ -31,6 +31,13 @@ data class PreferencesUiState(
         mutableStateOf(true)
     ),
 
+    /** Automatically refresh the render of the preview on typing and on project loading (can be slow on big documents)
+     */
+    val autoPreviewRefresh: Pair<Preferences.Key<Boolean>, MutableState<Boolean>> = Pair(
+        (booleanPreferencesKey("AUTO_PREVIEW_ON_TYPING")),
+        mutableStateOf(true)
+    ),
+
     /** Experimental feature that shows a button when a markdown file is open which will toggle
      * a fullscreen view of the rendered markdown preview.
      */

@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.print.PrintAttributes
 import android.print.PrintManager
+import android.util.Log
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -71,6 +73,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.anggrayudi.storage.file.DocumentFileCompat
+import com.anggrayudi.storage.file.FileFullPath
+import com.anggrayudi.storage.file.StorageId
+import com.anggrayudi.storage.file.getAbsolutePath
 import dev.soupslurpr.beautyxt.constants.mimeTypeDocx
 import dev.soupslurpr.beautyxt.constants.mimeTypeHtml
 import dev.soupslurpr.beautyxt.constants.mimeTypeMarkdown
@@ -161,6 +167,7 @@ fun BeauTyXTAppBar(
     deleteFileDialogConfirmButton: @Composable () -> Unit,
     deleteFileDialogDismissButton: @Composable () -> Unit,
 
+    onTypstProjectRefreshButtonClicked: () -> Unit,
     onTypstProjectOpenAnotherFileInTheProjectButtonClicked: () -> Unit,
     onTypstProjectCreateAndOpenAnotherFileInTheProjectButtonClicked: () -> Unit,
 
@@ -219,6 +226,15 @@ fun BeauTyXTAppBar(
                             }
                         )
                     }
+                    IconButton(
+                        onClick = onTypstProjectRefreshButtonClicked,
+                        content = {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = stringResource(R.string.refresh)
+                            )
+                        }
+                    )
                     IconButton(
                         onClick = onTypstProjectCreateAndOpenAnotherFileInTheProjectButtonClicked,
                         content = {
@@ -493,6 +509,7 @@ fun FileTypeSelectionDialogItem(
 
 @Composable
 fun BeauTyXTApp(
+    activity: MainActivity,
     modifier: Modifier,
     fileViewModel: FileViewModel,
     typstProjectViewModel: TypstProjectViewModel,
@@ -559,16 +576,6 @@ fun BeauTyXTApp(
         }
     }
 
-    val openTypstProjectLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts
-            .OpenDocumentTree()
-    ) { projectFolderUri ->
-        if (projectFolderUri != null) {
-            typstProjectViewModel.bindService(projectFolderUri)
-            navController.navigate(BeauTyXTScreens.TypstProject.name)
-        }
-    }
-
     val createTypstProjectLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts
             .OpenDocumentTree()
@@ -621,6 +628,7 @@ fun BeauTyXTApp(
                 ()
     ) {
         if (it != null) {
+            Log.d("BeauTyXT", "setTypstCurrentOpenedPathLauncher: $it")
             typstProjectViewModel.refreshProjectFiles(context)
             typstProjectViewModel.setCurrentOpenedPath(it, context.contentResolver)
             typstProjectViewModel.setTypstProjectFileText(
@@ -1274,6 +1282,12 @@ ${
                     )
                 },
 
+                onTypstProjectRefreshButtonClicked = {
+                    // Refresh the Typst project files
+                    typstProjectViewModel.refreshProjectFiles(context)
+                    // Refresh the preview (SVG rendering)
+                    typstProjectViewModel.renderProjectToSvgs(typstProjectViewModel.rustService!!)
+                },
                 onTypstProjectOpenAnotherFileInTheProjectButtonClicked = {
                     setTypstCurrentOpenedPathLauncher.launch(arrayOf("*/*"))
                 },
@@ -1331,7 +1345,68 @@ ${
                         )
                     },
                     onOpenTypstProjectButtonClicked = {
-                        openTypstProjectLauncher.launch(Uri.EMPTY)
+                        // Getting access to a folder using SAF (Storage Access Framework)
+                        // requires 3 different steps:
+                        // 1. Requesting access to the storage root folder
+                        // 2. Opening the folder picker to select the Typst project folder
+                        // 3. Requesting write access to the Typst project folder and using this
+                        // access to launch the Rust service
+                        //
+                        // Due to how this works (with callbacks), these steps are defined below
+                        // in reverse order.
+
+                        // Third step
+                        activity.storageHelper.onFolderSelected =
+                            { _, projectFolder -> // could also use simpleStorageHelper.onStorageAccessGranted()
+                                // Third step, after the user granted access to storage root AND
+                                // selected the Typst project folder, we now request write access
+                                // and launch the Rust service
+                                Log.d("APP", "Callback Success Folder Pick! Now requesting " +
+                                        "permission from" +
+                                        " OS and launch the Rust service...")
+                                // Get absolute path to folder
+                                val fpath = projectFolder.getAbsolutePath(activity)
+                                // Request write access to the folder using DocumentFileCompat (this
+                                // is the magic sauce to avoid crashing upon opening an already existing folder, and
+                                // yes it is counter-intuitive that we use an object called
+                                // DocumentFileCompat to request write access on a folder)
+                                val folder = DocumentFileCompat.fromFullPath(activity,
+                                    fpath,
+                                    requiresWriteAccess = true)
+                                // We can create any file with the following method
+                                //val file = folder?.makeFile(activity, "notes", "text/plain")
+                                typstProjectViewModel.bindService(projectFolder.uri)
+                                navController.navigate(BeauTyXTScreens.TypstProject.name)
+                            }
+
+                        // Second step
+                        activity.storageHelper.onStorageAccessGranted =
+                            { requestCode, root ->
+                                // Secondly, after the user granted access to the storage root
+                                // folder, we can now open the folder picker to select where is
+                                // the Typst project
+                                activity.storageHelper.openFolderPicker(
+                                    initialPath = FileFullPath(
+                                        activity,
+                                        StorageId.PRIMARY,
+                                        "Download"
+                                    )
+                                )
+                            }
+                        
+                        // First step, ask user to get Storage Access permission (this replaces the
+                        // READ_STORAGE_PERMISSION of older Android versions)
+                        // TODO: This step is likely only necessary for Android 10 exactly (before there was no SAF, and later there is no difference between this call and folderpicker) - but I cannot test in an emulator right now so I prefer to make this step unconditional
+                        Log.d("APP", "Ask user to get Storage Access permission")
+                        activity.storageHelper.requestStorageAccess()
+                        // Note that normally storageHelper.openFolderPicker should call
+                        // requestStorageAccess() when necessary, but in the case of
+                        // this app, for some reason it fails to do that sometimes,
+                        // and this results in a crash because of silent denied access.
+                        // So that's why we have an explicit call here.
+                        // Otherwise, if only openFolderPicker() is called, it will work at
+                        // first, but then after a while the OS will remove the storage permission silently and the app will restart
+                        // crashing, one big sign is that the app stops asking for storage root access permission
                     },
                     onOpenAnyButtonClicked = {
                         openFileLauncher.launch(
