@@ -40,9 +40,6 @@ android {
         aidl = true
         buildConfig = true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
-    }
     bundle {
         language {
             /** Disable splits for language for now since Accrescent does not support automatically
