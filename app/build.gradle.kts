@@ -76,21 +76,6 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
-    bundle {
-        language {
-            /** Disable splits for language for now since Accrescent does not support automatically
-             * fetching language splits when language is changed and instead needs a reinstall of the app.
-             * Remove once Accrescent gets support.
-             */
-            enableSplit = false
-        }
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    ndkVersion = "27.0.11902837"
-    buildToolsVersion = "34.0.0"
 }
 
 dependencies {
@@ -98,18 +83,19 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("io.coil-kt:coil:2.6.0")
-    implementation("io.coil-kt:coil-compose:2.6.0")
-    implementation("io.coil-kt:coil-svg:2.6.0")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material:material")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material")
+    debugImplementation("androidx.compose.ui:ui-tooling")
 
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("com.google.android.material:material:1.12.0")
     implementation("net.java.dev.jna:jna:5.14.0@aar")
+    implementation("io.coil-kt:coil:2.6.0")
+    implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("io.coil-kt:coil-svg:2.6.0")
 }
