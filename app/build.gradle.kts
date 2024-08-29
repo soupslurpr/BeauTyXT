@@ -64,7 +64,7 @@ android {
                 "proguard-rules.pro"
             )
         }
-        getByName("debug") {
+        debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             signingConfig = signingConfigs.getByName("debug")
