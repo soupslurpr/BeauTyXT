@@ -93,7 +93,7 @@ dependencies {
 
     implementation("com.google.android.material:material:1.12.0")
     implementation("net.java.dev.jna:jna:5.14.0@aar")
-    implementation("io.coil-kt:coil:2.6.0")
-    implementation("io.coil-kt:coil-compose:2.6.0")
-    implementation("io.coil-kt:coil-svg:2.6.0")
+    implementation("io.coil-kt:coil:2.7.0")
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("io.coil-kt:coil-svg:2.7.0")
 }
