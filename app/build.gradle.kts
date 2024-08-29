@@ -23,12 +23,18 @@ android {
         }
 
         ndk {
-            abiFilters.addAll(setOf("arm64-v8a", "x86_64"))
             abiFilters.clear()
             abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
         }
     }
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
     buildFeatures {
         compose = true
         aidl = true
@@ -36,9 +42,13 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
     }
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    bundle {
+        language {
+            /** Disable splits for language for now since Accrescent does not support automatically
+             * fetching language splits when language is changed and instead needs a reinstall of the app.
+             * Remove once Accrescent gets support.
+             */
+            enableSplit = false
         }
     }
     androidResources {
