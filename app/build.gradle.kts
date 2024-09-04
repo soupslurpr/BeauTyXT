@@ -8,7 +8,9 @@ plugins {
 android {
     namespace = "dev.soupslurpr.beautyxt"
     compileSdk = 34
-    buildToolsVersion = "35.0.0"
+    // Temporarily use 34.0.0 until upstream issue is resolved.
+    // reference: https://issuetracker.google.com/u/1/issues/363034679
+    buildToolsVersion = "34.0.0"
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
