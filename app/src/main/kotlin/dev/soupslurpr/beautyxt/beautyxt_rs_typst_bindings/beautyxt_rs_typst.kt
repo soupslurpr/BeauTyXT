@@ -18,14 +18,17 @@ package dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings
 // helpers directly inline like we're doing here.
 
 import com.sun.jna.Library
+import com.sun.jna.IntegerType
 import com.sun.jna.Native
 import com.sun.jna.Pointer
 import com.sun.jna.Structure
+import com.sun.jna.Callback
 import com.sun.jna.ptr.*
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.CharBuffer
 import java.nio.charset.CodingErrorAction
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.ConcurrentHashMap
 
 // This is a helper for safely working with byte buffers returned from the Rust code.
@@ -36,23 +39,21 @@ import java.util.concurrent.ConcurrentHashMap
 open class RustBuffer : Structure() {
     // Note: `capacity` and `len` are actually `ULong` values, but JVM only supports signed values.
     // When dealing with these fields, make sure to call `toULong()`.
-    @JvmField
-    var capacity: Long = 0
-    @JvmField
-    var len: Long = 0
+    @JvmField var capacity: Long = 0
+    @JvmField var len: Long = 0
     @JvmField var data: Pointer? = null
 
     class ByValue: RustBuffer(), Structure.ByValue
     class ByReference: RustBuffer(), Structure.ByReference
 
-    internal fun setValue(other: RustBuffer) {
+   internal fun setValue(other: RustBuffer) {
         capacity = other.capacity
         len = other.len
         data = other.data
     }
 
     companion object {
-        internal fun alloc(size: ULong = 0UL) = uniffiRustCall { status ->
+        internal fun alloc(size: ULong = 0UL) = uniffiRustCall() { status ->
             // Note: need to convert the size to a `Long` value to make this work with JVM.
             UniffiLib.INSTANCE.ffi_beautyxt_rs_typst_rustbuffer_alloc(size.toLong(), status)
         }.also {
@@ -61,15 +62,15 @@ open class RustBuffer : Structure() {
            }
         }
 
-        internal fun create(capacity: ULong, len: ULong, data: Pointer?): ByValue {
-            var buf = ByValue()
+        internal fun create(capacity: ULong, len: ULong, data: Pointer?): RustBuffer.ByValue {
+            var buf = RustBuffer.ByValue()
             buf.capacity = capacity.toLong()
             buf.len = len.toLong()
             buf.data = data
             return buf
         }
 
-        internal fun free(buf: ByValue) = uniffiRustCall { status ->
+        internal fun free(buf: RustBuffer.ByValue) = uniffiRustCall() { status ->
             UniffiLib.INSTANCE.ffi_beautyxt_rs_typst_rustbuffer_free(buf, status)
         }
     }
@@ -93,7 +94,7 @@ class RustBufferByReference : ByReference(16) {
      */
     fun setValue(value: RustBuffer.ByValue) {
         // NOTE: The offsets are as they are in the C-like struct.
-        val pointer = pointer
+        val pointer = getPointer()
         pointer.setLong(0, value.capacity)
         pointer.setLong(8, value.len)
         pointer.setPointer(16, value.data)
@@ -103,7 +104,7 @@ class RustBufferByReference : ByReference(16) {
      * Get a `RustBuffer.ByValue` from this reference.
      */
     fun getValue(): RustBuffer.ByValue {
-        val pointer = pointer
+        val pointer = getPointer()
         val value = RustBuffer.ByValue()
         value.writeField("capacity", pointer.getLong(0))
         value.writeField("len", pointer.getLong(8))
@@ -130,7 +131,7 @@ open class ForeignBytes : Structure() {
 //
 // All implementing objects should be public to support external types.  When a
 // type is external we need to import it's FfiConverter.
-interface FfiConverter<KotlinType, FfiType> {
+public interface FfiConverter<KotlinType, FfiType> {
     // Convert an FFI type to a Kotlin type
     fun lift(value: FfiType): KotlinType
 
@@ -193,7 +194,7 @@ interface FfiConverter<KotlinType, FfiType> {
 }
 
 // FfiConverter that uses `RustBuffer` as the FfiType
-interface FfiConverterRustBuffer<KotlinType> : FfiConverter<KotlinType, RustBuffer.ByValue> {
+public interface FfiConverterRustBuffer<KotlinType>: FfiConverter<KotlinType, RustBuffer.ByValue> {
     override fun lift(value: RustBuffer.ByValue) = liftFromRustBuffer(value)
     override fun lower(value: KotlinType) = lowerIntoRustBuffer(value)
 }
@@ -224,8 +225,8 @@ internal open class UniffiRustCallStatus : Structure() {
     }
 
     companion object {
-        fun create(code: Byte, errorBuf: RustBuffer.ByValue): ByValue {
-            val callStatus = ByValue()
+        fun create(code: Byte, errorBuf: RustBuffer.ByValue): UniffiRustCallStatus.ByValue {
+            val callStatus = UniffiRustCallStatus.ByValue()
             callStatus.code = code
             callStatus.error_buf = errorBuf
             return callStatus
@@ -233,11 +234,11 @@ internal open class UniffiRustCallStatus : Structure() {
     }
 }
 
-class InternalException(message: String) : Exception(message)
+class InternalException(message: String) : kotlin.Exception(message)
 
 // Each top-level error class has a companion object that can lift the error from the call status's rust buffer
 interface UniffiRustCallStatusErrorHandler<E> {
-    fun lift(error_buf: RustBuffer.ByValue): E
+    fun lift(error_buf: RustBuffer.ByValue): E;
 }
 
 // Helpers for calling Rust
@@ -245,10 +246,7 @@ interface UniffiRustCallStatusErrorHandler<E> {
 // synchronize itself
 
 // Call a rust function that returns a Result<>.  Pass in the Error class companion that corresponds to the Err
-private inline fun <U, E : Exception> uniffiRustCallWithError(
-    errorHandler: UniffiRustCallStatusErrorHandler<E>,
-    callback: (UniffiRustCallStatus) -> U
-): U {
+private inline fun <U, E: kotlin.Exception> uniffiRustCallWithError(errorHandler: UniffiRustCallStatusErrorHandler<E>, callback: (UniffiRustCallStatus) -> U): U {
     var status = UniffiRustCallStatus()
     val return_value = callback(status)
     uniffiCheckCallStatus(errorHandler, status)
@@ -256,10 +254,7 @@ private inline fun <U, E : Exception> uniffiRustCallWithError(
 }
 
 // Check UniffiRustCallStatus and throw an error if the call wasn't successful
-private fun <E : Exception> uniffiCheckCallStatus(
-    errorHandler: UniffiRustCallStatusErrorHandler<E>,
-    status: UniffiRustCallStatus
-) {
+private fun<E: kotlin.Exception> uniffiCheckCallStatus(errorHandler: UniffiRustCallStatusErrorHandler<E>, status: UniffiRustCallStatus) {
     if (status.isSuccess()) {
         return
     } else if (status.isError()) {
@@ -291,20 +286,20 @@ private inline fun <U> uniffiRustCall(callback: (UniffiRustCallStatus) -> U): U 
     return uniffiRustCallWithError(UniffiNullRustCallStatusErrorHandler, callback)
 }
 
-internal inline fun <T> uniffiTraitInterfaceCall(
+internal inline fun<T> uniffiTraitInterfaceCall(
     callStatus: UniffiRustCallStatus,
     makeCall: () -> T,
     writeReturn: (T) -> Unit,
 ) {
     try {
         writeReturn(makeCall())
-    } catch (e: Exception) {
+    } catch(e: kotlin.Exception) {
         callStatus.code = UNIFFI_CALL_UNEXPECTED_ERROR
         callStatus.error_buf = FfiConverterString.lower(e.toString())
     }
 }
 
-internal inline fun <T, reified E : Throwable> uniffiTraitInterfaceCallWithError(
+internal inline fun<T, reified E: Throwable> uniffiTraitInterfaceCallWithError(
     callStatus: UniffiRustCallStatus,
     makeCall: () -> T,
     writeReturn: (T) -> Unit,
@@ -312,7 +307,7 @@ internal inline fun <T, reified E : Throwable> uniffiTraitInterfaceCallWithError
 ) {
     try {
         writeReturn(makeCall())
-    } catch (e: Exception) {
+    } catch(e: kotlin.Exception) {
         if (e is E) {
             callStatus.code = UNIFFI_CALL_ERROR
             callStatus.error_buf = lowerError(e)
@@ -325,7 +320,7 @@ internal inline fun <T, reified E : Throwable> uniffiTraitInterfaceCallWithError
 // Map handles to objects
 //
 // This is used pass an opaque 64-bit handle representing a foreign object to the Rust code.
-internal class UniffiHandleMap<T : Any> {
+internal class UniffiHandleMap<T: Any> {
     private val map = ConcurrentHashMap<Long, T>()
     private val counter = java.util.concurrent.atomic.AtomicLong(0)
 
@@ -369,15 +364,13 @@ private inline fun <reified Lib : Library> loadIndirect(
 
 // Define FFI callback types
 internal interface UniffiRustFutureContinuationCallback : com.sun.jna.Callback {
-    fun callback(`data`: Long, `pollResult`: Byte)
+    fun callback(`data`: Long,`pollResult`: Byte,)
 }
-
 internal interface UniffiForeignFutureFree : com.sun.jna.Callback {
-    fun callback(`handle`: Long)
+    fun callback(`handle`: Long,)
 }
-
 internal interface UniffiCallbackInterfaceFree : com.sun.jna.Callback {
-    fun callback(`handle`: Long)
+    fun callback(`handle`: Long,)
 }
 @Structure.FieldOrder("handle", "free")
 internal open class UniffiForeignFuture(
@@ -387,9 +380,9 @@ internal open class UniffiForeignFuture(
     class UniffiByValue(
         `handle`: Long = 0.toLong(),
         `free`: UniffiForeignFutureFree? = null,
-    ) : UniffiForeignFuture(`handle`, `free`), ByValue
+    ): UniffiForeignFuture(`handle`,`free`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFuture) {
+   internal fun uniffiSetValue(other: UniffiForeignFuture) {
         `handle` = other.`handle`
         `free` = other.`free`
     }
@@ -403,17 +396,16 @@ internal open class UniffiForeignFutureStructU8(
     class UniffiByValue(
         `returnValue`: Byte = 0.toByte(),
         `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
-    ) : UniffiForeignFutureStructU8(`returnValue`, `callStatus`), ByValue
+    ): UniffiForeignFutureStructU8(`returnValue`,`callStatus`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFutureStructU8) {
+   internal fun uniffiSetValue(other: UniffiForeignFutureStructU8) {
         `returnValue` = other.`returnValue`
         `callStatus` = other.`callStatus`
     }
 
 }
-
 internal interface UniffiForeignFutureCompleteU8 : com.sun.jna.Callback {
-    fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructU8.UniffiByValue)
+    fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructU8.UniffiByValue,)
 }
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructI8(
@@ -423,17 +415,16 @@ internal open class UniffiForeignFutureStructI8(
     class UniffiByValue(
         `returnValue`: Byte = 0.toByte(),
         `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
-    ) : UniffiForeignFutureStructI8(`returnValue`, `callStatus`), ByValue
+    ): UniffiForeignFutureStructI8(`returnValue`,`callStatus`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFutureStructI8) {
+   internal fun uniffiSetValue(other: UniffiForeignFutureStructI8) {
         `returnValue` = other.`returnValue`
         `callStatus` = other.`callStatus`
     }
 
 }
-
 internal interface UniffiForeignFutureCompleteI8 : com.sun.jna.Callback {
-    fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructI8.UniffiByValue)
+    fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructI8.UniffiByValue,)
 }
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructU16(
@@ -443,17 +434,16 @@ internal open class UniffiForeignFutureStructU16(
     class UniffiByValue(
         `returnValue`: Short = 0.toShort(),
         `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
-    ) : UniffiForeignFutureStructU16(`returnValue`, `callStatus`), ByValue
+    ): UniffiForeignFutureStructU16(`returnValue`,`callStatus`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFutureStructU16) {
+   internal fun uniffiSetValue(other: UniffiForeignFutureStructU16) {
         `returnValue` = other.`returnValue`
         `callStatus` = other.`callStatus`
     }
 
 }
-
 internal interface UniffiForeignFutureCompleteU16 : com.sun.jna.Callback {
-    fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructU16.UniffiByValue)
+    fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructU16.UniffiByValue,)
 }
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructI16(
@@ -463,17 +453,16 @@ internal open class UniffiForeignFutureStructI16(
     class UniffiByValue(
         `returnValue`: Short = 0.toShort(),
         `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
-    ) : UniffiForeignFutureStructI16(`returnValue`, `callStatus`), ByValue
+    ): UniffiForeignFutureStructI16(`returnValue`,`callStatus`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFutureStructI16) {
+   internal fun uniffiSetValue(other: UniffiForeignFutureStructI16) {
         `returnValue` = other.`returnValue`
         `callStatus` = other.`callStatus`
     }
 
 }
-
 internal interface UniffiForeignFutureCompleteI16 : com.sun.jna.Callback {
-    fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructI16.UniffiByValue)
+    fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructI16.UniffiByValue,)
 }
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructU32(
@@ -483,17 +472,16 @@ internal open class UniffiForeignFutureStructU32(
     class UniffiByValue(
         `returnValue`: Int = 0,
         `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
-    ) : UniffiForeignFutureStructU32(`returnValue`, `callStatus`), ByValue
+    ): UniffiForeignFutureStructU32(`returnValue`,`callStatus`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFutureStructU32) {
+   internal fun uniffiSetValue(other: UniffiForeignFutureStructU32) {
         `returnValue` = other.`returnValue`
         `callStatus` = other.`callStatus`
     }
 
 }
-
 internal interface UniffiForeignFutureCompleteU32 : com.sun.jna.Callback {
-    fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructU32.UniffiByValue)
+    fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructU32.UniffiByValue,)
 }
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructI32(
@@ -503,17 +491,16 @@ internal open class UniffiForeignFutureStructI32(
     class UniffiByValue(
         `returnValue`: Int = 0,
         `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
-    ) : UniffiForeignFutureStructI32(`returnValue`, `callStatus`), ByValue
+    ): UniffiForeignFutureStructI32(`returnValue`,`callStatus`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFutureStructI32) {
+   internal fun uniffiSetValue(other: UniffiForeignFutureStructI32) {
         `returnValue` = other.`returnValue`
         `callStatus` = other.`callStatus`
     }
 
 }
-
 internal interface UniffiForeignFutureCompleteI32 : com.sun.jna.Callback {
-    fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructI32.UniffiByValue)
+    fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructI32.UniffiByValue,)
 }
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructU64(
@@ -523,17 +510,16 @@ internal open class UniffiForeignFutureStructU64(
     class UniffiByValue(
         `returnValue`: Long = 0.toLong(),
         `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
-    ) : UniffiForeignFutureStructU64(`returnValue`, `callStatus`), ByValue
+    ): UniffiForeignFutureStructU64(`returnValue`,`callStatus`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFutureStructU64) {
+   internal fun uniffiSetValue(other: UniffiForeignFutureStructU64) {
         `returnValue` = other.`returnValue`
         `callStatus` = other.`callStatus`
     }
 
 }
-
 internal interface UniffiForeignFutureCompleteU64 : com.sun.jna.Callback {
-    fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructU64.UniffiByValue)
+    fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructU64.UniffiByValue,)
 }
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructI64(
@@ -543,17 +529,16 @@ internal open class UniffiForeignFutureStructI64(
     class UniffiByValue(
         `returnValue`: Long = 0.toLong(),
         `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
-    ) : UniffiForeignFutureStructI64(`returnValue`, `callStatus`), ByValue
+    ): UniffiForeignFutureStructI64(`returnValue`,`callStatus`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFutureStructI64) {
+   internal fun uniffiSetValue(other: UniffiForeignFutureStructI64) {
         `returnValue` = other.`returnValue`
         `callStatus` = other.`callStatus`
     }
 
 }
-
 internal interface UniffiForeignFutureCompleteI64 : com.sun.jna.Callback {
-    fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructI64.UniffiByValue)
+    fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructI64.UniffiByValue,)
 }
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructF32(
@@ -563,17 +548,16 @@ internal open class UniffiForeignFutureStructF32(
     class UniffiByValue(
         `returnValue`: Float = 0.0f,
         `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
-    ) : UniffiForeignFutureStructF32(`returnValue`, `callStatus`), ByValue
+    ): UniffiForeignFutureStructF32(`returnValue`,`callStatus`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFutureStructF32) {
+   internal fun uniffiSetValue(other: UniffiForeignFutureStructF32) {
         `returnValue` = other.`returnValue`
         `callStatus` = other.`callStatus`
     }
 
 }
-
 internal interface UniffiForeignFutureCompleteF32 : com.sun.jna.Callback {
-    fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructF32.UniffiByValue)
+    fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructF32.UniffiByValue,)
 }
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructF64(
@@ -583,17 +567,16 @@ internal open class UniffiForeignFutureStructF64(
     class UniffiByValue(
         `returnValue`: Double = 0.0,
         `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
-    ) : UniffiForeignFutureStructF64(`returnValue`, `callStatus`), ByValue
+    ): UniffiForeignFutureStructF64(`returnValue`,`callStatus`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFutureStructF64) {
+   internal fun uniffiSetValue(other: UniffiForeignFutureStructF64) {
         `returnValue` = other.`returnValue`
         `callStatus` = other.`callStatus`
     }
 
 }
-
 internal interface UniffiForeignFutureCompleteF64 : com.sun.jna.Callback {
-    fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructF64.UniffiByValue)
+    fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructF64.UniffiByValue,)
 }
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructPointer(
@@ -603,17 +586,16 @@ internal open class UniffiForeignFutureStructPointer(
     class UniffiByValue(
         `returnValue`: Pointer = Pointer.NULL,
         `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
-    ) : UniffiForeignFutureStructPointer(`returnValue`, `callStatus`), ByValue
+    ): UniffiForeignFutureStructPointer(`returnValue`,`callStatus`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFutureStructPointer) {
+   internal fun uniffiSetValue(other: UniffiForeignFutureStructPointer) {
         `returnValue` = other.`returnValue`
         `callStatus` = other.`callStatus`
     }
 
 }
-
 internal interface UniffiForeignFutureCompletePointer : com.sun.jna.Callback {
-    fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructPointer.UniffiByValue)
+    fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructPointer.UniffiByValue,)
 }
 @Structure.FieldOrder("returnValue", "callStatus")
 internal open class UniffiForeignFutureStructRustBuffer(
@@ -623,17 +605,16 @@ internal open class UniffiForeignFutureStructRustBuffer(
     class UniffiByValue(
         `returnValue`: RustBuffer.ByValue = RustBuffer.ByValue(),
         `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
-    ) : UniffiForeignFutureStructRustBuffer(`returnValue`, `callStatus`), ByValue
+    ): UniffiForeignFutureStructRustBuffer(`returnValue`,`callStatus`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFutureStructRustBuffer) {
+   internal fun uniffiSetValue(other: UniffiForeignFutureStructRustBuffer) {
         `returnValue` = other.`returnValue`
         `callStatus` = other.`callStatus`
     }
 
 }
-
 internal interface UniffiForeignFutureCompleteRustBuffer : com.sun.jna.Callback {
-    fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructRustBuffer.UniffiByValue)
+    fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructRustBuffer.UniffiByValue,)
 }
 @Structure.FieldOrder("callStatus")
 internal open class UniffiForeignFutureStructVoid(
@@ -641,16 +622,15 @@ internal open class UniffiForeignFutureStructVoid(
 ) : Structure() {
     class UniffiByValue(
         `callStatus`: UniffiRustCallStatus.ByValue = UniffiRustCallStatus.ByValue(),
-    ) : UniffiForeignFutureStructVoid(`callStatus`), ByValue
+    ): UniffiForeignFutureStructVoid(`callStatus`,), Structure.ByValue
 
-    internal fun uniffiSetValue(other: UniffiForeignFutureStructVoid) {
+   internal fun uniffiSetValue(other: UniffiForeignFutureStructVoid) {
         `callStatus` = other.`callStatus`
     }
 
 }
-
 internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
-    fun callback(`callbackData`: Long, `result`: UniffiForeignFutureStructVoid.UniffiByValue)
+    fun callback(`callbackData`: Long,`result`: UniffiForeignFutureStructVoid.UniffiByValue,)
 }
 
 
@@ -761,223 +741,117 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_beautyxt_rs_typst_fn_func_update_typst_project_file(`newText`: RustBuffer.ByValue,`path`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    fun ffi_beautyxt_rs_typst_rustbuffer_alloc(
-        `size`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_beautyxt_rs_typst_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_beautyxt_rs_typst_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    fun ffi_beautyxt_rs_typst_rustbuffer_reserve(
-        `buf`: RustBuffer.ByValue, `additional`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-
-    fun ffi_beautyxt_rs_typst_rust_future_poll_u8(
-        `handle`: Long, `callback`: UniffiRustFutureContinuationCallback, `callbackData`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_poll_u8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_cancel_u8(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_cancel_u8(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_free_u8(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_free_u8(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_complete_u8(
-        `handle`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rust_future_complete_u8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-
-    fun ffi_beautyxt_rs_typst_rust_future_poll_i8(
-        `handle`: Long, `callback`: UniffiRustFutureContinuationCallback, `callbackData`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_poll_i8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_cancel_i8(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_cancel_i8(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_free_i8(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_free_i8(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_complete_i8(
-        `handle`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rust_future_complete_i8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
-
-    fun ffi_beautyxt_rs_typst_rust_future_poll_u16(
-        `handle`: Long, `callback`: UniffiRustFutureContinuationCallback, `callbackData`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_poll_u16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_cancel_u16(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_cancel_u16(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_free_u16(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_free_u16(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_complete_u16(
-        `handle`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rust_future_complete_u16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Short
-
-    fun ffi_beautyxt_rs_typst_rust_future_poll_i16(
-        `handle`: Long, `callback`: UniffiRustFutureContinuationCallback, `callbackData`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_poll_i16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_cancel_i16(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_cancel_i16(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_free_i16(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_free_i16(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_complete_i16(
-        `handle`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rust_future_complete_i16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Short
-
-    fun ffi_beautyxt_rs_typst_rust_future_poll_u32(
-        `handle`: Long, `callback`: UniffiRustFutureContinuationCallback, `callbackData`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_poll_u32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_cancel_u32(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_cancel_u32(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_free_u32(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_free_u32(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_complete_u32(
-        `handle`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rust_future_complete_u32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
-
-    fun ffi_beautyxt_rs_typst_rust_future_poll_i32(
-        `handle`: Long, `callback`: UniffiRustFutureContinuationCallback, `callbackData`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_poll_i32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_cancel_i32(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_cancel_i32(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_free_i32(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_free_i32(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_complete_i32(
-        `handle`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rust_future_complete_i32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
-
-    fun ffi_beautyxt_rs_typst_rust_future_poll_u64(
-        `handle`: Long, `callback`: UniffiRustFutureContinuationCallback, `callbackData`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_poll_u64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_cancel_u64(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_cancel_u64(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_free_u64(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_free_u64(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_complete_u64(
-        `handle`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rust_future_complete_u64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
-
-    fun ffi_beautyxt_rs_typst_rust_future_poll_i64(
-        `handle`: Long, `callback`: UniffiRustFutureContinuationCallback, `callbackData`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_poll_i64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_cancel_i64(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_cancel_i64(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_free_i64(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_free_i64(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_complete_i64(
-        `handle`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rust_future_complete_i64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
-
-    fun ffi_beautyxt_rs_typst_rust_future_poll_f32(
-        `handle`: Long, `callback`: UniffiRustFutureContinuationCallback, `callbackData`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_poll_f32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_cancel_f32(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_cancel_f32(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_free_f32(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_free_f32(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_complete_f32(
-        `handle`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rust_future_complete_f32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Float
-
-    fun ffi_beautyxt_rs_typst_rust_future_poll_f64(
-        `handle`: Long, `callback`: UniffiRustFutureContinuationCallback, `callbackData`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_poll_f64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_cancel_f64(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_cancel_f64(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_free_f64(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_free_f64(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_complete_f64(
-        `handle`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rust_future_complete_f64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Double
-
-    fun ffi_beautyxt_rs_typst_rust_future_poll_pointer(
-        `handle`: Long, `callback`: UniffiRustFutureContinuationCallback, `callbackData`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_poll_pointer(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_cancel_pointer(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_cancel_pointer(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_free_pointer(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_free_pointer(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_complete_pointer(
-        `handle`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rust_future_complete_pointer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
-
-    fun ffi_beautyxt_rs_typst_rust_future_poll_rust_buffer(
-        `handle`: Long, `callback`: UniffiRustFutureContinuationCallback, `callbackData`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_poll_rust_buffer(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_cancel_rust_buffer(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_cancel_rust_buffer(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_free_rust_buffer(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_free_rust_buffer(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_complete_rust_buffer(
-        `handle`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rust_future_complete_rust_buffer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-
-    fun ffi_beautyxt_rs_typst_rust_future_poll_void(
-        `handle`: Long, `callback`: UniffiRustFutureContinuationCallback, `callbackData`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_poll_void(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_cancel_void(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_cancel_void(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_free_void(
-        `handle`: Long,
+    fun ffi_beautyxt_rs_typst_rust_future_free_void(`handle`: Long,
     ): Unit
-
-    fun ffi_beautyxt_rs_typst_rust_future_complete_void(
-        `handle`: Long, uniffi_out_err: UniffiRustCallStatus,
+    fun ffi_beautyxt_rs_typst_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_beautyxt_rs_typst_checksum_func_add_typst_project_files(
     ): Short
@@ -1081,7 +955,7 @@ inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
 /** Used to instantiate an interface without an actual pointer, for fakes in tests, mostly. */
 object NoPointer
 
-object FfiConverterInt : FfiConverter<Int, Int> {
+public object FfiConverterInt: FfiConverter<Int, Int> {
     override fun lift(value: Int): Int {
         return value
     }
@@ -1101,7 +975,7 @@ object FfiConverterInt : FfiConverter<Int, Int> {
     }
 }
 
-object FfiConverterULong : FfiConverter<ULong, Long> {
+public object FfiConverterULong: FfiConverter<ULong, Long> {
     override fun lift(value: Long): ULong {
         return value.toULong()
     }
@@ -1121,7 +995,7 @@ object FfiConverterULong : FfiConverter<ULong, Long> {
     }
 }
 
-object FfiConverterString : FfiConverter<String, RustBuffer.ByValue> {
+public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
     // Note: we don't inherit from FfiConverterRustBuffer, because we use a
     // special encoding when lowering/lifting.  We can use `RustBuffer.len` to
     // store our length and avoid writing it out to the buffer.
@@ -1175,7 +1049,7 @@ object FfiConverterString : FfiConverter<String, RustBuffer.ByValue> {
     }
 }
 
-object FfiConverterByteArray : FfiConverterRustBuffer<ByteArray> {
+public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
     override fun read(buf: ByteBuffer): ByteArray {
         val len = buf.getInt()
         val byteArr = ByteArray(len)
@@ -1201,11 +1075,11 @@ data class TypstCustomSourceDiagnostic (
     /**
      * The span of the relevant node in the source code.
      */
-    var `span`: ULong,
+    var `span`: kotlin.ULong, 
     /**
      * A diagnostic message describing the problem.
      */
-    var `message`: String,
+    var `message`: kotlin.String, 
     /**
      * The trace of function calls leading to the problem.
      */
@@ -1214,13 +1088,13 @@ data class TypstCustomSourceDiagnostic (
      * Additional hints to the user, indicating how this problem could be avoided
      * or worked around.
      */
-    var `hints`: List<String>
+    var `hints`: List<kotlin.String>
 ) {
     
     companion object
 }
 
-object FfiConverterTypeTypstCustomSourceDiagnostic : FfiConverterRustBuffer<TypstCustomSourceDiagnostic> {
+public object FfiConverterTypeTypstCustomSourceDiagnostic: FfiConverterRustBuffer<TypstCustomSourceDiagnostic> {
     override fun read(buf: ByteBuffer): TypstCustomSourceDiagnostic {
         return TypstCustomSourceDiagnostic(
             FfiConverterTypeTypstCustomSeverity.read(buf),
@@ -1251,14 +1125,14 @@ object FfiConverterTypeTypstCustomSourceDiagnostic : FfiConverterRustBuffer<Typs
 
 
 data class TypstProjectFilePathAndFd (
-    var `path`: String,
-    var `fd`: Int
+    var `path`: kotlin.String, 
+    var `fd`: kotlin.Int
 ) {
     
     companion object
 }
 
-object FfiConverterTypeTypstProjectFilePathAndFd : FfiConverterRustBuffer<TypstProjectFilePathAndFd> {
+public object FfiConverterTypeTypstProjectFilePathAndFd: FfiConverterRustBuffer<TypstProjectFilePathAndFd> {
     override fun read(buf: ByteBuffer): TypstProjectFilePathAndFd {
         return TypstProjectFilePathAndFd(
             FfiConverterString.read(buf),
@@ -1278,24 +1152,28 @@ object FfiConverterTypeTypstProjectFilePathAndFd : FfiConverterRustBuffer<TypstP
 }
 
 
-sealed class CustomFileException : Exception() {
+
+
+
+sealed class CustomFileException: kotlin.Exception() {
     
     class NotFound(
-
-        val `path`: String
+        
+        val `path`: kotlin.String
         ) : CustomFileException() {
         override val message
             get() = "path=${ `path` }"
     }
-
-    class InvalidUtf8 : CustomFileException() {
+    
+    class InvalidUtf8(
+        ) : CustomFileException() {
         override val message
             get() = ""
     }
     
     class Other(
-
-        val `details`: String?
+        
+        val `details`: kotlin.String?
         ) : CustomFileException() {
         override val message
             get() = "details=${ `details` }"
@@ -1309,7 +1187,7 @@ sealed class CustomFileException : Exception() {
     
 }
 
-object FfiConverterTypeCustomFileError : FfiConverterRustBuffer<CustomFileException> {
+public object FfiConverterTypeCustomFileError : FfiConverterRustBuffer<CustomFileException> {
     override fun read(buf: ByteBuffer): CustomFileException {
         
 
@@ -1329,16 +1207,16 @@ object FfiConverterTypeCustomFileError : FfiConverterRustBuffer<CustomFileExcept
         return when(value) {
             is CustomFileException.NotFound -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
-                    4UL
+                4UL
                 + FfiConverterString.allocationSize(value.`path`)
             )
             is CustomFileException.InvalidUtf8 -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
-                    4UL
+                4UL
             )
             is CustomFileException.Other -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
-                    4UL
+                4UL
                 + FfiConverterOptionalString.allocationSize(value.`details`)
             )
         }
@@ -1349,6 +1227,7 @@ object FfiConverterTypeCustomFileError : FfiConverterRustBuffer<CustomFileExcept
             is CustomFileException.NotFound -> {
                 buf.putInt(1)
                 FfiConverterString.write(value.`path`, buf)
+                Unit
             }
             is CustomFileException.InvalidUtf8 -> {
                 buf.putInt(2)
@@ -1357,6 +1236,7 @@ object FfiConverterTypeCustomFileError : FfiConverterRustBuffer<CustomFileExcept
             is CustomFileException.Other -> {
                 buf.putInt(3)
                 FfiConverterOptionalString.write(value.`details`, buf)
+                Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
@@ -1364,7 +1244,10 @@ object FfiConverterTypeCustomFileError : FfiConverterRustBuffer<CustomFileExcept
 }
 
 
-sealed class RenderException : Exception() {
+
+
+
+sealed class RenderException: kotlin.Exception() {
     
     class VecCustomSourceDiagnostic(
         
@@ -1382,7 +1265,7 @@ sealed class RenderException : Exception() {
     
 }
 
-object FfiConverterTypeRenderError : FfiConverterRustBuffer<RenderException> {
+public object FfiConverterTypeRenderError : FfiConverterRustBuffer<RenderException> {
     override fun read(buf: ByteBuffer): RenderException {
         
 
@@ -1398,7 +1281,7 @@ object FfiConverterTypeRenderError : FfiConverterRustBuffer<RenderException> {
         return when(value) {
             is RenderException.VecCustomSourceDiagnostic -> (
                 // Add the size for the Int that specifies the variant plus the size needed for all fields
-                    4UL
+                4UL
                 + FfiConverterSequenceTypeTypstCustomSourceDiagnostic.allocationSize(value.`customSourceDiagnostics`)
             )
         }
@@ -1409,6 +1292,7 @@ object FfiConverterTypeRenderError : FfiConverterRustBuffer<RenderException> {
             is RenderException.VecCustomSourceDiagnostic -> {
                 buf.putInt(1)
                 FfiConverterSequenceTypeTypstCustomSourceDiagnostic.write(value.`customSourceDiagnostics`, buf)
+                Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
@@ -1435,7 +1319,7 @@ enum class TypstCustomSeverity {
 }
 
 
-object FfiConverterTypeTypstCustomSeverity : FfiConverterRustBuffer<TypstCustomSeverity> {
+public object FfiConverterTypeTypstCustomSeverity: FfiConverterRustBuffer<TypstCustomSeverity> {
     override fun read(buf: ByteBuffer) = try {
         TypstCustomSeverity.values()[buf.getInt() - 1]
     } catch (e: IndexOutOfBoundsException) {
@@ -1465,12 +1349,11 @@ sealed class TypstCustomTracepoint {
         /**
          * The spanned value.
          */
-        val `string`: String?,
+        val `string`: kotlin.String?, 
         /**
          * The value's location in source code.
          */
-        val `span`: ULong
-    ) : TypstCustomTracepoint() {
+        val `span`: kotlin.ULong) : TypstCustomTracepoint() {
         companion object
     }
     
@@ -1481,12 +1364,11 @@ sealed class TypstCustomTracepoint {
         /**
          * The spanned value.
          */
-        val `string`: String,
+        val `string`: kotlin.String, 
         /**
          * The value's location in source code.
          */
-        val `span`: ULong
-    ) : TypstCustomTracepoint() {
+        val `span`: kotlin.ULong) : TypstCustomTracepoint() {
         companion object
     }
     
@@ -1497,8 +1379,7 @@ sealed class TypstCustomTracepoint {
         /**
          * The value's location in source code.
          */
-        val `span`: ULong
-    ) : TypstCustomTracepoint() {
+        val `span`: kotlin.ULong) : TypstCustomTracepoint() {
         companion object
     }
     
@@ -1507,7 +1388,7 @@ sealed class TypstCustomTracepoint {
     companion object
 }
 
-object FfiConverterTypeTypstCustomTracepoint : FfiConverterRustBuffer<TypstCustomTracepoint> {
+public object FfiConverterTypeTypstCustomTracepoint : FfiConverterRustBuffer<TypstCustomTracepoint>{
     override fun read(buf: ByteBuffer): TypstCustomTracepoint {
         return when(buf.getInt()) {
             1 -> TypstCustomTracepoint.Call(
@@ -1529,7 +1410,7 @@ object FfiConverterTypeTypstCustomTracepoint : FfiConverterRustBuffer<TypstCusto
         is TypstCustomTracepoint.Call -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
-                    4UL
+                4UL
                 + FfiConverterOptionalString.allocationSize(value.`string`)
                 + FfiConverterULong.allocationSize(value.`span`)
             )
@@ -1537,7 +1418,7 @@ object FfiConverterTypeTypstCustomTracepoint : FfiConverterRustBuffer<TypstCusto
         is TypstCustomTracepoint.Show -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
-                    4UL
+                4UL
                 + FfiConverterString.allocationSize(value.`string`)
                 + FfiConverterULong.allocationSize(value.`span`)
             )
@@ -1545,7 +1426,7 @@ object FfiConverterTypeTypstCustomTracepoint : FfiConverterRustBuffer<TypstCusto
         is TypstCustomTracepoint.Import -> {
             // Add the size for the Int that specifies the variant plus the size needed for all fields
             (
-                    4UL
+                4UL
                 + FfiConverterULong.allocationSize(value.`span`)
             )
         }
@@ -1557,30 +1438,37 @@ object FfiConverterTypeTypstCustomTracepoint : FfiConverterRustBuffer<TypstCusto
                 buf.putInt(1)
                 FfiConverterOptionalString.write(value.`string`, buf)
                 FfiConverterULong.write(value.`span`, buf)
+                Unit
             }
             is TypstCustomTracepoint.Show -> {
                 buf.putInt(2)
                 FfiConverterString.write(value.`string`, buf)
                 FfiConverterULong.write(value.`span`, buf)
+                Unit
             }
             is TypstCustomTracepoint.Import -> {
                 buf.putInt(3)
                 FfiConverterULong.write(value.`span`, buf)
+                Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
 }
 
 
-object FfiConverterOptionalString : FfiConverterRustBuffer<String?> {
-    override fun read(buf: ByteBuffer): String? {
+
+
+
+
+public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?> {
+    override fun read(buf: ByteBuffer): kotlin.String? {
         if (buf.get().toInt() == 0) {
             return null
         }
         return FfiConverterString.read(buf)
     }
 
-    override fun allocationSize(value: String?): ULong {
+    override fun allocationSize(value: kotlin.String?): ULong {
         if (value == null) {
             return 1UL
         } else {
@@ -1588,7 +1476,7 @@ object FfiConverterOptionalString : FfiConverterRustBuffer<String?> {
         }
     }
 
-    override fun write(value: String?, buf: ByteBuffer) {
+    override fun write(value: kotlin.String?, buf: ByteBuffer) {
         if (value == null) {
             buf.put(0)
         } else {
@@ -1599,21 +1487,23 @@ object FfiConverterOptionalString : FfiConverterRustBuffer<String?> {
 }
 
 
-object FfiConverterSequenceString : FfiConverterRustBuffer<List<String>> {
-    override fun read(buf: ByteBuffer): List<String> {
+
+
+public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
+    override fun read(buf: ByteBuffer): List<kotlin.String> {
         val len = buf.getInt()
-        return List<String>(len) {
+        return List<kotlin.String>(len) {
             FfiConverterString.read(buf)
         }
     }
 
-    override fun allocationSize(value: List<String>): ULong {
+    override fun allocationSize(value: List<kotlin.String>): ULong {
         val sizeForLength = 4UL
         val sizeForItems = value.map { FfiConverterString.allocationSize(it) }.sum()
         return sizeForLength + sizeForItems
     }
 
-    override fun write(value: List<String>, buf: ByteBuffer) {
+    override fun write(value: List<kotlin.String>, buf: ByteBuffer) {
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterString.write(it, buf)
@@ -1622,8 +1512,9 @@ object FfiConverterSequenceString : FfiConverterRustBuffer<List<String>> {
 }
 
 
-object FfiConverterSequenceTypeTypstCustomSourceDiagnostic :
-    FfiConverterRustBuffer<List<TypstCustomSourceDiagnostic>> {
+
+
+public object FfiConverterSequenceTypeTypstCustomSourceDiagnostic: FfiConverterRustBuffer<List<TypstCustomSourceDiagnostic>> {
     override fun read(buf: ByteBuffer): List<TypstCustomSourceDiagnostic> {
         val len = buf.getInt()
         return List<TypstCustomSourceDiagnostic>(len) {
@@ -1646,8 +1537,9 @@ object FfiConverterSequenceTypeTypstCustomSourceDiagnostic :
 }
 
 
-object FfiConverterSequenceTypeTypstProjectFilePathAndFd :
-    FfiConverterRustBuffer<List<TypstProjectFilePathAndFd>> {
+
+
+public object FfiConverterSequenceTypeTypstProjectFilePathAndFd: FfiConverterRustBuffer<List<TypstProjectFilePathAndFd>> {
     override fun read(buf: ByteBuffer): List<TypstProjectFilePathAndFd> {
         val len = buf.getInt()
         return List<TypstProjectFilePathAndFd>(len) {
@@ -1670,7 +1562,9 @@ object FfiConverterSequenceTypeTypstProjectFilePathAndFd :
 }
 
 
-object FfiConverterSequenceTypeTypstCustomTracepoint : FfiConverterRustBuffer<List<TypstCustomTracepoint>> {
+
+
+public object FfiConverterSequenceTypeTypstCustomTracepoint: FfiConverterRustBuffer<List<TypstCustomTracepoint>> {
     override fun read(buf: ByteBuffer): List<TypstCustomTracepoint> {
         val len = buf.getInt()
         return List<TypstCustomTracepoint>(len) {
@@ -1690,90 +1584,83 @@ object FfiConverterSequenceTypeTypstCustomTracepoint : FfiConverterRustBuffer<Li
             FfiConverterTypeTypstCustomTracepoint.write(it, buf)
         }
     }
+} fun `addTypstProjectFiles`(`newProjectFiles`: List<TypstProjectFilePathAndFd>)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_add_typst_project_files(
+        FfiConverterSequenceTypeTypstProjectFilePathAndFd.lower(`newProjectFiles`),_status)
 }
-
-fun `addTypstProjectFiles`(`newProjectFiles`: List<TypstProjectFilePathAndFd>) =
-    uniffiRustCall { _status ->
-        UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_add_typst_project_files(
-            FfiConverterSequenceTypeTypstProjectFilePathAndFd.lower(`newProjectFiles`), _status
-        )
+    
+    
+ fun `clearTypstProjectFiles`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_clear_typst_project_files(
+        _status)
 }
-
-
-fun `clearTypstProjectFiles`() =
-    uniffiRustCall { _status ->
-        UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_clear_typst_project_files(
-            _status
-        )
-}
-
-
-fun `getTypstPdf`(): ByteArray {
-    return FfiConverterByteArray.lift(
-        uniffiRustCall { _status ->
-            UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_get_typst_pdf(
-                _status
-            )
+    
+    
+ fun `getTypstPdf`(): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_get_typst_pdf(
+        _status)
 }
     )
+    }
+    
+ fun `getTypstProjectFileText`(`path`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_get_typst_project_file_text(
+        FfiConverterString.lower(`path`),_status)
 }
-
-fun `getTypstProjectFileText`(`path`: String): String {
-    return FfiConverterString.lift(
-        uniffiRustCall { _status ->
-            UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_get_typst_project_file_text(
-                FfiConverterString.lower(`path`), _status
-            )
-        }
     )
-}
+    }
+    
 
-
-@Throws(RenderException::class)
-fun `getTypstSvg`(): ByteArray {
-    return FfiConverterByteArray.lift(
+    @Throws(RenderException::class) fun `getTypstSvg`(): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
     uniffiRustCallWithError(RenderException) { _status ->
-        UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_get_typst_svg(
-            _status
-        )
+    UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_get_typst_svg(
+        _status)
 }
     )
+    }
+    
+ fun `initializeTypstWorld`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_initialize_typst_world(
+        _status)
 }
-
-fun `initializeTypstWorld`() =
-    uniffiRustCall { _status ->
-        UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_initialize_typst_world(
-            _status
-        )
+    
+    
+ fun `removeTypstProjectFiles`(`projectFilesPathsToRemove`: List<kotlin.String>)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_remove_typst_project_files(
+        FfiConverterSequenceString.lower(`projectFilesPathsToRemove`),_status)
 }
-
-
-fun `removeTypstProjectFiles`(`projectFilesPathsToRemove`: List<String>) =
-    uniffiRustCall { _status ->
-        UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_remove_typst_project_files(
-            FfiConverterSequenceString.lower(`projectFilesPathsToRemove`), _status
-        )
+    
+    
+ fun `setMainTypstProjectFile`(`mainProjectFilePathAndFd`: TypstProjectFilePathAndFd)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_set_main_typst_project_file(
+        FfiConverterTypeTypstProjectFilePathAndFd.lower(`mainProjectFilePathAndFd`),_status)
 }
+    
+    
 
-
-fun `setMainTypstProjectFile`(`mainProjectFilePathAndFd`: TypstProjectFilePathAndFd) =
-    uniffiRustCall { _status ->
-        UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_set_main_typst_project_file(
-            FfiConverterTypeTypstProjectFilePathAndFd.lower(`mainProjectFilePathAndFd`), _status
-        )
-}
-
-
-@Throws(CustomFileException::class)
-fun `updateTypstProjectFile`(`newText`: String, `path`: String): String {
-    return FfiConverterString.lift(
+    @Throws(CustomFileException::class) fun `updateTypstProjectFile`(`newText`: kotlin.String, `path`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
     uniffiRustCallWithError(CustomFileException) { _status ->
-        UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_update_typst_project_file(
-            FfiConverterString.lower(`newText`), FfiConverterString.lower(`path`), _status
-        )
+    UniffiLib.INSTANCE.uniffi_beautyxt_rs_typst_fn_func_update_typst_project_file(
+        FfiConverterString.lower(`newText`),FfiConverterString.lower(`path`),_status)
 }
     )
-}
+    }
     
 
 
