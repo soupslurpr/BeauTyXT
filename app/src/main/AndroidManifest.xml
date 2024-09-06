@@ -10,7 +10,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.beautyxt"
+        android:theme="@style/Theme.BeauTyXT"
         android:enableOnBackInvokedCallback="true"
         android:memtagMode="async"
         tools:targetApi="34">
@@ -27,8 +27,7 @@
         <activity
             android:name="dev.soupslurpr.beautyxt.MainActivity"
             android:exported="true"
-            android:documentLaunchMode="intoExisting"
-            android:theme="@style/Theme.beautyxt">
+            android:documentLaunchMode="intoExisting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
