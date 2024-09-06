@@ -53,7 +53,7 @@ fun TypstProjectScreen(
         .decoderFactory(SvgDecoder.Factory())
         .data(typstProjectUiState.renderedProjectSvg.value)
         // Can't use IO because it blinks if we do.
-        .dispatcher(Dispatchers.Main)
+        .dispatcher(Dispatchers.Main.immediate)
         .build()
 
     val svgPreviewVerticalScroll = rememberScrollState()
