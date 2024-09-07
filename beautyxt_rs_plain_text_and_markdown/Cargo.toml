@@ -8,9 +8,9 @@ license-file = "./LICENSE.txt"
 
 [dependencies]
 docx-rs = "0"
-ego-tree = "0"
+ego-tree = "0.6.3"
 libc = "0"
-markdown = "1.0.0-alpha.17"
+markdown = "1.0.0-alpha.20"
 scraper = "0"
 uniffi = "0"
 

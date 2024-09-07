@@ -4,7 +4,6 @@ import android.net.Uri
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomSourceDiagnostic
 
 data class TypstProjectUiState(
     /** Project folder uri */
@@ -22,5 +21,5 @@ data class TypstProjectUiState(
     /** Content of current opened path */
     val currentOpenedContent: MutableState<String> = mutableStateOf(""),
     /** Source diagnostics */
-    val sourceDiagnostics: MutableCollection<TypstCustomSourceDiagnostic> = mutableStateListOf(),
+    val sourceDiagnostics: MutableCollection<uniffi.beautyxt_rs_typst.TypstCustomSourceDiagnostic> = mutableStateListOf(),
 )

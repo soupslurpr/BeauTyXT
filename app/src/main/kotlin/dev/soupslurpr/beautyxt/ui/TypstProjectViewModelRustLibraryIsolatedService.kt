@@ -7,20 +7,16 @@ import android.os.IBinder
 import androidx.core.os.bundleOf
 import dev.soupslurpr.beautyxt.ITypstProjectViewModelRustLibraryAidlInterface
 import dev.soupslurpr.beautyxt.PathAndPfd
-import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.RenderException
-import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomSeverity
-import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomTracepoint
-import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstProjectFilePathAndFd
 
 class TypstProjectViewModelRustLibraryIsolatedService : Service() {
     private val binder = object : ITypstProjectViewModelRustLibraryAidlInterface.Stub() {
         override fun initializeTypstWorld() {
-            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.initializeTypstWorld()
+            return uniffi.beautyxt_rs_typst.initializeTypstWorld()
         }
 
         override fun setMainTypstProjectFile(papfd: PathAndPfd?) {
-            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.setMainTypstProjectFile(
-                TypstProjectFilePathAndFd(
+            return uniffi.beautyxt_rs_typst.setMainTypstProjectFile(
+                uniffi.beautyxt_rs_typst.TypstProjectFilePathAndFd(
                     papfd!!.path,
                     papfd.pfd.detachFd()
                 )
@@ -28,9 +24,9 @@ class TypstProjectViewModelRustLibraryIsolatedService : Service() {
         }
 
         override fun addTypstProjectFiles(papfdList: MutableList<PathAndPfd>?) {
-            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.addTypstProjectFiles(
+            return uniffi.beautyxt_rs_typst.addTypstProjectFiles(
                 papfdList!!.map { papfd ->
-                    TypstProjectFilePathAndFd(
+                    uniffi.beautyxt_rs_typst.TypstProjectFilePathAndFd(
                         papfd.path,
                         papfd.pfd.detachFd()
                     )
@@ -39,7 +35,7 @@ class TypstProjectViewModelRustLibraryIsolatedService : Service() {
         }
 
         override fun getTypstProjectFileText(path: String?): String {
-            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.getTypstProjectFileText(
+            return uniffi.beautyxt_rs_typst.getTypstProjectFileText(
                 path!!
             )
         }
@@ -48,13 +44,13 @@ class TypstProjectViewModelRustLibraryIsolatedService : Service() {
             val bundle = bundleOf()
 
             try {
-                bundle.putByteArray("svg", dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.getTypstSvg())
-            } catch (e: RenderException.VecCustomSourceDiagnostic) {
+                bundle.putByteArray("svg", uniffi.beautyxt_rs_typst.getTypstSvg())
+            } catch (e: uniffi.beautyxt_rs_typst.RenderException.VecCustomSourceDiagnostic) {
                 e.customSourceDiagnostics.forEachIndexed { index, typstCustomSourceDiagnostic ->
                     bundle.putString(
                         "severity$index", when (typstCustomSourceDiagnostic.severity) {
-                            TypstCustomSeverity.WARNING -> "WARNING"
-                            TypstCustomSeverity.ERROR -> "ERROR"
+                            uniffi.beautyxt_rs_typst.TypstCustomSeverity.WARNING -> "WARNING"
+                            uniffi.beautyxt_rs_typst.TypstCustomSeverity.ERROR -> "ERROR"
                         }
                     )
 
@@ -66,18 +62,18 @@ class TypstProjectViewModelRustLibraryIsolatedService : Service() {
                     typstCustomSourceDiagnostic.trace.forEachIndexed { traceIndex, typstCustomTracepoint ->
                         val prefix = "trace${index}name${traceIndex}"
                         when (typstCustomTracepoint) {
-                            is TypstCustomTracepoint.Call -> {
+                            is uniffi.beautyxt_rs_typst.TypstCustomTracepoint.Call -> {
                                 bundle.putString(prefix, "Call")
                                 bundle.putString("${prefix}string", typstCustomTracepoint.string)
                                 bundle.putLong("${prefix}span", typstCustomTracepoint.span.toLong())
                             }
 
-                            is TypstCustomTracepoint.Import -> {
+                            is uniffi.beautyxt_rs_typst.TypstCustomTracepoint.Import -> {
                                 bundle.putString(prefix, "Import")
                                 bundle.putLong("${prefix}span", typstCustomTracepoint.span.toLong())
                             }
 
-                            is TypstCustomTracepoint.Show -> {
+                            is uniffi.beautyxt_rs_typst.TypstCustomTracepoint.Show -> {
                                 bundle.putString(prefix, "Show")
                                 bundle.putString("${prefix}string", typstCustomTracepoint.string)
                                 bundle.putLong("${prefix}span", typstCustomTracepoint.span.toLong())
@@ -93,15 +89,15 @@ class TypstProjectViewModelRustLibraryIsolatedService : Service() {
         }
 
         override fun getTypstPdf(): ByteArray {
-            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.getTypstPdf()
+            return uniffi.beautyxt_rs_typst.getTypstPdf()
         }
 
         override fun updateTypstProjectFile(newText: String?, path: String?): String {
-            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.updateTypstProjectFile(newText!!, path!!)
+            return uniffi.beautyxt_rs_typst.updateTypstProjectFile(newText!!, path!!)
         }
 
         override fun clearTypstProjectFiles() {
-            return dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.clearTypstProjectFiles()
+            return uniffi.beautyxt_rs_typst.clearTypstProjectFiles()
         }
     }
 

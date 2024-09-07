@@ -32,7 +32,6 @@ import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
 import coil.request.ImageRequest
 import dev.soupslurpr.beautyxt.R
-import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomSourceDiagnostic
 import dev.soupslurpr.beautyxt.settings.PreferencesUiState
 import kotlinx.coroutines.Dispatchers
 
@@ -236,7 +235,7 @@ fun ScrollableSvgDocumentPreview(
 @Composable
 fun WarningsAndErrors(
     modifier: Modifier = Modifier,
-    sourceDiagnostics: List<TypstCustomSourceDiagnostic>,
+    sourceDiagnostics: List<uniffi.beautyxt_rs_typst.TypstCustomSourceDiagnostic>,
 ) {
     Column(
         modifier = modifier

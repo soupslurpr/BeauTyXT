@@ -20,9 +20,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.soupslurpr.beautyxt.ITypstProjectViewModelRustLibraryAidlInterface
 import dev.soupslurpr.beautyxt.PathAndPfd
-import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomSeverity
-import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomSourceDiagnostic
-import dev.soupslurpr.beautyxt.beautyxt_rs_typst_bindings.TypstCustomTracepoint
 import dev.soupslurpr.beautyxt.data.TypstProjectUiState
 import dev.soupslurpr.beautyxt.returnHashSha256
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -206,7 +203,7 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
             if (svg != null) {
                 _uiState.value.renderedProjectSvg.value = svg
             } else {
-                var sourceDiagnostics: MutableList<TypstCustomSourceDiagnostic> = mutableStateListOf()
+                var sourceDiagnostics: MutableList<uniffi.beautyxt_rs_typst.TypstCustomSourceDiagnostic> = mutableStateListOf()
 
                 var index = 0
                 while (true) {
@@ -219,10 +216,10 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
                     val message = bundle.getString("message$index")
                     val trace = bundle.getInt("trace$index")
 
-                    val sourceDiagnostic = TypstCustomSourceDiagnostic(
+                    val sourceDiagnostic = uniffi.beautyxt_rs_typst.TypstCustomSourceDiagnostic(
                         severity = when (severity) {
-                            "WARNING" -> TypstCustomSeverity.WARNING
-                            "ERROR" -> TypstCustomSeverity.ERROR
+                            "WARNING" -> uniffi.beautyxt_rs_typst.TypstCustomSeverity.WARNING
+                            "ERROR" -> uniffi.beautyxt_rs_typst.TypstCustomSeverity.ERROR
                             else -> break
                         },
                         span = when (span) {
@@ -234,21 +231,21 @@ class TypstProjectViewModel(application: Application) : AndroidViewModel(applica
                             else -> message
                         },
                         trace = if (trace >= 0) {
-                            val traceList: MutableList<TypstCustomTracepoint> = mutableListOf()
+                            val traceList: MutableList<uniffi.beautyxt_rs_typst.TypstCustomTracepoint> = mutableListOf()
                             trace.downTo(0).reversed().forEach { traceIndex ->
                                 val prefix = "trace${index}name${traceIndex}"
                                 traceList.add(
                                     when (bundle.getString(prefix)) {
-                                        "Call" -> TypstCustomTracepoint.Call(
+                                        "Call" -> uniffi.beautyxt_rs_typst.TypstCustomTracepoint.Call(
                                             string = bundle.getString("${prefix}string"),
                                             span = bundle.getLong("${prefix}span").toULong(),
                                         )
 
-                                        "Import" -> TypstCustomTracepoint.Import(
+                                        "Import" -> uniffi.beautyxt_rs_typst.TypstCustomTracepoint.Import(
                                             bundle.getLong("${prefix}span").toULong()
                                         )
 
-                                        "Show" -> TypstCustomTracepoint.Show(
+                                        "Show" -> uniffi.beautyxt_rs_typst.TypstCustomTracepoint.Show(
                                             bundle.getString("${prefix}string") ?: return@forEach,
                                             bundle.getLong("${prefix}span").toULong()
                                         )
