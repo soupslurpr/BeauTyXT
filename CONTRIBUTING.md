@@ -6,7 +6,7 @@ If you want to suggest a feature or notify us about a bug, please use the issue 
 
 When trying to implement a feature, please make sure to discuss the planned implementation in the issue for the feature and get approval from @soupslurpr before working on it to ensure it meets the project's requirements.
 
-New features will not be implemented in OldTyXT, which is the name of the current implementation of BeauTyXT. NewTyXT will be a rewrite that aims to completely overhaul everything to be more robust. 
+New features will not be implemented in OldTyXT, which is the name of the current implementation of BeauTyXT. NewTyXT will be a rewrite that aims to completely overhaul everything to be more robust by following Android app development best practices.
 
 NewTyXT must have a solid foundation before more features are built into it.
 
