@@ -4,52 +4,56 @@
     android:targetSandboxVersion="2">
 
     <application
+        android:name=".newtyxt.dev.soupslurpr.beautyxt.Application"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="false"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
+        android:label="@string/oldtyxt_app_name"
+        android:memtagMode="async"
         android:supportsRtl="true"
         android:theme="@style/Theme.BeauTyXT"
-        android:enableOnBackInvokedCallback="true"
-        android:memtagMode="async"
         tools:targetApi="34">
         <service
-            android:name=".ui.FileViewModelRustLibraryIsolatedService"
+            android:name="oldtyxt.dev.soupslurpr.beautyxt.ui.FileViewModelRustLibraryIsolatedService"
             android:exported="false"
             android:isolatedProcess="true"
-            android:process=":file_view_model_rust_library_isolated_process"></service>
+            android:process=":file_view_model_rust_library_isolated_process" />
         <service
-            android:name=".ui.TypstProjectViewModelRustLibraryIsolatedService"
+            android:name="oldtyxt.dev.soupslurpr.beautyxt.ui.TypstProjectViewModelRustLibraryIsolatedService"
             android:exported="false"
             android:isolatedProcess="true"
-            android:process=":typst_project_view_model_rust_library_isolated_process"></service>
+            android:process=":typst_project_view_model_rust_library_isolated_process" />
+
         <activity
-            android:name="dev.soupslurpr.beautyxt.MainActivity"
-            android:exported="true"
-            android:documentLaunchMode="intoExisting">
+            android:name=".MainActivity"
+            android:documentLaunchMode="intoExisting"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
             <intent-filter>
-                <action android:name="android.intent.action.EDIT"/>
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <data android:scheme="content"/>
+                <action android:name="android.intent.action.EDIT" />
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:scheme="content" />
                 <data android:mimeType="text/*" />
                 <data android:mimeType="application/xml" />
-                <data android:mimeType="application/json"/>
+                <data android:mimeType="application/json" />
                 <data android:mimeType="application/javascript" />
                 <data android:mimeType="application/css" />
                 <data android:mimeType="application/html" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.DEFAULT" />
 
                 <data android:mimeType="text/*" />
-                <data android:mimeType="application/xml"/>
+                <data android:mimeType="application/xml" />
                 <data android:mimeType="application/json" />
                 <data android:mimeType="application/javascript" />
                 <data android:mimeType="application/css" />

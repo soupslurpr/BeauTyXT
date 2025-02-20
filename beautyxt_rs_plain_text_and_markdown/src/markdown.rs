@@ -121,7 +121,7 @@ pub fn markdown_to_docx(markdown: &str) -> Vec<u8> {
                     }
                 }
             }
-            Node::BlockQuote(_) => todo!(),
+            Node::Blockquote(_) => todo!(),
             Node::FootnoteDefinition(_) => todo!(),
             Node::MdxJsxFlowElement(_) => todo!(),
             Node::List(_) => todo!(),

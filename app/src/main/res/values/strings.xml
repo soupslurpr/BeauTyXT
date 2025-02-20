@@ -1,101 +1,19 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">BeauTyXT</string>
     <string name="settings">Settings</string>
-    <string name="back_button">Back</string>
-    <string name="welcome">Welcome to BeauTyXT!</string>
-    <string name="file_editor">File Editor</string>
-    <string name="view_source_code_setting_name">Source code</string>
-    <string name="view_source_code_setting_description">View BeauTyXT\'s source code on the GitHub website in your web browser</string>
-    <string name="privacy_policy_setting_name">Privacy policy</string>
-    <string name="privacy_policy_setting_description">View BeauTyXT\'s privacy policy in app</string>
-    <string name="license">License</string>
-    <string name="privacy_policy">Privacy policy</string>
-    <string name="license_setting_name">BeauTyXT\'s License</string>
-    <string name="license_setting_description">View BeauTyXT\'s License in app</string>
-    <string name="credits">Credits</string>
-    <string name="credits_setting_name">Credits</string>
-    <string name="credits_setting_description">View open source licenses of code that BeauTyXT uses in app</string>
-    <string name="any">Any</string>
-    <string name="txt">Plain Text (.txt &amp; .text)</string>
-    <string name="pitch_black_background_setting_name">Pitch black background</string>
-    <string name="pitch_black_background_setting_description">Replaces background with pitch black background when dark theme is on</string>
-    <string name="about">About</string>
-    <string name="theme">Theme</string>
-    <string name="file_info">File Info</string>
-    <string name="name">Name</string>
-    <string name="size">Size</string>
-    <string name="mime_type">MIME Type</string>
-    <string name="bytes">Bytes</string>
-    <string name="open_beautyxt_website_setting_name">BeauTyXT\'s Website</string>
-    <string name="open_beautyxt_website_setting_description">Open BeauTyXT\'s website in your web browser</string>
-    <string name="review_privacy_policy_and_license" translatable="false">Review BeauTyXT\'s privacy policy and license (scroll down)</string>
-    <string name="full_privacy_policy" translatable="false">BeauTyXT privacy policy\n\nThis app does not use any sensitive permissions, makes no internet connections, and does not store any data in itself other than preferences. This app uses the Android Storage Access Framework (SAF) to interact with files you choose to access, which can be stored in and exported to various locations of your choice. You are responsible for where you choose to store and export your files to. This app does not access, collect, or transmit data from these locations beyond these purposes.\n\nBeauTyXT\'s privacy policy may be updated from time to time.\n\nLast updated: July 15, 2023.</string>
-    <string name="full_license" translatable="false">ISC License\n\nCopyright (c) 2023 soupslurpr\n\nPermission to use, copy, modify, and/or distribute this software for any\npurpose with or without fee is hereby granted, provided that the above\ncopyright notice and this permission notice appear in all copies.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH\nREGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY\nAND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,\nINDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM\nLOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR\nOTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR\nPERFORMANCE OF THIS SOFTWARE.</string>
-    <string name="privacy_policy_and_license_checkbox_text" translatable="false">By checking the checkbox and continuing, you agree to BeauTyXT\'s privacy policy and license, which are shown above.</string>
-    <string name="continue_to_app" translatable="false">Continue</string>
-    <string name="options_dropdown_menu" tools:ignore="MissingTranslation">Options dropdown menu</string>
-    <string name="render_markdown_setting_name" tools:ignore="MissingTranslation">Render Markdown</string>
-    <string name="render_markdown_setting_description" tools:ignore="MissingTranslation">Render %1$s files on the bottom side of the screen</string>
-    <string name="md" tools:ignore="MissingTranslation">Markdown (.md &amp; .markdown)</string>
-    <string name="export" tools:ignore="MissingTranslation">Export</string>
-    <string name="export_as" tools:ignore="MissingTranslation">Export As</string>
-    <string name="cancel" tools:ignore="MissingTranslation">Cancel</string>
-    <string name="confirm_" tools:ignore="MissingTranslation">Confirm</string>
-    <string name="html" tools:ignore="MissingTranslation">HTML (.html)</string>
-    <string name="read_only" tools:ignore="MissingTranslation">Read Only</string>
-    <string name="rendered_markdown" tools:ignore="MissingTranslation">Rendered Markdown</string>
-    <string name="preview_markdown_rendered_to_html" tools:ignore="MissingTranslation">Preview Markdown rendered to HTML</string>
-    <string name="experimental_features" tools:ignore="MissingTranslation">Experimental Features</string>
-    <string name="fullscreen_markdown_render_preview_setting_name" tools:ignore="MissingTranslation">Fullscreen
-        Markdown Preview Button</string>
-    <string name="fullscreen_markdown_render_preview_setting_description" tools:ignore="MissingTranslation">Shows a button when a markdown file is open which will toggle a fullscreen view of the rendered markdown preview.\nExperimental because it has a few issues.</string>
-    <string name="open_any_file_type_setting_name" tools:ignore="MissingTranslation">Open Any File Type</string>
-    <string name="open_any_file_type_setting_description" tools:ignore="MissingTranslation">Shows Any file type
-        option in the open an existing file dialog.\nWARNING PLEASE READ OR RISK LOSING DATA: Do NOT edit files
-        that have binary content in them or else you will risk corruption! Some examples of such files are pdf\'s,
-        odt\'s, and more.</string>
-    <string name="plain_text_and_markdown_rust_library_credits" tools:ignore="MissingTranslation">Plain Text and
-        Markdown Rust Library Credits</string>
-    <string name="view_credits_for_rust_library" tools:ignore="MissingTranslation">View Credits for Rust library</string>
-    <string name="docx" tools:ignore="MissingTranslation">Office Open XML (.docx)</string>
-    <string name="export_markdown_to_docx_setting_name" tools:ignore="MissingTranslation">Export %1$s to %2$s</string>
-    <string name="export_markdown_to_docx_setting_description" tools:ignore="MissingTranslation">Adds an export
-        option for %1$s files to export to %2$s.\nNot all Markdown is supported for
-        conversion yet, BeauTyXT will crash when trying to export a %1$s file using unsupported
-        functionality.\nCurrently only Heading, Break, Emphasis, Strong, and alignment with &lt;div style="text-align:
-        center"&gt;text here&lt;/div&gt; (center, left, right) are supported.</string>
-    <string name="print" tools:ignore="MissingTranslation">Print</string>
-    <string name="words" tools:ignore="MissingTranslation">Words</string>
-    <string name="characters" tools:ignore="MissingTranslation">Characters</string>
-    <string name="print_options" tools:ignore="MissingTranslation">Print Options</string>
-    <string name="left_margin" tools:ignore="MissingTranslation">Left Margin</string>
-    <string name="invalid_size" tools:ignore="MissingTranslation">INVALID SIZE</string>
-    <string name="inches" tools:ignore="MissingTranslation">Inches</string>
-    <string name="right_margin" tools:ignore="MissingTranslation">Right Margin</string>
-    <string name="top_margin" tools:ignore="MissingTranslation">Top Margin</string>
-    <string name="bottom_margin" tools:ignore="MissingTranslation">Bottom Margin</string>
-    <string name="delete_file" tools:ignore="MissingTranslation">Delete File</string>
-    <string name="delete_file_dialog_text" tools:ignore="MissingTranslation">Are you really sure you want to do
-        this?\nDeleted files are irrecoverable (gone forever!)</string>
-    <string name="share" tools:ignore="MissingTranslation">Share</string>
-    <string name="share_as" tools:ignore="MissingTranslation">Share As</string>
-    <string name="typst_project" tools:ignore="MissingTranslation">Typst project</string>
-    <string name="open" tools:ignore="MissingTranslation">Open</string>
-    <string name="create" tools:ignore="MissingTranslation">Create</string>
-    <string name="create_typst_project" tools:ignore="MissingTranslation">%1$s (Create a new folder from the menu and give access to it)</string>
-    <string name="pdf" tools:ignore="MissingTranslation">PDF (.pdf)</string>
-    <string name="edit_another_file_in_the_typst_project" tools:ignore="MissingTranslation">Edit another file in the Typst project</string>
-    <string name="create_and_edit_another_file_in_the_typst_project" tools:ignore="MissingTranslation">Create and edit another file in the Typst project</string>
-    <string name="typst_project_show_warnings_and_errors_setting_name" tools:ignore="MissingTranslation">Show warnings and errors</string>
-    <string name="typst_project_show_warnings_and_errors_setting_description" tools:ignore="MissingTranslation">Show warnings and errors below the %1$s preview</string>
-    <string name="rendered_typst_project_preview" tools:ignore="MissingTranslation">Rendered Typst project preview</string>
-    <string name="toggle_previewing_typst_project_in_fullscreen" tools:ignore="MissingTranslation">Toggle previewing Typst project in fullscreen</string>
-    <string name="fullscreen_typst_preview_button_setting_name" tools:ignore="MissingTranslation">Fullscreen Typst Preview Button</string>
-    <string name="fullscreen_typst_preview_button_setting_description" tools:ignore="MissingTranslation">Shows a button when a Typst project is open which will toggle a fullscreen preview of the rendered Typst project.\nExperimental because it has a few issues.</string>
-    <string name="donation" tools:ignore="MissingTranslation">Donation</string>
-    <string name="donation_setting_name" tools:ignore="MissingTranslation">Donation</string>
-    <string name="donation_setting_description" tools:ignore="MissingTranslation">View how to donate to BeauTyXT\'s lead developer in-app</string>
-    <string name="view_credits_for_rust_library_for_plain_text_and_markdown_support" tools:ignore="MissingTranslation">View Credits for Rust library for Plain Text and Markdown support</string>
-    <string name="view_credits_for_rust_library_for_typst_support" tools:ignore="MissingTranslation">View Credits for Rust library for Typst support</string>
-    <string name="typst_rust_library_credits">Typst Rust Library Credits</string>
+    <string name="navigate_up_button_description">Back</string>
+    <string name="welcome">Welcome to NewTyXT!</string>
+    <string name="text_editor">Text Editor</string>
+    <string name="more_options">More options</string>
+    <string name="plain_text_editor_top_bar_rename_file_button_content_description">Rename file</string>
+    <string name="io_status_saving_in_progress">Saving…</string>
+    <string name="io_status_saving_success">All changes saved</string>
+    <string name="io_status_saving_failure">Failed to save changes</string>
+    <string name="io_status_reading_in_progress">Reading…</string>
+    <string name="io_status_reading_success">All content read</string>
+    <string name="io_status_reading_failure">Failed to read content</string>
+    <string name="error_info_button_description">Error info</string>
+    <string name="error_info_dialog_title">Error Info</string>
+    <string name="read_perms_denied_io_exception_guide">This error may be able to be fixed by reopening the file.</string>
+    <string name="reading_failure_error_info">Reading all of the content failed. Editing the content will overwrite it.</string>
 </resources>

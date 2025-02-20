@@ -8,4 +8,5 @@ accepted = [
     "Unicode-DFS-2016",
     "Zlib",
     "Apache-2.0 WITH LLVM-exception",
+    "Unicode-3.0"
 ]

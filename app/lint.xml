@@ -1,0 +1,9 @@
+<lint>
+    <!-- overly aggressive checks -->
+    <issue id="VectorRaster">
+        <ignore path="src/main/res/drawable/donation_monero_address_qrcode.xml" />
+    </issue>
+    <issue id="VectorPath">
+        <ignore path="src/main/res/drawable/baseline_export_notes_24.xml" />
+    </issue>
+</lint>
