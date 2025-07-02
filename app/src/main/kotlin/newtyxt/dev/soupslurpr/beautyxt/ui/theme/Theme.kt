@@ -10,8 +10,8 @@ fun BeautyxtTheme(
     content: @Composable () -> Unit
 ) {
     val isDarkTheme = isSystemInDarkTheme()
-    val lightColorScheme = newtyxt.dev.soupslurpr.beautyxt.ui.theme.defaultLightScheme
-    val darkColorScheme = newtyxt.dev.soupslurpr.beautyxt.ui.theme.defaultDarkScheme
+    val lightColorScheme = defaultLightScheme
+    val darkColorScheme = defaultDarkScheme
 
     val colorScheme = if (isDarkTheme) {
         darkColorScheme
