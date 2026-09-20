@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="file_info_format">Format</string>
+    <string name="file_info_size">Size</string>
+    <string name="file_info_lines">Lines</string>
+    <string name="file_info_words">Words</string>
+    <string name="file_info_word_description">Runs separated by Unicode whitespace</string>
+    <string name="file_info_characters">Unicode characters</string>
+    <string name="file_info_encoding">Encoding</string>
+    <string name="file_info_utf8_bom">UTF-8 with BOM</string>
+    <string name="file_info_utf8">UTF-8</string>
+    <string name="file_info_bom_preserved">The byte-order mark is preserved when saved</string>
+    <string name="file_info_no_bom">No byte-order mark</string>
+    <string name="file_info_line_endings">Line endings</string>
+    <string name="file_info_new_lines">New lines use</string>
+    <string name="file_info_access">Access</string>
+    <string name="file_info_save_state">Save state</string>
+    <string name="file_info_provider_type">Provider type</string>
+    <string name="file_info_provider_modified">Provider modified</string>
+    <string name="file_info_provider_timestamp_description">Reported when this file was opened</string>
+    <string name="file_info_title">File info</string>
+    <string name="file_info_document">Document</string>
+    <string name="file_info_text_format">Text format</string>
+    <string name="file_info_source">File</string>
+    <string name="file_info_actions">File actions</string>
+    <string name="file_info_checking_actions">Checking available file actions</string>
+    <string name="file_info_no_actions">This provider does not offer trash or deletion for this file.</string>
+    <string name="file_info_waiting_confirmation">Waiting for confirmation</string>
+    <string name="file_info_trashing">Moving file to trash</string>
+    <string name="file_info_deleting">Deleting file permanently</string>
+    <string name="file_info_check_again">Check again</string>
+    <string name="file_info_closing">Closing document</string>
+    <string name="file_info_delete">Delete permanently</string>
+    <string name="file_info_trash">Move to trash</string>
+    <string name="file_info_delete_description">Permanently deletes the file and cannot be undone</string>
+    <string name="file_info_trash_description">Moves the file to provider trash when available</string>
+    <string name="file_info_delete_title">Delete permanently?</string>
+    <string name="file_info_trash_title">Move to trash?</string>
+    <string name="file_info_delete_confirmation">This permanently deletes the file. This cannot be undone.</string>
+    <string name="file_info_trash_confirmation">This removes the file from its current location. You can restore it from your file provider\'s Trash.</string>
+    <string name="file_info_cancel">Cancel</string>
+    <string name="file_info_none">None</string>
+    <string name="file_info_mixed_line_endings">%1$s · mixed</string>
+    <string name="file_info_transient">Unsaved · no file selected</string>
+    <string name="file_info_view_only">View only</string>
+    <string name="file_info_editable">Editable · autosave enabled</string>
+    <string name="file_info_opened_version">Opened version</string>
+    <string name="file_info_saved">Saved</string>
+    <string name="file_info_saving">Saving</string>
+    <string name="file_info_save_failed">Save failed</string>
+    <string name="file_info_source_changed">File changed elsewhere</string>
+    <string name="file_info_save_uncertain">Save could not be verified</string>
+    <plurals name="file_info_bytes">
+        <item quantity="one">%1$s byte</item>
+        <item quantity="other">%1$s bytes</item>
+    </plurals>
+</resources>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="dev.soupslurpr.beautyxt.testproviders.ACCESS" />
+
+    <application>
+        <service
+            android:name=".illustration.IsolatedIllustrationProbeService"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":illustration_probe" />
+    </application>
+
+</manifest>

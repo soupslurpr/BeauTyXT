@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="scanner_camera_unavailable_message">The camera is unavailable. Close other camera apps, then try again.</string>
+    <string name="scanner_camera_frame_message">The camera frame could not be read.</string>
+    <string name="scanner_qr_unsupported_message">That isn\'t a BeauTyXT QR code.</string>
+    <string name="scanner_qr_ambiguous_message">Keep only one BeauTyXT QR code in view.</string>
+    <string name="scanner_qr_timeout_message">Scanning took too long. Try again.</string>
+    <string name="scanner_qr_service_message">QR scanning is unavailable right now. Try again.</string>
+    <string name="scanner_qr_read_failure_message">This QR code could not be read.</string>
+    <string name="scanner_title">Scan BeauTyXT code</string>
+    <string name="scanner_close">Close scanner</string>
+    <string name="scanner_frames">Camera frames stay on this device and are never saved.</string>
+    <string name="scanner_permission_title">Camera access is needed to scan</string>
+    <string name="scanner_allow_camera">Allow camera</string>
+    <string name="scanner_not_now">Not now</string>
+    <string name="scanner_fit_code">Fit the entire QR code inside the frame.</string>
+    <string name="scanner_permission_message">BeauTyXT uses the camera only while this scanner is open. Frames are processed on device and never saved.</string>
+</resources>

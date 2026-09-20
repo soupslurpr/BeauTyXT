@@ -1,4 +1,0 @@
-[toolchain]
-channel = "stable"
-targets = ["aarch64-linux-android", "x86_64-linux-android"]
-profile = "default"

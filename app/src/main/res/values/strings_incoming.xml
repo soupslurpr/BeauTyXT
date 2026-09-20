@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="incoming_another_file_title">Open another file?</string>
+    <string name="incoming_shared_content_title">Open shared content?</string>
+    <string name="incoming_close_for_file">Close “%1$s” before opening this file. If it has unsaved changes, BeauTyXT will ask before discarding them. Keeping the current document ignores this file.</string>
+    <string name="incoming_close_for_share">Close “%1$s” before opening this share. If it has unsaved changes, BeauTyXT will ask before discarding them. Keeping the current document ignores this share.</string>
+    <string name="incoming_keep_current">Keep current</string>
+    <string name="incoming_close_current">Close current</string>
+    <string name="incoming_rejected_title">Can\'t open this content</string>
+    <string name="incoming_shared_file_title">Open shared file?</string>
+    <string name="incoming_view_file_title">Open file?</string>
+    <string name="incoming_edit_file_title">Edit file?</string>
+    <string name="incoming_shared_file_description">Android granted temporary access to one shared %1$s file. BeauTyXT won\'t read it until you choose Open.</string>
+    <string name="incoming_view_file_description">Android granted temporary read access to this %1$s file. It will open read-only.</string>
+    <string name="incoming_edit_file_description">Android asked BeauTyXT to edit this %1$s file. Changes save automatically when its provider supports verified writes; otherwise it opens read-only.</string>
+    <string name="incoming_review_text">Review shared text</string>
+    <string name="incoming_review_nfc">Review NFC text</string>
+    <string name="incoming_text_description">This %1$s content stays only in memory until you explicitly save it.</string>
+    <string name="incoming_nfc_description">This %1$s content was received from NFC and stays only in memory until you explicitly save it.</string>
+    <string name="incoming_format_plain_text">plain text</string>
+    <plurals name="incoming_unicode_characters">
+        <item quantity="one">%1$d Unicode character</item>
+        <item quantity="other">%1$d Unicode characters</item>
+    </plurals>
+</resources>

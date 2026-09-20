@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.BeauTyXT" parent="android:Theme.Material.NoActionBar" />
+    <style name="Base.Theme.BeauTyXT" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>

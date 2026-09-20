@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="source_window_failed">Could not load this section for editing</string>
+    <string name="source_retry">Try again</string>
+    <string name="source_opening">Opening document</string>
+    <string name="source_closed">This document is closed</string>
+    <string name="source_empty">This document is empty</string>
+    <string name="source_loading">Loading document text</string>
+    <string name="source_loading_later">Loading later text</string>
+    <string name="source_opening_section">Opening section</string>
+    <string name="source_loading_earlier">Loading earlier text</string>
+    <string name="source_go_to_line">Go to line</string>
+    <string name="source_start_writing">Start writing</string>
+    <string name="source_reload">Reload document</string>
+    <string name="source_discard_reload">Discard changes and reload</string>
+    <string name="source_retry_changes">Retry changes</string>
+    <string name="source_stay">Stay here</string>
+    <string name="source_opening_line">Opening line %1$d</string>
+    <string name="source_line_failed">Could not open line %1$d</string>
+    <string name="source_line_continuation">Continuation of line %1$d</string>
+    <string name="source_line">Line %1$d</string>
+    <string name="source_line_of_total">Line %1$d of %2$d</string>
+    <string name="source_lines_of_total">Lines %1$d–%2$d of %3$d</string>
+    <plurals name="source_line_count">
+        <item quantity="one">%1$d line</item>
+        <item quantity="other">%1$d lines</item>
+    </plurals>
+</resources>

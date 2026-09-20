@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="markdown_inert_html">HTML shown as text</string>
+    <string name="markdown_alert_note">Note</string>
+    <string name="markdown_alert_tip">Tip</string>
+    <string name="markdown_alert_important">Important</string>
+    <string name="markdown_alert_warning">Warning</string>
+    <string name="markdown_alert_caution">Caution</string>
+    <string name="markdown_wrapped_title">Wrapped preview</string>
+    <string name="markdown_wrapped_message">An exceptionally long line is wrapped to fit this preview.</string>
+    <string name="markdown_task_completed">Completed task</string>
+    <string name="markdown_task_incomplete">Incomplete task</string>
+    <string name="markdown_unsupported_markup">Unsupported markup is shown as text.</string>
+    <string name="markdown_return_to_reference">Return to the first reference</string>
+    <string name="markdown_edit_source">Edit source text</string>
+    <string name="markdown_creating_preview">Creating Markdown preview</string>
+    <string name="markdown_nothing_to_preview">Nothing to preview</string>
+    <string name="markdown_no_rendered_content">This document has no rendered content.</string>
+    <string name="markdown_empty_document">Add some text or Markdown to get started.</string>
+    <string name="markdown_view_source">View source</string>
+    <string name="markdown_edit_document">Edit document</string>
+    <string name="markdown_preview_unavailable">Preview unavailable</string>
+    <string name="markdown_code">Code</string>
+    <string name="markdown_copy_code">Copy code</string>
+    <string name="markdown_copy">Copy</string>
+    <string name="markdown_code_copy_limit">This code block is too large to copy at once. Select a smaller part.</string>
+    <string name="markdown_code_copy_failed">Couldn’t copy code. Try again.</string>
+    <string name="markdown_formula">Formula</string>
+    <string name="markdown_copy_formula">Copy formula source</string>
+    <string name="markdown_formula_source">Formula: %1$s</string>
+    <string name="markdown_diagram_source">Diagram: %1$s</string>
+    <string name="markdown_illustration_unsupported">Shown as source—this syntax or font is not supported yet.</string>
+    <string name="markdown_illustration_too_complex">Shown as source—this exceeds the rendering size or complexity limit.</string>
+    <string name="markdown_illustration_unavailable">Shown as source—the renderer is unavailable.</string>
+    <string name="markdown_illustration_timed_out">Shown as source—rendering took too long.</string>
+    <string name="markdown_illustration_failed">Shown as source—the renderer could not produce a valid result.</string>
+    <string name="markdown_illustration_budget">Shown as source—this part of the document reached the rendering budget.</string>
+    <string name="markdown_illustration_rendering">Rendering…</string>
+    <string name="markdown_diagram_text_size">Show diagram at text size</string>
+    <string name="markdown_diagram_fit_width">Fit diagram to width</string>
+</resources>

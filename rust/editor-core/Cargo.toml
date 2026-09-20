@@ -1,0 +1,18 @@
+[package]
+name = "beautyxt-editor-core"
+version = "0.1.0"
+description = "Large-document editing engine for BeauTyXT"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+beautyxt-source-save-core = { path = "../source-save-core" }
+memchr = "2.8.3"
+regex = { version = "1.13.1", default-features = false, features = ["perf", "std", "unicode-case"] }
+unicode-segmentation = "1.13.3"
+
+[lints]
+workspace = true

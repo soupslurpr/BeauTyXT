@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="link_open_title">Open this link?</string>
+    <string name="link_heading_missing_title">Heading not found</string>
+    <string name="link_footnote_missing_title">Footnote not found</string>
+    <string name="link_no_handler_title">No app can open this link</string>
+    <string name="link_blocked_title">Link blocked</string>
+    <string name="link_unavailable_title">Link unavailable</string>
+    <string name="link_relative_title">Relative link unavailable</string>
+    <string name="link_external_description">This %1$s link will be handed to another app.</string>
+    <string name="link_heading_missing_description">No rendered Markdown heading matches this destination.</string>
+    <string name="link_footnote_missing_description">No rendered Markdown footnote matches this reference.</string>
+    <string name="link_no_handler_description">Android could not find an application that accepts this destination.</string>
+    <string name="link_blocked_description">BeauTyXT does not open %1$s links because they can expose local data or trigger unsafe app actions.</string>
+    <string name="link_invalid_description">This destination is empty, malformed, or contains unsafe control characters.</string>
+    <string name="link_relative_description">BeauTyXT only has access to the file you selected, so it cannot resolve a neighboring file without broader folder access.</string>
+    <string name="link_empty">(empty link)</string>
+    <string name="outline_title">Contents</string>
+    <string name="outline_empty">Headings in this document appear here.</string>
+    <string name="outline_untitled">Untitled section</string>
+    <string name="outline_level">Heading level %1$d</string>
+    <string name="navigation_reloading">Reloading file</string>
+    <string name="navigation_closing">Closing document</string>
+    <string name="navigation_source">Back to source</string>
+    <string name="navigation_cancel_save">Cancel pending save</string>
+    <string name="navigation_cancel_share">Cancel sharing</string>
+    <string name="navigation_cancel_print">Cancel printing</string>
+    <string name="navigation_cancel_qr">Cancel QR sharing</string>
+    <string name="navigation_cancel_nfc">Cancel NFC sharing</string>
+    <string name="navigation_cancel_section">Cancel section change</string>
+    <string name="navigation_section">Changing document section</string>
+    <string name="navigation_back">Back</string>
+</resources>

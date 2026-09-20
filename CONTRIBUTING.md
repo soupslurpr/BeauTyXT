@@ -1,24 +1,128 @@
 # Contributing
 
-Thanks for your interest in contributing!
+Thanks for your interest in BeauTyXT.
 
-If you want to suggest a feature or notify us about a bug, please use the issue tracker.
+Please discuss substantial changes in the issue tracker before implementing
+them. Development questions can also be asked in the
+[BeauTyXT Matrix room](https://matrix.to/#/#beautyxt:matrix.org).
 
-When trying to implement a feature, please make sure to discuss the planned implementation in the issue for the feature and get approval from @soupslurpr before working on it to ensure it meets the project's requirements.
+BeauTyXT accepts Kotlin for the Android and Compose integration layer and Rust
+for document processing and native services. Java is not accepted. Android
+Views should only be introduced when a required behavior cannot be implemented
+accessibly and efficiently with Compose.
 
-If you need help with development or have questions it's recommended to join the BeauTyXT room on matrix at
-https://matrix.to/#/#beautyxt:matrix.org and ask for help there from [soupslurpr](https://github.com/soupslurpr),
-the lead developer.
+Keep unsafe Rust confined to small platform interop modules. Every unsafe block
+must state and enforce its safety invariants. Core document and parsing crates
+must forbid unsafe code.
 
-As of now, translations are not accepted.
+Before submitting a change, run the applicable formatters, static analysis, and
+tests. Commit changes in small logical units with imperative, lowercase commit
+headers shorter than 72 characters. Hard-wrap prose in commit bodies to 72
+characters, preserving URLs, code, and trailers.
 
-Here are some things to know so that your time isn't potentially wasted.
-BeauTyXT depends on a Rust library that you must compile or the app will crash on most operations. The source code
-for the Rust library can be found at the beautyxt_rs folder. Look at useful-commands.txt for useful commands and
-info that will probably help with building.
+Tests should protect observable behavior, important invariants, or a concrete
+regression. Avoid tests that merely repeat a getter, static wording, or a
+library guarantee. Keep overlapping unit and device coverage only when the
+device test exercises additional Android integration behavior.
 
-Java code is not accepted, we will only use Rust and Kotlin. Unsafe Rust code should be avoided, but if there is
-truly no other way then it will be heavily scrutinized.
+English is the only supported interface language. Translation contributions
+are not accepted or solicited; see the maintainer-controlled
+[language policy](docs/product-direction.md#languages). Keep user-facing text
+in Android string and plural resources.
 
-Views should be avoided at all costs and only Jetpack Compose should be used unless there is no other way, but it
-has to be very important (unlikely).
+Use the [release process](docs/release.md) for release-candidate verification,
+reproducibility checks, Accrescent packaging, and signing decisions.
+
+## Third-party notices
+
+After changing a Rust, Android, or JVM dependency, audit the resolved release
+graph and update the component list and any license clarifications in
+`about.hbs` and `about.toml`. Generate the bundled notice with cargo-about
+0.8.0, then normalize line endings inherited from dependency license files:
+
+```sh
+cargo about generate about.hbs --workspace --locked --fail \
+    --output-file app/src/main/res/raw/third_party_notices.txt
+sed -i 's/\r$//' app/src/main/res/raw/third_party_notices.txt
+```
+
+RaTeX's published crates omit their repository-root MIT license. Notice
+generation fetches that file at the verified revision in `about.toml` and
+checks its SHA-256. It therefore needs network access; `--frozen` cannot replace
+`--locked` here. This affects notice regeneration only, not ordinary app builds
+or runtime behavior. The separate KaTeX code/data and font notices remain in
+the template, with their upstream source references.
+
+Code copied from or based on another project must use a permissive license and
+must be recorded in `CREDITS` with its exact upstream source, copied or adapted
+status, and applicable license text. Preserve required notices in the original
+files too. Existing dependencies also include MPL-covered components and OFL
+fonts; their notices and source references remain in the bundled attribution.
+BeauTyXT's MIT license does not replace third-party licenses. Review any new
+dependency's obligations before adoption rather than assuming that an existing
+license exception authorizes another one.
+
+## Local verification artifacts
+
+Keep screenshots, recordings, generated documents, and build/test logs in
+ignored project directories such as `captures/`, not in Git. Release evidence
+must identify the exact tested revision and any coverage limitations; it does
+not replace verification of a later revision.
+
+## Device-test providers
+
+The Kotlin providers in `test-providers/` supply synthetic import sources and
+export destinations, including paused and failing streams. They run in their
+own test-only APK with a separate UID and Kotlin runtime. Putting them in the
+instrumentation APK would leave their standalone process without Kotlin's
+runtime: Android's build plugin omits dependencies already packaged in the app
+under test. Only the provider protocol constants are shared with the tests.
+
+`androidTestUtil` installs this helper for Gradle's connected-device tests.
+For manual `adb shell am instrument` runs, build `:test-providers:assembleDebug`
+and install `test-providers/build/outputs/apk/debug/test-providers-debug.apk`
+with `adb -s SERIAL install -r -t`, alongside the debug and instrumentation
+APKs. Always select the intended emulator or explicitly authorized device.
+The helper has no release variant or launcher activity. A signature permission
+and caller-package validation restrict it to the debug test target; neither
+the helper nor its access permission ships in staging or production.
+
+The verified direct-run workflow is:
+
+```sh
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest \
+    :test-providers:assembleDebug
+adb -s SERIAL install -r -t \
+    test-providers/build/outputs/apk/debug/test-providers-debug.apk
+adb -s SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s SERIAL install -r -t \
+    app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s SERIAL shell am instrument -w -r \
+    dev.soupslurpr.beautyxt.debug.test/dev.soupslurpr.beautyxt.document.DocumentBridgeInstrumentation
+```
+
+Require the explicit verification-passed message, a completed test status, and
+`INSTRUMENTATION_CODE: -1`; the shell command's exit code alone is insufficient.
+The runner reports one test for the selected batch, with individual phases in
+logcat. An unknown `-e phase` is a failure, not an empty successful run.
+
+With AGP 9.4.1, the connected-test task's `--serial` filter throws an upstream
+immutable-list exception. `ANDROID_SERIAL=SERIAL` avoids that filter, but on the
+API 37 emulator the runner then passes an invalid Android user ID (`-2`) and
+can report build success with zero tests. Our connected-test result guard now
+fails the task in that situation. It clears stale XML results before the run
+and requires nonempty, successful test reports for every reported device;
+missing, malformed, failed, and skipped-only reports cannot pass. Its regression
+checks run with `:app:verifyDeviceTestResultsGuard` and as part of `:app:check`.
+This does not fix the upstream launch error: until that is resolved, use the
+direct command above to run the tests.
+
+## Native print diagnostics
+
+Instrumentation removes its named PDF-fixture directories before verification
+and after each print phase. This keeps synthetic output out of subsequent
+app-storage audits without excluding any storage from those audits.
+
+To inspect generated PDFs, select a print phase with `-e phase` and add
+`-e retainPrintArtifacts true`. Pull the needed files into an ignored project
+directory before the next ordinary run, which removes those test artifacts.

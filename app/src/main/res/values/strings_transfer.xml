@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="format_plain_text">Plain text</string>
+    <string name="format_markdown">Markdown</string>
+    <string name="format_plain_text_file">Plain text (.txt)</string>
+    <string name="format_markdown_file">Markdown (.md)</string>
+    <string name="nfc_label_title">Label this NFC tag?</string>
+    <string name="nfc_label_description">An optional short label helps you match the digital transfer to writing on the physical tag. It is not a secret or hardware identity.</string>
+    <string name="nfc_label_optional">Tag label (optional)</string>
+    <string name="nfc_label_help">1–3 letters or digits. Write this on the tag.</string>
+    <string name="nfc_label_suggest">Suggest</string>
+    <string name="action_continue">Continue</string>
+    <string name="action_done">Done</string>
+    <string name="action_go">Go</string>
+    <string name="qr_share_title">Share as QR code</string>
+    <string name="qr_share_disclosure">Anyone who scans this code can read this text.</string>
+    <string name="qr_code_description">QR code containing this document</string>
+    <string name="qr_image_destination">Choosing image destination…</string>
+    <string name="qr_image_saving">Saving image…</string>
+    <string name="qr_image_saved">QR image saved.</string>
+    <string name="qr_image_failed">The QR image couldn\'t be saved. Try another destination.</string>
+    <string name="qr_image_save_another">Save another</string>
+    <string name="qr_image_try_another">Try another</string>
+    <string name="qr_image_choosing_short">Choosing…</string>
+    <string name="qr_image_saving_short">Saving…</string>
+    <string name="qr_image_save">Save image</string>
+    <string name="qr_image_format">Image format</string>
+    <string name="qr_image_format_webp">WebP</string>
+    <string name="qr_image_format_png">PNG</string>
+    <string name="qr_image_format_hint">Both are lossless. Choose PNG if another app needs it.</string>
+    <string name="save_copy">Save a copy</string>
+    <string name="save_new">Save as new file</string>
+    <string name="line_number">Line number</string>
+    <string name="share_file">Share file</string>
+    <string name="share_text">Share text</string>
+    <string name="share_file_description">Send the saved file to another app</string>
+    <string name="share_text_description">Send the current text to another app</string>
+    <string name="share_qr">QR code</string>
+    <string name="share_nfc">Write NFC tag</string>
+    <string name="share_nfc_unavailable">NFC isn\'t available on this device</string>
+    <string name="share_print">Print or PDF</string>
+    <string name="share_print_description">Choose layout, margins, and page numbers</string>
+    <string name="share_copy_description">Keep the original file unchanged</string>
+    <string name="transfer_checking">Checking current text size…</string>
+    <string name="nfc_label_example" translatable="false">A27</string>
+    <string name="qr_share_capacity">%1$s · %2$s of %3$s bytes</string>
+    <string name="line_number_range">Line number (1–%1$d)</string>
+    <string name="line_number_help">Enter a line number from 1 to %1$d.</string>
+    <string name="transfer_fits">Fits · %1$s of %2$s bytes</string>
+    <string name="transfer_too_large">Too large · %1$s bytes; limit %2$s</string>
+    <string name="nfc_write_capacity">%1$s text bytes · Tag capacity checked before writing</string>
+</resources>

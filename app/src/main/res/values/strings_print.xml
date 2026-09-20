@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="print_setup">Print setup</string>
+    <string name="print_layout_failure">These print settings could not be used.</string>
+    <string name="print_write_failure">This document could not be printed.</string>
+    <string name="print_paragraph_failure">A paragraph is too long to preserve its text direction when printing. Add line breaks to that paragraph, then try again.</string>
+    <string name="print_markdown_block_failure">A section is too long to format for printing. Choose Source text in the print options, or split that section into smaller blocks.</string>
+    <string name="print_service_disclosure">These choices apply only to this print. The print service you choose receives the pages and their selectable text.</string>
+    <string name="print_content">Content</string>
+    <string name="print_source_text">Source text</string>
+    <string name="print_formatted_markdown">Formatted Markdown</string>
+    <string name="print_formatted_description">Prints formatted Markdown using the selected page settings.</string>
+    <string name="print_source_description">Prints the text as written, including any Markdown syntax.</string>
+    <string name="print_formatted_limit">Formatted Markdown is available for documents up to 16 MiB.</string>
+    <string name="print_margins">Margins</string>
+    <string name="print_inches">Inches</string>
+    <string name="print_millimetres">Millimetres</string>
+    <string name="print_minimum_margin">A printer\'s required minimum margin still applies.</string>
+    <string name="print_text">Text</string>
+    <string name="print_text_size">Text size</string>
+    <string name="print_point_unit">pt</string>
+    <string name="print_text_size_error">Enter a whole number from 6 to 72.</string>
+    <string name="print_source_wrapping_description">When off, text beyond the right margin is clipped.</string>
+    <string name="print_markdown_wrapping_description">Formatted Markdown always wraps to the page.</string>
+    <string name="print_wrap_source_lines">Wrap long source lines</string>
+    <string name="print_page_details">Page details</string>
+    <string name="print_file_name_header">File name header</string>
+    <string name="print_page_numbers">Page numbers</string>
+    <string name="print_page_number">Page %1$d</string>
+    <string name="print_open_screen">Open print screen</string>
+    <string name="print_margin_error">Enter a number from 0 to %1$s %2$s.</string>
+    <string name="print_font_sans">Sans</string>
+    <string name="print_font_serif">Serif</string>
+    <string name="print_font_mono">Mono</string>
+    <string name="print_margin_top">Top</string>
+    <string name="print_margin_bottom">Bottom</string>
+    <string name="print_margin_left">Left</string>
+    <string name="print_margin_right">Right</string>
+    <string name="print_inch_unit">in</string>
+    <string name="print_millimetre_unit">mm</string>
+</resources>

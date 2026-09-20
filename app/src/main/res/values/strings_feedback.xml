@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="feedback_closing">Finishing current work, then closing</string>
+    <string name="feedback_keep_editing">Keep editing</string>
+    <string name="feedback_editable_not_created">Editable file wasn\'t created</string>
+    <string name="feedback_not_saved">Changes are not saved</string>
+    <string name="feedback_source_changed">This file changed elsewhere</string>
+    <string name="feedback_check_original">Check the original file</string>
+    <string name="feedback_retry_save">Retry save</string>
+    <string name="feedback_choose_another">Choose another file</string>
+    <string name="feedback_save_new">Save as new file</string>
+    <string name="feedback_reload_source">Reload file</string>
+    <string name="feedback_overwrite_source">Overwrite file</string>
+    <string name="feedback_reload_title">Reload file?</string>
+    <string name="feedback_overwrite_title">Overwrite file?</string>
+    <string name="feedback_reload">Reload</string>
+    <string name="feedback_overwrite">Overwrite</string>
+    <string name="feedback_cancel">Cancel</string>
+    <string name="feedback_copy_saved">Copy saved</string>
+    <string name="feedback_newer_changes">Newer changes are not included in that copy.</string>
+    <string name="feedback_share_failed">Document wasn\'t shared</string>
+    <string name="feedback_print_failed">Document wasn\'t printed</string>
+    <string name="feedback_qr_failed">QR code wasn\'t created</string>
+    <string name="feedback_nfc_failed">NFC transfer wasn\'t prepared</string>
+    <string name="feedback_try_again">Try again</string>
+    <string name="feedback_nfc_written">NFC tag written</string>
+    <string name="feedback_dismiss">Dismiss</string>
+    <string name="feedback_save_again">Save again</string>
+    <string name="feedback_retry">Retry</string>
+    <string name="feedback_stale_view">This view is out of date. Reload the document to continue.</string>
+    <string name="feedback_reload_confirmation">Discard your open edits and replace them with the file’s latest contents? This can’t be undone.</string>
+    <string name="feedback_overwrite_confirmation">Replace the file’s current contents with your open edits? Changes made in another app will be lost.</string>
+</resources>

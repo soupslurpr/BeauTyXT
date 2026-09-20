@@ -3,64 +3,158 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:targetSandboxVersion="2">
 
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-permission
+        android:name="android.permission.ACCESS_NETWORK_STATE"
+        tools:node="remove" />
+
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.nfc"
+        android:required="false" />
+
     <application
-        android:name=".newtyxt.dev.soupslurpr.beautyxt.Application"
-        android:allowBackup="true"
+        android:name=".BeauTyXTApplication"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        android:enableOnBackInvokedCallback="false"
-        android:fullBackupContent="@xml/backup_rules"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/oldtyxt_app_name"
+        android:label="@string/app_name"
         android:memtagMode="async"
         android:supportsRtl="true"
         android:theme="@style/Theme.BeauTyXT"
-        tools:targetApi="34">
-        <service
-            android:name="oldtyxt.dev.soupslurpr.beautyxt.ui.FileViewModelRustLibraryIsolatedService"
+        android:usesCleartextTraffic="false">
+        <activity
+            android:name=".HomeActivity"
+            android:alwaysRetainTaskState="true"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".HomeDocumentActivity"
+            android:documentLaunchMode="never"
             android:exported="false"
-            android:isolatedProcess="true"
-            android:process=":file_view_model_rust_library_isolated_process" />
+            android:persistableMode="persistNever"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ThirdPartyNoticesActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ShareActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="text/*" />
+                <data android:mimeType="application/markdown" />
+                <data android:mimeType="application/x-markdown" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name=".MainActivity"
             android:documentLaunchMode="intoExisting"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="standard"
+            android:persistableMode="persistNever"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.EDIT" />
                 <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
 
                 <category android:name="android.intent.category.DEFAULT" />
 
-                <data android:scheme="content" />
-                <data android:mimeType="text/*" />
-                <data android:mimeType="application/xml" />
-                <data android:mimeType="application/json" />
-                <data android:mimeType="application/javascript" />
-                <data android:mimeType="application/css" />
-                <data android:mimeType="application/html" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-
-                <data android:mimeType="text/*" />
-                <data android:mimeType="application/xml" />
-                <data android:mimeType="application/json" />
-                <data android:mimeType="application/javascript" />
-                <data android:mimeType="application/css" />
-                <data android:mimeType="application/html" />
+                <data
+                    android:mimeType="text/*"
+                    android:scheme="content" />
+                <data
+                    android:mimeType="application/markdown"
+                    android:scheme="content" />
+                <data
+                    android:mimeType="application/x-markdown"
+                    android:scheme="content" />
             </intent-filter>
         </activity>
 
-        <meta-data
-            android:name="android.webkit.WebView.MetricsOptOut"
-            android:value="true" />
-        <meta-data
-            android:name="android.webkit.WebView.EnableSafeBrowsing"
-            android:value="false" />
+        <service
+            android:name=".importing.IsolatedImportService"
+            android:allowSharedIsolatedProcess="false"
+            android:directBootAware="false"
+            android:enabled="true"
+            android:exported="false"
+            android:externalService="false"
+            android:isolatedProcess="true"
+            android:process=":import"
+            android:useAppZygote="false" />
+
+        <service
+            android:name=".exporting.IsolatedExportService"
+            android:allowSharedIsolatedProcess="false"
+            android:directBootAware="false"
+            android:enabled="true"
+            android:exported="false"
+            android:externalService="false"
+            android:isolatedProcess="true"
+            android:process=":export"
+            android:useAppZygote="false" />
+
+        <service
+            android:name=".markdown.IsolatedMarkdownService"
+            android:allowSharedIsolatedProcess="false"
+            android:directBootAware="false"
+            android:enabled="true"
+            android:exported="false"
+            android:externalService="false"
+            android:isolatedProcess="true"
+            android:process=":markdown"
+            android:useAppZygote="false" />
+
+        <service
+            android:name=".illustration.IsolatedDiagramService"
+            android:allowSharedIsolatedProcess="false"
+            android:directBootAware="false"
+            android:exported="false"
+            android:externalService="false"
+            android:isolatedProcess="true"
+            android:process=":diagram"
+            android:useAppZygote="false" />
+
+        <service
+            android:name=".illustration.IsolatedMathService"
+            android:allowSharedIsolatedProcess="false"
+            android:directBootAware="false"
+            android:exported="false"
+            android:externalService="false"
+            android:isolatedProcess="true"
+            android:process=":math"
+            android:useAppZygote="false" />
+
+        <service
+            android:name=".transfer.IsolatedTransferService"
+            android:allowSharedIsolatedProcess="false"
+            android:directBootAware="false"
+            android:enabled="true"
+            android:exported="false"
+            android:externalService="false"
+            android:isolatedProcess="true"
+            android:process=":transfer"
+            android:useAppZygote="false" />
     </application>
+
 </manifest>

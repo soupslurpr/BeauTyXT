@@ -1,0 +1,45 @@
+[workspace]
+members = [
+    "rust/diagram-core",
+    "rust/diagram-jni",
+    "rust/editor-bridge-protocol",
+    "rust/editor-core",
+    "rust/editor-jni",
+    "rust/export-core",
+    "rust/export-jni",
+    "rust/import-core",
+    "rust/import-jni",
+    "rust/illustration-core",
+    "rust/math-core",
+    "rust/math-jni",
+    "rust/markdown-core",
+    "rust/markdown-jni",
+    "rust/print-core",
+    "rust/print-jni",
+    "rust/source-save-core",
+    "rust/transfer-core",
+    "rust/transfer-jni",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+publish = false
+repository = "https://github.com/soupslurpr/BeauTyXT"
+rust-version = "1.98"
+
+[workspace.lints.rust]
+missing_docs = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+undocumented_unsafe_blocks = "deny"
+
+[profile.release]
+codegen-units = 1
+debug = "line-tables-only"
+lto = "thin"
+panic = "abort"

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="editor_read">Read</string>
+    <string name="editor_source">Source</string>
+    <string name="editor_edit">Edit</string>
+    <string name="editor_show_source">Show source text</string>
+    <string name="editor_preview_markdown">Preview Markdown</string>
+    <string name="editor_save_editable">Save as editable file</string>
+    <string name="editor_save_document">Save document</string>
+    <string name="editor_undo">Undo</string>
+    <string name="editor_redo">Redo</string>
+    <string name="editor_send_export_description">Send and export</string>
+    <string name="editor_send_export">Send &amp; export</string>
+    <string name="editor_more_actions">More document actions</string>
+    <string name="editor_more_options">More options</string>
+    <string name="editor_file_info">File info</string>
+    <string name="editor_contents">Document contents</string>
+    <string name="editor_go_to_line">Go to line</string>
+    <string name="editor_finishing_operation">Finishing current operation</string>
+    <string name="editor_cancel_share">Cancel sharing</string>
+    <string name="editor_cancel_print">Cancel printing</string>
+    <string name="editor_cancel_qr">Cancel QR sharing</string>
+    <string name="editor_cancel_nfc">Cancel NFC sharing</string>
+    <string name="editor_cancel_save">Cancel save</string>
+    <string name="find_in_document">Find in document</string>
+    <string name="find_close">Close Find</string>
+    <string name="find_previous">Previous match</string>
+    <string name="find_next">Next match</string>
+    <string name="find_match_case">Match case</string>
+    <string name="find_ignores_case">Search ignores case</string>
+    <string name="find_case_enabled">Match case is on</string>
+    <string name="find_searching">Searching</string>
+    <string name="find_no_matches">No matches</string>
+    <string name="find_match_line">Match on line %1$d</string>
+    <string name="find_wrapped_beginning">Wrapped to beginning · Match on line %1$d</string>
+    <string name="find_wrapped_end">Wrapped to end · Match on line %1$d</string>
+    <string name="find_case_symbol" translatable="false">Aa</string>
+</resources>

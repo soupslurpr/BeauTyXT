@@ -1,14 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:height="108dp"
-    android:viewportWidth="12.7"
     android:width="108dp"
-    android:viewportHeight="12.7">
-    <path
-        android:fillColor="#00ff00"
-        android:pathData="m5.004,3.192c-0.48,-0 -0.888,0.5 -0.888,1.121v4.075c0,0.621 0.408,1.121 0.888,1.121h2.691c0.48,0 0.888,-0.5 0.888,-1.121L8.583,6.051l-0.941,0.94 -0.415,0.086L7.227,7.248L5.004,7.248L5.004,6.907h2.223v0.17l0.087,-0.415 0.082,-0.082L5.004,6.579v-0.341h2.691v0.042L8.583,5.392L8.583,4.312c0,-0.621 -0.408,-1.121 -0.888,-1.121zM8.583,5.392L8.583,6.051L9.271,5.363 8.942,5.034ZM7.696,6.28 L7.396,6.579L7.696,6.579ZM5.004,4.234L7.696,4.234L7.696,4.574L5.004,4.574ZM5.004,4.902L7.696,4.902L7.696,5.243L5.004,5.243ZM5.004,5.57L7.696,5.57L7.696,5.911L5.004,5.911Z"
-        android:strokeWidth="0.198437" />
-    <path
-        android:fillColor="#000000"
-        android:pathData="M7.314,6.662 L7.228,7.077 7.643,6.991Z"
-        android:strokeWidth="0.135" />
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.6866026"
+        android:scaleY="0.6866026">
+        <group>
+            <clip-path
+                android:pathData="M0,0H108V108H0ZM73.74300,63.35084L93.45572,43.63812L83.56188,33.74428L63.84916,53.45700L60.25140,66.94860Z" />
+            <path
+                android:fillColor="@android:color/transparent"
+                android:pathData="M43.5,17.3L69,17.3Q81,17.3,81,29.8L81,70Q81,90.7,60.5,90.7L39.5,90.7Q27,90.7,27,76.5L27,33Q27,17.3,43.5,17.3Z"
+                android:strokeColor="#FFFFFF"
+                android:strokeLineCap="round"
+                android:strokeLineJoin="round"
+                android:strokeWidth="4.5" />
+            <path
+                android:fillColor="@android:color/transparent"
+                android:pathData="M40,33.5H68M40,44.3H65.5M40,55.1H62M40,65.9H57.5"
+                android:strokeColor="#FFFFFF"
+                android:strokeLineCap="round"
+                android:strokeWidth="4.8" />
+        </group>
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M62.50000,64.70000L66.09776,55.70560L83.56188,38.24148L88.95852,43.63812L71.49440,61.10224Z" />
+    </group>
 </vector>

@@ -1,0 +1,15 @@
+[package]
+name = "beautyxt-print-core"
+version = "0.1.0"
+description = "Bounded platform-font outlines for streaming BeauTyXT printing"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+skrifa = { version = "0.47.0", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true

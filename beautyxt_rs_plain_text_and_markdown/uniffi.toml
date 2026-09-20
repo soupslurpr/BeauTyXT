@@ -1,3 +1,0 @@
-[bindings.kotlin]
-package_name = "oldtyxt.uniffi.beautyxt_rs_plain_text_and_markdown_bindings"
-android = true

@@ -1,0 +1,12 @@
+[package]
+name = "beautyxt-export-core"
+version = "0.1.0"
+description = "Bounded snapshot export for BeauTyXT"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

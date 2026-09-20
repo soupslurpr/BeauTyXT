@@ -1,7 +1,0 @@
-[target.aarch64-linux-android]
-ar = "/home/soupslurpr/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
-linker = "/home/soupslurpr/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
-
-[target.x86_64-linux-android]
-ar = "/home/soupslurpr/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
-linker = "/home/soupslurpr/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android29-clang"
