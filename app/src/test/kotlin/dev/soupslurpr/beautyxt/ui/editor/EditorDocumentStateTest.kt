@@ -8,6 +8,7 @@ import dev.soupslurpr.beautyxt.document.EditWindowSnapshot
 import dev.soupslurpr.beautyxt.document.EditorDocument
 import dev.soupslurpr.beautyxt.document.FindBatch
 import dev.soupslurpr.beautyxt.document.FindDirection
+import dev.soupslurpr.beautyxt.document.FindHighlightRequest
 import dev.soupslurpr.beautyxt.document.FindMatch
 import dev.soupslurpr.beautyxt.document.FindRequest
 import dev.soupslurpr.beautyxt.document.RenderBlock
@@ -52,6 +53,44 @@ private val TEST_MATCH_VIEWPORT_FAILURE_MESSAGE = UiText.Resource(
 
 /** Verifies deterministic state transitions around bounded editable windows. */
 class EditorDocumentStateTest {
+    /** Verifies decoration cannot move the selection, dirty the document, or cross revisions. */
+    @Test
+    fun findsHighlightsWithoutChangingEditorState() = runBlocking {
+        val document = FakeEditorDocument("one one")
+        val coverage = listOf(Utf16Range(0, 3), Utf16Range(4, 7))
+        document.findHighlightsOverride = { coverage }
+        val state = EditorDocumentState(document, ImmediateTestDispatcher)
+        state.loadInitialViewport()
+        state.activateDocumentAt(Utf16Range(4, 7))
+        val edit = state.activeEdit
+        val request = FindHighlightRequest(0, "one", false, Utf16Range(0, 7))
+
+        assertEquals(coverage, state.findHighlights(request))
+        assertSame(edit, state.activeEdit)
+        assertEquals(EditorDocumentStatus.Ready, state.status)
+        assertFalse(state.hasDocumentChanges)
+        assertEquals(emptyList<Utf16Range>(), state.findHighlights(request.copy(revision = 1)))
+        assertEquals(listOf(request), document.findHighlightsCalls)
+        state.updateActiveDraftStatus(requireNotNull(edit).generation, hasChanges = true)
+        assertTrue(state.findHighlights(request).isEmpty())
+        assertEquals(listOf(request), document.findHighlightsCalls)
+        state.close()
+        assertTrue(state.findHighlights(request).isEmpty())
+    }
+
+    /** Verifies failed decoration leaves the current source and navigation usable. */
+    @Test
+    fun highlightFailureDoesNotReplaceEditorStatus() = runBlocking {
+        val document = FakeEditorDocument("one")
+        document.findHighlightsOverride = { error("synthetic decoration failure") }
+        val state = EditorDocumentState(document, ImmediateTestDispatcher)
+        state.loadInitialViewport()
+        assertTrue(state.findHighlights(FindHighlightRequest(0, "one", true, Utf16Range(0, 3))).isEmpty())
+        assertEquals(EditorDocumentStatus.Ready, state.status)
+        assertEquals("one", state.blocks.single().block.text)
+        state.close()
+    }
+
     /** Verifies a large transient transfer is appended in scalar-safe edit-sized chunks. */
     @Test
     fun appendsLargeTransientTextAcrossUnicodeBoundaries() {
@@ -2355,11 +2394,13 @@ private class FakeEditorDocument(
     var previousViewportOverride:
         ((ViewportCursor, ViewportLimits) -> ViewportSnapshot)? = null
     var findOverride: ((FindRequest) -> FindBatch)? = null
+    var findHighlightsOverride: ((FindHighlightRequest) -> List<Utf16Range>)? = null
     var lineStartOverride: ((Long, Long) -> Long)? = null
 
     val viewportCalls = mutableListOf<ViewportCall>()
     val previousViewportCalls = mutableListOf<PreviousViewportCall>()
     val findCalls = mutableListOf<FindRequest>()
+    val findHighlightsCalls = mutableListOf<FindHighlightRequest>()
     val lineStartCalls = mutableListOf<Long>()
     val editWindowCalls = mutableListOf<EditWindowCall>()
     val replaceCalls = mutableListOf<ReplaceCall>()
@@ -2393,6 +2434,14 @@ private class FakeEditorDocument(
             "fake document has no reverse viewport override"
         }
         return override(cursor, limits)
+    }
+
+    /** Returns one configured highlight response for the current revision. */
+    override fun findHighlights(request: FindHighlightRequest): List<Utf16Range> {
+        checkOpen()
+        requireCurrentRevision(request.revision)
+        findHighlightsCalls += request
+        return checkNotNull(findHighlightsOverride)(request)
     }
 
     /** Returns one configured bounded Find batch for the current revision. */

@@ -2,7 +2,10 @@
 
 #![forbid(unsafe_code)]
 
+mod find_highlights;
 mod piece_tree;
+
+pub use find_highlights::{FindHighlightRequest, MAX_FIND_HIGHLIGHT_UTF16_UNITS};
 
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -839,6 +842,18 @@ impl Document {
         find_in_tree(&self.tree, self.metrics(), request)
     }
 
+    /// Returns merged match coverage clipped to one bounded displayed range.
+    ///
+    /// # Errors
+    ///
+    /// Rejects stale revisions, invalid queries or ranges, and unreadable source text.
+    pub fn find_highlights(
+        &self,
+        request: FindHighlightRequest<'_>,
+    ) -> Result<Vec<Utf16Range>, DocumentError> {
+        find_highlights::find_highlights_in_tree(&self.tree, self.metrics(), request)
+    }
+
     /// Returns a bounded snapshot suitable for virtualized Compose layout.
     ///
     /// # Errors
@@ -1001,6 +1016,18 @@ impl DocumentSnapshot {
     /// surrogate pair, a metric overflows, or source text cannot be read.
     pub fn find(&self, request: FindRequest<'_>) -> Result<FindBatch, DocumentError> {
         find_in_tree(&self.tree, self.metrics, request)
+    }
+
+    /// Returns merged match coverage in one bounded range of this captured revision.
+    ///
+    /// # Errors
+    ///
+    /// Rejects stale revisions, invalid queries or ranges, and unreadable source text.
+    pub fn find_highlights(
+        &self,
+        request: FindHighlightRequest<'_>,
+    ) -> Result<Vec<Utf16Range>, DocumentError> {
+        find_highlights::find_highlights_in_tree(&self.tree, self.metrics, request)
     }
 
     /// Returns one bounded viewport from the captured immutable revision.
@@ -1451,14 +1478,7 @@ fn find_case_insensitive_match(
     query: &str,
     direction: FindDirection,
 ) -> Result<Option<Range<usize>>, DocumentError> {
-    let escaped_query = regex::escape(query);
-    let matcher = RegexBuilder::new(&escaped_query)
-        .case_insensitive(true)
-        .size_limit(FIND_REGEX_SIZE_LIMIT_BYTES)
-        .build()
-        .map_err(|_| {
-            DocumentError::InvalidFindRequest("case-insensitive query could not be compiled")
-        })?;
+    let matcher = compile_case_insensitive_find(query)?;
     match direction {
         FindDirection::Forward => Ok(matcher
             .find(search_text)
@@ -1490,6 +1510,17 @@ fn find_case_insensitive_match(
             Ok(last_match)
         }
     }
+}
+
+/// Compiles the shared Unicode simple-case-folded literal used by Find and highlighting.
+fn compile_case_insensitive_find(query: &str) -> Result<regex::Regex, DocumentError> {
+    RegexBuilder::new(&regex::escape(query))
+        .case_insensitive(true)
+        .size_limit(FIND_REGEX_SIZE_LIMIT_BYTES)
+        .build()
+        .map_err(|_| {
+            DocumentError::InvalidFindRequest("case-insensitive query could not be compiled")
+        })
 }
 
 /// Returns the byte boundary immediately after one scalar-aligned position.

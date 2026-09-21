@@ -14,10 +14,10 @@ use beautyxt_editor_bridge_protocol::{
     EncodeError, encode_document_metrics, encode_edit_window, encode_find, encode_viewport,
 };
 use beautyxt_editor_core::{
-    Document, DocumentError, DocumentSnapshot, EditWindowRequest, FindDirection, FindRequest,
-    MAX_FIND_CANDIDATE_UTF16_UNITS, MAX_FIND_QUERY_BYTES, MAX_FIND_QUERY_UTF16_UNITS,
-    PreparedSourceSave, PreviousViewportRequest, SourceSavePackageMetrics, Utf16Range,
-    ViewportPosition, ViewportRequest,
+    Document, DocumentError, DocumentSnapshot, EditWindowRequest, FindDirection,
+    FindHighlightRequest, FindRequest, MAX_FIND_CANDIDATE_UTF16_UNITS, MAX_FIND_QUERY_BYTES,
+    MAX_FIND_QUERY_UTF16_UNITS, PreparedSourceSave, PreviousViewportRequest,
+    SourceSavePackageMetrics, Utf16Range, ViewportPosition, ViewportRequest,
 };
 use jni::EnvUnowned;
 use jni::errors::{Error as JniError, ThrowRuntimeExAndDefault};
@@ -490,6 +490,51 @@ pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_find
             let batch = snapshot.find(request)?;
             let packet = encode_find(&batch)?;
             Ok(env.byte_array_from_slice(&packet)?)
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// Returns sorted, merged global UTF-16 highlight pairs for one bounded displayed range.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_findHighlights<
+    'caller,
+>(
+    mut unowned_env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    handle: jlong,
+    revision: jlong,
+    query: JString<'caller>,
+    match_case: jboolean,
+    range_start_utf16: jlong,
+    range_end_utf16: jlong,
+) -> JLongArray<'caller> {
+    unowned_env
+        .with_env(|env| -> Result<JLongArray<'caller>, BridgeError> {
+            let revision = nonnegative_u64(revision, "highlight revision")?;
+            let query: String = query.to_string();
+            validate_find_query(&query)?;
+            let request = FindHighlightRequest {
+                revision,
+                query: &query,
+                match_case,
+                range: Utf16Range::new(
+                    nonnegative_usize(range_start_utf16, "highlight start")?,
+                    nonnegative_usize(range_end_utf16, "highlight end")?,
+                ),
+            };
+            let snapshot = lock_registry()?.capture_snapshot(handle, revision)?;
+            let highlights = snapshot.find_highlights(request)?;
+            let coordinates = highlights
+                .into_iter()
+                .flat_map(|range| [range.start, range.end])
+                .map(|offset| {
+                    jlong::try_from(offset)
+                        .map_err(|_| BridgeError::InvalidArgument("highlight offset"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let result = env.new_long_array(coordinates.len())?;
+            result.set_region(env, 0, &coordinates)?;
+            Ok(result)
         })
         .resolve::<ThrowRuntimeExAndDefault>()
 }

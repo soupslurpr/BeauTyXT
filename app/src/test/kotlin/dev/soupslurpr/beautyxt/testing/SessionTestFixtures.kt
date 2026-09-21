@@ -8,6 +8,7 @@ import dev.soupslurpr.beautyxt.document.EditorDocument
 import dev.soupslurpr.beautyxt.document.EditorDocumentSnapshot
 import dev.soupslurpr.beautyxt.document.FindBatch
 import dev.soupslurpr.beautyxt.document.FindDirection
+import dev.soupslurpr.beautyxt.document.FindHighlightRequest
 import dev.soupslurpr.beautyxt.document.FindMatch
 import dev.soupslurpr.beautyxt.document.FindRequest
 import dev.soupslurpr.beautyxt.document.RenderBlock
@@ -171,6 +172,9 @@ internal class TestEditorDocument(
         cursor: ViewportCursor,
         limits: ViewportLimits
     ): ViewportSnapshot = error("complete test viewport has no previous page")
+
+    /** Leaves display-only decoration to native and Android integration tests. */
+    override fun findHighlights(request: FindHighlightRequest): List<Utf16Range> = emptyList()
 
     /** Searches one scalar-aligned bounded range with deterministic literal semantics. */
     override fun find(request: FindRequest): FindBatch {

@@ -124,6 +124,22 @@ internal class RustDocument private constructor(private var nativeHandle: Long) 
         FindPacketDecoder.decode(packet)
     }
 
+    /** Returns display-only coverage using the native Find matching rules. */
+    override fun findHighlights(request: FindHighlightRequest): List<Utf16Range> =
+        withOpenHandle { handle ->
+            decodeFindHighlights(
+                coordinates = NativeDocument.findHighlights(
+                    handle = handle,
+                    revision = request.revision,
+                    query = request.query,
+                    matchCase = request.matchCase,
+                    rangeStartUtf16 = request.range.start,
+                    rangeEndUtf16 = request.range.end
+                ),
+                range = request.range
+            )
+        }
+
     /** Returns one exact logical-line start in global UTF-16 coordinates. */
     override fun lineStartUtf16(revision: Long, logicalLine: Long): Long {
         require(revision >= 0L) { "revision must be nonnegative" }
