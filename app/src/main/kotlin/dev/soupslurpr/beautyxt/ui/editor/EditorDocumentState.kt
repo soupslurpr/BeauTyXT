@@ -14,6 +14,7 @@ import dev.soupslurpr.beautyxt.document.EditorDocument
 import dev.soupslurpr.beautyxt.document.EditorDocumentSnapshot
 import dev.soupslurpr.beautyxt.document.FindBatch
 import dev.soupslurpr.beautyxt.document.FindDirection
+import dev.soupslurpr.beautyxt.document.FindHighlightRequest
 import dev.soupslurpr.beautyxt.document.FindMatch
 import dev.soupslurpr.beautyxt.document.FindRequest
 import dev.soupslurpr.beautyxt.document.RenderBlock
@@ -718,6 +719,30 @@ internal constructor(
             findOperationRunning = false
         }
     }
+
+    /** Searches display-only coverage without changing navigation, selection, or status. */
+    suspend fun findHighlights(request: FindHighlightRequest): List<Utf16Range> =
+        operations.withLock {
+            if (
+                status != EditorDocumentStatus.Ready ||
+                hasActiveDraftChanges ||
+                request.revision != currentRevision ||
+                request.range.end > (metrics?.utf16Length ?: 0L) ||
+                closeStarted.get()
+            ) {
+                return@withLock emptyList()
+            }
+            try {
+                val highlights = withContext(workerDispatcher) { document.findHighlights(request) }
+                currentCoroutineContext().ensureActive()
+                if (closeStarted.get()) emptyList() else highlights
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                // Find navigation still supplies its current result if decoration fails.
+                emptyList()
+            }
+        }
 
     /** Publishes one bounded viewport retaining readable context before a Find match. */
     suspend fun navigateToMatch(match: FindMatch): MatchViewportResult = operations.withLock {

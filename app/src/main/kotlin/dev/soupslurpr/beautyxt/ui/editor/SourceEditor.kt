@@ -58,12 +58,9 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -479,6 +476,8 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
                     contentType = { "document-block" }
                 ) { editorBlock ->
                     ReadOnlyBlock(
+                        session = session,
+                        revision = metrics.revision,
                         editorBlock = editorBlock,
                         lineNumberStyle = lineNumberStyle,
                         lineNumberWidth = gutterWidth,
@@ -711,6 +710,8 @@ private fun EditorNoticeRow(message: String, modifier: Modifier = Modifier) {
 /** Displays one selectable Rust render block in the read-only fallback viewport. */
 @Composable
 private fun ReadOnlyBlock(
+    session: EditorSession,
+    revision: Long,
     editorBlock: EditorRenderBlock,
     lineNumberStyle: TextStyle,
     lineNumberWidth: Dp,
@@ -719,6 +720,11 @@ private fun ReadOnlyBlock(
     onTextMeasurement: (BlockTextMeasurement) -> Unit
 ) {
     val block = editorBlock.block
+    val highlights = rememberFindHighlights(
+        session = session,
+        revision = revision,
+        range = Utf16Range(block.globalUtf16Start, block.globalUtf16End)
+    )
     val highlightRange =
         findBlockHighlightRange(
             matchRange = matchRange,
@@ -760,6 +766,7 @@ private fun ReadOnlyBlock(
             )
             ReadOnlyBlockText(
                 text = block.text,
+                highlights = highlights,
                 highlightRange = highlightRange,
                 onTextLayout = { result -> textLayoutResult = result },
                 onTextContentPositioned = { top -> textContentTopInBlockPixels = top },
@@ -778,6 +785,7 @@ private fun ReadOnlyBlock(
             )
             ReadOnlyBlockText(
                 text = block.text,
+                highlights = highlights,
                 highlightRange = highlightRange,
                 onTextLayout = { result -> textLayoutResult = result },
                 onTextContentPositioned = { top -> textContentTopInBlockPixels = top },
@@ -791,35 +799,17 @@ private fun ReadOnlyBlock(
 @Composable
 private fun ReadOnlyBlockText(
     text: String,
+    highlights: List<TextRange>,
     highlightRange: TextRange?,
     onTextLayout: (TextLayoutResult) -> Unit,
     onTextContentPositioned: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val currentOnTextContentPositioned by rememberUpdatedState(onTextContentPositioned)
-    val highlightBackground = MaterialTheme.colorScheme.secondaryContainer
-    val highlightForeground = MaterialTheme.colorScheme.onSecondaryContainer
+    val styles = findHighlightStyles()
     val renderedText =
-        remember(text, highlightRange, highlightBackground, highlightForeground) {
-            require(highlightRange == null || highlightRange.end <= text.length) {
-                "find highlight exceeds its render block"
-            }
-            if (highlightRange == null) {
-                AnnotatedString(text)
-            } else {
-                buildAnnotatedString {
-                    append(text)
-                    addStyle(
-                        style =
-                            SpanStyle(
-                                color = highlightForeground,
-                                background = highlightBackground
-                            ),
-                        start = highlightRange.start,
-                        end = highlightRange.end
-                    )
-                }
-            }
+        remember(text, highlights, highlightRange, styles) {
+            findHighlightedText(text, highlights, highlightRange, styles)
         }
     val positionedModifier =
         modifier.onGloballyPositioned { coordinates ->
@@ -860,6 +850,29 @@ private fun ActiveEditWindowEditor(
         mutableStateOf<TextLayoutResult?>(null)
     }
     val textFieldState = draft.textFieldState
+    val highlights = rememberFindHighlights(
+        session = session,
+        revision = edit.snapshot.metrics.revision,
+        range = edit.snapshot.range
+    )
+    val currentHighlight = findBlockHighlightRange(
+        matchRange = session.findMatch
+            ?.takeIf { session.isFindVisible && it.start.revision == edit.snapshot.metrics.revision }
+            ?.range,
+        blockUtf16Start = edit.snapshot.range.start,
+        blockUtf16End = edit.snapshot.range.end
+    )
+    val highlightStyles = findHighlightStyles()
+    val outputTransformation = remember(edit, highlights, currentHighlight, highlightStyles) {
+        if (highlights.isEmpty() && currentHighlight == null) null else {
+            findHighlightTransformation(
+                edit.snapshot.text,
+                highlights,
+                currentHighlight,
+                highlightStyles
+            )
+        }
+    }
     val hasChanges = draft.hasChanges
     val hasComposition by
         remember(edit.generation, textFieldState) {
@@ -1106,6 +1119,7 @@ private fun ActiveEditWindowEditor(
                         null
                     },
                 inputTransformation = inputTransformation,
+                outputTransformation = outputTransformation,
                 lineLimits = TextFieldLineLimits.MultiLine(),
                 onTextLayout = { getResult ->
                     val result = getResult()

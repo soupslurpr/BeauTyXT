@@ -466,6 +466,10 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 verifyPhase("incoming review interactions", ::verifyIncomingReviewInteractions)
                 verifyPhase("editor toolbar", ::verifyEditorToolbarInteractions)
                 verifyPhase("compact editor controls", ::verifyCompactEditorControls)
+                verifyPhase("Find highlights") { verifyFindHighlights() }
+                verifyOptInPhase("Find highlight visuals") {
+                    verifyFindHighlights(capturePreviews = true)
+                }
                 verifyPhase("compact print setup", ::verifyCompactPrintSetup)
                 verifyPhase("short document edit recovery") { verifyShortDocumentEditRecovery() }
                 verifyOptInPhase("edit recovery visuals") {

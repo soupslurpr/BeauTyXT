@@ -75,6 +75,9 @@ internal interface EditorDocument : AutoCloseable {
     /** Searches one bounded candidate range in an immutable document revision. */
     fun find(request: FindRequest): FindBatch
 
+    /** Returns merged match coverage clipped to one bounded displayed range. */
+    fun findHighlights(request: FindHighlightRequest): List<Utf16Range>
+
     /** Returns one exact logical-line start in global UTF-16 coordinates. */
     fun lineStartUtf16(revision: Long, logicalLine: Long): Long
 

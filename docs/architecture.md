@@ -245,6 +245,22 @@ reachable; Previous excludes only the current match start. Each direction wraps
 at most once for one user request. The UI reports the selected match and its
 logical line, but does not calculate a document-wide match count.
 
+While Find is open, both selectable source blocks and editable source windows
+highlight every matching substring, including single-character queries. Other
+matches use secondary-container colors; the current result uses primary colors
+and an underline. Closing Find removes the decorations. Editable-field spans
+are output transformations and never change source text, selections, or history.
+
+Highlight requests cover only composed render blocks or the active edit window,
+with a 32 Ki UTF-16-unit limit per request. Rust searches a captured revision
+off the UI thread, including query-bounded context on both sides to find matches
+crossing a display boundary. Matching shares Find's Unicode simple case folding
+and overlapping-match semantics. Returned coverage is clipped, sorted, and
+merged to avoid redundant spans for dense queries. Composition cancels obsolete
+requests and discards their decorations when the query, case option, revision,
+or displayed range changes. This does not enumerate matches elsewhere in the
+document or calculate a total or partial count.
+
 Each native request searches a candidate-start span of at most 256 Ki UTF-16
 code units. Its fixed-size bridge packet returns revision metrics and either
 one half-open UTF-16 match with its line-relative viewport cursor, or the

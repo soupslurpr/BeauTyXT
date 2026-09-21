@@ -65,6 +65,17 @@ internal object NativeDocument {
         maxCandidateUtf16Units: Int
     ): ByteArray
 
+    /** Returns merged global UTF-16 highlight pairs for one bounded displayed range. */
+    @JvmStatic
+    external fun findHighlights(
+        handle: Long,
+        revision: Long,
+        query: String,
+        matchCase: Boolean,
+        rangeStartUtf16: Long,
+        rangeEndUtf16: Long
+    ): LongArray
+
     /** Returns one exact logical-line start in global UTF-16 coordinates. */
     @JvmStatic
     external fun lineStartUtf16(handle: Long, revision: Long, logicalLine: Long): Long
