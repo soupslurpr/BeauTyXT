@@ -73,6 +73,7 @@
 
         <activity
             android:name=".MainActivity"
+            android:autoRemoveFromRecents="true"
             android:documentLaunchMode="intoExisting"
             android:exported="true"
             android:launchMode="standard"

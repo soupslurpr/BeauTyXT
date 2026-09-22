@@ -125,6 +125,7 @@ internal fun BeauTyXTApp(
     var isQrScannerVisible by retain { mutableStateOf(false) }
     var isNfcReaderVisible by retain { mutableStateOf(false) }
     var initialActionConsumed by retain { mutableStateOf(false) }
+    var isDocumentSessionClosing by retain { mutableStateOf(false) }
     val session =
         retain {
             BeauTyXTSession(
@@ -323,11 +324,17 @@ internal fun BeauTyXTApp(
         }
     }
 
+    /** Keeps an intentionally closed session neutral while Android finishes the activity. */
+    fun closeDocumentSession() {
+        isDocumentSessionClosing = true
+        onDocumentSessionClosed()
+    }
+
     /** Closes the editor while preserving any incoming content still under review. */
     fun closeCurrentEditor() {
         session.closeEditor()
         if (session.editor == null && session.incomingShare == null) {
-            onDocumentSessionClosed()
+            closeDocumentSession()
         }
     }
 
@@ -335,7 +342,7 @@ internal fun BeauTyXTApp(
     fun dismissIncomingShare() {
         session.dismissIncomingShare()
         if (session.editor == null) {
-            onDocumentSessionClosed()
+            closeDocumentSession()
         }
     }
 
@@ -343,7 +350,7 @@ internal fun BeauTyXTApp(
     fun closeQrScanner() {
         isQrScannerVisible = false
         if (session.editor == null && session.incomingShare == null) {
-            onDocumentSessionClosed()
+            closeDocumentSession()
         }
     }
 
@@ -351,7 +358,7 @@ internal fun BeauTyXTApp(
     fun closeNfcReader() {
         isNfcReaderVisible = false
         if (session.editor == null && session.incomingShare == null) {
-            onDocumentSessionClosed()
+            closeDocumentSession()
         }
     }
 
@@ -458,6 +465,7 @@ internal fun BeauTyXTApp(
         if (editor == null) {
             DocumentSessionBackground(
                 openStatus = openStatus,
+                isClosing = isDocumentSessionClosing,
                 recoveryDestination =
                     if (initialDocumentAction == InitialDocumentAction.Unrestorable) {
                         returnDestination
@@ -483,7 +491,7 @@ internal fun BeauTyXTApp(
                     },
                 isPreparingInitialSource =
                     initialDocumentAction == InitialDocumentAction.OpeningSelectedDocument,
-                onClose = onDocumentSessionClosed,
+                onClose = ::closeDocumentSession,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -570,6 +578,7 @@ internal fun BeauTyXTApp(
 @Composable
 private fun DocumentSessionBackground(
     openStatus: OpenStatus,
+    isClosing: Boolean,
     recoveryDestination: DocumentSessionReturnDestination?,
     unavailableMessage: UiText?,
     isPreparingInitialSource: Boolean,
@@ -585,6 +594,8 @@ private fun DocumentSessionBackground(
             contentAlignment = Alignment.Center
         ) {
             when {
+                isClosing -> Unit
+
                 isPreparingInitialSource ||
                     openStatus == OpenStatus.Opening ||
                     openStatus == OpenStatus.Cancelling ->
