@@ -30,6 +30,11 @@ are not accepted or solicited; see the maintainer-controlled
 [language policy](docs/product-direction.md#languages). Keep user-facing text
 in Android string and plural resources.
 
+Use Material Symbols Rounded Android vector drawables for standard interface
+icons, loaded with `painterResource`. Match the existing 24 dp source assets,
+preserve their automatic mirroring, and let `Icon` apply theme colors. Record
+imported assets in `CREDITS` and the bundled notices as described below.
+
 Use the [release process](docs/release.md) for release-candidate verification,
 reproducibility checks, Accrescent packaging, and signing decisions.
 

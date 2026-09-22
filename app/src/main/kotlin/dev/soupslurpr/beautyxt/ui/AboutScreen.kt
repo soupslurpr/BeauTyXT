@@ -22,8 +22,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -85,7 +83,7 @@ internal fun AboutScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            painter = painterResource(R.drawable.ic_arrow_back),
                             contentDescription = stringResource(R.string.navigation_back)
                         )
                     }
@@ -133,7 +131,7 @@ internal fun AboutScreen(
                         Text(stringResource(R.string.about_view_source))
                         Spacer(Modifier.width(AboutRelatedSpacing))
                         Icon(
-                            painter = painterResource(R.drawable.ic_about_open_external),
+                            painter = painterResource(R.drawable.ic_open_in_new),
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )

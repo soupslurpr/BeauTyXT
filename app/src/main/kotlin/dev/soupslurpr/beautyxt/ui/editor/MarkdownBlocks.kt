@@ -25,8 +25,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.input.then
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Done
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -52,6 +50,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -513,7 +512,9 @@ internal fun MarkdownCodeBlocks(
                     {
                         IconButton(onClick = { fitDiagram = !fitDiagram }) {
                             Icon(
-                                if (fitDiagram) EditorZoomInIcon else EditorZoomOutIcon,
+                                painterResource(
+                                    if (fitDiagram) R.drawable.ic_zoom_in else R.drawable.ic_zoom_out
+                                ),
                                 contentDescription = stringResource(
                                     if (fitDiagram) {
                                         R.string.markdown_diagram_text_size
@@ -720,7 +721,7 @@ private fun MarkdownTaskIndicator(checked: Boolean) {
     ) {
         if (checked) {
             Icon(
-                imageVector = Icons.Default.Done,
+                painter = painterResource(R.drawable.ic_check),
                 contentDescription = null,
                 modifier = Modifier.padding(4.dp)
             )

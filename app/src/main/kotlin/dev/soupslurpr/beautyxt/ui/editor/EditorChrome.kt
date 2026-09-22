@@ -14,12 +14,6 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -37,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -46,8 +41,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import dev.soupslurpr.beautyxt.R
-import dev.soupslurpr.beautyxt.ui.HomeNfcIcon
-import dev.soupslurpr.beautyxt.ui.HomeQrIcon
 import dev.soupslurpr.beautyxt.ui.UiText
 import dev.soupslurpr.beautyxt.ui.asString
 
@@ -141,7 +134,7 @@ internal fun EditorTopBar(
         navigationIcon = {
             IconButton(onClick = onClose, enabled = navigationEnabled) {
                 Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
+                    painterResource(R.drawable.ic_arrow_back),
                     contentDescription = navigationContentDescription
                 )
             }
@@ -168,20 +161,20 @@ internal fun EditorTopBar(
         actions = {
             if (cancellation != null) {
                 IconButton(onClick = cancellation.onClick) {
-                    Icon(Icons.Default.Close, contentDescription = cancellation.label)
+                    Icon(painterResource(R.drawable.ic_close), contentDescription = cancellation.label)
                 }
             } else if (!isCancelling && !session.isClosePending) {
                 if (session.presentation == EditorPresentation.Text) {
                     IconButton(onClick = actions.onFind, enabled = session.canShowFind) {
                         Icon(
-                            Icons.Default.Search,
+                            painterResource(R.drawable.ic_search),
                             contentDescription = stringResource(R.string.find_in_document)
                         )
                     }
                 } else {
                     IconButton(onClick = actions.onContents, enabled = contentsEnabled) {
                         Icon(
-                            EditorContentsIcon,
+                            painterResource(R.drawable.ic_format_list_bulleted),
                             contentDescription = stringResource(R.string.editor_contents)
                         )
                     }
@@ -191,7 +184,7 @@ internal fun EditorTopBar(
                     onOverflowExpandedChange(true)
                 }) {
                     Icon(
-                        Icons.Default.MoreVert,
+                        painterResource(R.drawable.ic_more_vert),
                         contentDescription = stringResource(R.string.editor_more_options)
                     )
                 }
@@ -214,7 +207,9 @@ internal fun EditorTopBar(
                     }
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.editor_file_info)) },
-                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                        leadingIcon = {
+                            Icon(painterResource(R.drawable.ic_info), contentDescription = null)
+                        },
                         onClick = {
                             onOverflowExpandedChange(false)
                             actions.onFileInfo()
@@ -224,7 +219,9 @@ internal fun EditorTopBar(
                     HorizontalDivider()
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.action_scan_qr)) },
-                        leadingIcon = { Icon(HomeQrIcon, contentDescription = null) },
+                        leadingIcon = {
+                            Icon(painterResource(R.drawable.ic_qr_code_2), contentDescription = null)
+                        },
                         onClick = {
                             onOverflowExpandedChange(false)
                             actions.onScanQr()
@@ -233,7 +230,9 @@ internal fun EditorTopBar(
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.action_read_nfc)) },
-                        leadingIcon = { Icon(HomeNfcIcon, contentDescription = null) },
+                        leadingIcon = {
+                            Icon(painterResource(R.drawable.ic_nfc), contentDescription = null)
+                        },
                         onClick = {
                             onOverflowExpandedChange(false)
                             actions.onReadNfc()

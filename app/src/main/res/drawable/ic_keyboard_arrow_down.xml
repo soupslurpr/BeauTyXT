@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Material Symbols Rounded: keyboard_arrow_down, 24px.
+    Source: https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/keyboard_arrow_down/materialsymbolsrounded/keyboard_arrow_down_24px.xml
+    Licensed under the Apache License, Version 2.0; see CREDITS.
+    Adapted for BeauTyXT: removed the theme-attribute tint so Compose supplies the color.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M480,599Q472,599 465,596.5Q458,594 452,588L268,404Q257,393 257,376Q257,359 268,348Q279,337 296,337Q313,337 324,348L480,504L636,348Q647,337 664,337Q681,337 692,348Q703,359 703,376Q703,393 692,404L508,588Q502,594 495,596.5Q488,599 480,599Z"/>
+</vector>

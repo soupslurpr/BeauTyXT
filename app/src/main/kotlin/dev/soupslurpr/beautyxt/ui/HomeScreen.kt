@@ -5,6 +5,7 @@
 
 package dev.soupslurpr.beautyxt.ui
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,8 +48,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
@@ -97,7 +98,7 @@ private const val MAX_HORIZONTAL_LAYOUT_FONT_SCALE = 1.3f
 /** Describes one action inside a coordinated horizontal home group. */
 private data class HomeConnectedAction(
     val label: String,
-    val icon: ImageVector,
+    @DrawableRes val iconRes: Int,
     val onClick: () -> Unit,
     val enabled: Boolean,
     val shape: Shape,
@@ -363,7 +364,7 @@ private fun DocumentActions(
                 leadingAction =
                     HomeConnectedAction(
                         label = openDocumentActionLabel(openStatus).asString(),
-                        icon = HomeOpenIcon,
+                        iconRes = R.drawable.ic_file_open,
                         onClick = onOpenClick,
                         enabled = openButtonEnabled,
                         shape = HomeLeadingActionShape,
@@ -376,7 +377,7 @@ private fun DocumentActions(
                 trailingAction =
                     HomeConnectedAction(
                         label = stringResource(R.string.home_new_document),
-                        icon = HomeNewIcon,
+                        iconRes = R.drawable.ic_note_add,
                         onClick = onNewDocument,
                         enabled = isNewDocumentEnabled,
                         shape = HomeTrailingActionShape,
@@ -393,7 +394,7 @@ private fun DocumentActions(
             ) {
                 HomeActionButton(
                     label = openDocumentActionLabel(openStatus).asString(),
-                    icon = HomeOpenIcon,
+                    iconRes = R.drawable.ic_file_open,
                     onClick = onOpenClick,
                     enabled = openButtonEnabled,
                     shape = HomeStandaloneActionShape,
@@ -408,7 +409,7 @@ private fun DocumentActions(
                 )
                 HomeActionButton(
                     label = stringResource(R.string.home_new_document),
-                    icon = HomeNewIcon,
+                    iconRes = R.drawable.ic_note_add,
                     onClick = onNewDocument,
                     enabled = isNewDocumentEnabled,
                     shape = HomeStandaloneActionShape,
@@ -440,7 +441,7 @@ private fun ReceiveActions(
                     leadingAction =
                         HomeConnectedAction(
                             label = stringResource(R.string.action_scan_qr),
-                            icon = HomeQrIcon,
+                            iconRes = R.drawable.ic_qr_code_2,
                             onClick = onScanQr,
                             enabled = isScanQrEnabled,
                             shape = HomeLeadingActionShape,
@@ -451,7 +452,7 @@ private fun ReceiveActions(
                     trailingAction =
                         HomeConnectedAction(
                             label = stringResource(R.string.action_read_nfc),
-                            icon = HomeNfcIcon,
+                            iconRes = R.drawable.ic_nfc,
                             onClick = onReadNfc,
                             enabled = isReadNfcEnabled,
                             shape = HomeTrailingActionShape,
@@ -467,7 +468,7 @@ private fun ReceiveActions(
                 ) {
                     HomeActionButton(
                         label = stringResource(R.string.action_scan_qr),
-                        icon = HomeQrIcon,
+                        iconRes = R.drawable.ic_qr_code_2,
                         onClick = onScanQr,
                         enabled = isScanQrEnabled,
                         shape = HomeStandaloneActionShape,
@@ -481,7 +482,7 @@ private fun ReceiveActions(
                     )
                     HomeActionButton(
                         label = stringResource(R.string.action_read_nfc),
-                        icon = HomeNfcIcon,
+                        iconRes = R.drawable.ic_nfc,
                         onClick = onReadNfc,
                         enabled = isReadNfcEnabled,
                         shape = HomeStandaloneActionShape,
@@ -530,7 +531,7 @@ private fun ButtonGroupScope.homeConnectedActionItem(
         buttonGroupContent = {
             HomeActionButton(
                 label = action.label,
-                icon = action.icon,
+                iconRes = action.iconRes,
                 onClick = action.onClick,
                 enabled = action.enabled,
                 shape = action.shape,
@@ -564,7 +565,7 @@ private fun ButtonGroupScope.homeConnectedActionItem(
                     action.onClick()
                 },
                 leadingIcon = {
-                    Icon(imageVector = action.icon, contentDescription = null)
+                    Icon(painter = painterResource(action.iconRes), contentDescription = null)
                 },
                 enabled = action.enabled,
                 interactionSource = interactionSource
@@ -577,7 +578,7 @@ private fun ButtonGroupScope.homeConnectedActionItem(
 @Composable
 private fun HomeActionButton(
     label: String,
-    icon: ImageVector,
+    @DrawableRes iconRes: Int,
     onClick: () -> Unit,
     enabled: Boolean,
     shape: Shape,
@@ -608,7 +609,11 @@ private fun HomeActionButton(
         interactionSource = interactionSource
     ) {
         val actionIcon: @Composable () -> Unit = {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(HomeActionIconSize))
+            Icon(
+                painterResource(iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(HomeActionIconSize)
+            )
         }
         val actionLabel: @Composable () -> Unit = {
             Text(

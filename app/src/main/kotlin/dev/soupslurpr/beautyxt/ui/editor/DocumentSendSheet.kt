@@ -7,15 +7,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
-import dev.soupslurpr.beautyxt.ui.HomeNfcIcon
-import dev.soupslurpr.beautyxt.ui.HomeQrIcon
 import dev.soupslurpr.beautyxt.ui.UiText
 import dev.soupslurpr.beautyxt.ui.asString
 
@@ -59,14 +55,14 @@ internal fun DocumentSendSheet(
                 } else {
                     stringResource(R.string.share_text_description)
                 },
-                icon = Icons.Default.Share,
+                iconRes = R.drawable.ic_share,
                 enabled = session.canStartShare,
                 onClick = { select(onShare) }
             )
             DocumentSheetAction(
                 title = stringResource(R.string.share_qr),
                 description = transferCapacityDescription(session.qrShareCapacity).asString(),
-                icon = HomeQrIcon,
+                iconRes = R.drawable.ic_qr_code_2,
                 enabled = session.canStartQrShare,
                 onClick = { select(onQrShare) }
             )
@@ -77,14 +73,14 @@ internal fun DocumentSendSheet(
                 } else {
                     stringResource(R.string.share_nfc_unavailable)
                 },
-                icon = HomeNfcIcon,
+                iconRes = R.drawable.ic_nfc,
                 enabled = nfcAvailable && session.canStartNfcWrite,
                 onClick = { select(onNfcWrite) }
             )
             DocumentSheetAction(
                 title = stringResource(R.string.share_print),
                 description = stringResource(R.string.share_print_description),
-                icon = EditorPrintIcon,
+                iconRes = R.drawable.ic_print,
                 enabled = session.canStartPrint,
                 onClick = { select(onPrint) }
             )
@@ -92,7 +88,7 @@ internal fun DocumentSendSheet(
                 DocumentSheetAction(
                     title = stringResource(R.string.save_copy),
                     description = stringResource(R.string.share_copy_description),
-                    icon = EditorSaveIcon,
+                    iconRes = R.drawable.ic_save,
                     enabled = session.canStartSaveAs,
                     onClick = { select(onSaveCopy) }
                 )

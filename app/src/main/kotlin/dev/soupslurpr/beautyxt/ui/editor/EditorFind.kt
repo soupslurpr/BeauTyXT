@@ -18,11 +18,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconToggleButton
@@ -50,6 +45,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -160,7 +156,10 @@ private fun FindChromeContent(
     TopAppBar(
         navigationIcon = {
             FindIconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.find_close))
+                Icon(
+                    painterResource(R.drawable.ic_close),
+                    contentDescription = stringResource(R.string.find_close)
+                )
             }
         },
         title = {
@@ -296,7 +295,7 @@ private fun FindNavigation(session: EditorSession) {
         enabled = session.canNavigateFind
     ) {
         Icon(
-            Icons.Default.KeyboardArrowUp,
+            painterResource(R.drawable.ic_keyboard_arrow_up),
             contentDescription = stringResource(R.string.find_previous)
         )
     }
@@ -305,7 +304,7 @@ private fun FindNavigation(session: EditorSession) {
         enabled = session.canNavigateFind
     ) {
         Icon(
-            Icons.Default.KeyboardArrowDown,
+            painterResource(R.drawable.ic_keyboard_arrow_down),
             contentDescription = stringResource(R.string.find_next)
         )
     }

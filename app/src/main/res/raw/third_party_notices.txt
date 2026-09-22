@@ -5667,11 +5667,18 @@ BeauTyXT's separate original files remain under MIT.
 Google Material Symbols
 -----------------------
 
-Material Symbols Rounded open_in_new (24px)
-Source: https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/open_in_new/materialsymbolsrounded/open_in_new_24px.xml
+Material Symbols Rounded (24px)
+Source: https://github.com/google/material-design-icons/tree/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android
+
+Icons: arrow_back, check, close, description, edit, file_open,
+format_list_bulleted, info, keyboard_arrow_down, keyboard_arrow_up, more_vert,
+nfc, note_add, open_in_new, print, qr_code_2, redo, save, search, share, undo,
+zoom_in, zoom_out.
 
 Adapted for BeauTyXT by removing the Android theme-attribute tint so Compose
-supplies the button color. The vector path and automatic mirroring are unchanged.
+supplies the color, and adding provenance comments. Vector paths, dimensions,
+and upstream automatic mirroring are unchanged. Each asset's exact source is
+recorded in CREDITS and its XML comment.
 Licensed under the Apache License 2.0 reproduced above.
 
 
@@ -5715,8 +5722,6 @@ licensed under the Apache License 2.0 reproduced above.
 - androidx.compose.material3:material3-ripple-android:1.5.0-alpha28
 - androidx.compose.material3:material3-ripple:1.5.0-alpha28
 - androidx.compose.material3:material3:1.5.0-alpha28
-- androidx.compose.material:material-icons-core-android:1.7.8
-- androidx.compose.material:material-icons-core:1.7.8
 - androidx.compose.material:material-ripple-android:1.13.0-alpha03
 - androidx.compose.material:material-ripple:1.13.0-alpha03
 - androidx.compose.runtime:runtime-android:1.13.0-alpha03
@@ -5813,7 +5818,6 @@ licensed under the Apache License 2.0 reproduced above.
 - com.google.j2objc:j2objc-annotations:3.1
 - jakarta.inject:jakarta.inject-api:2.0.1
 - javax.inject:javax.inject:1
-- org.jetbrains.kotlin:kotlin-stdlib-common:2.4.20
 - org.jetbrains.kotlin:kotlin-stdlib:2.4.20
 - org.jetbrains.kotlinx:atomicfu-jvm:0.33.0
 - org.jetbrains.kotlinx:atomicfu:0.33.0
