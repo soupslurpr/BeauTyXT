@@ -1,10 +1,34 @@
 ## Google Material Symbols
 
-Source: [Material Symbols Rounded open_in_new at 27e9ef1dbeedc13d682fece4a58e1eda4cb0961a](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/open_in_new/materialsymbolsrounded/open_in_new_24px.xml)
+Source: [Material Symbols Rounded at 27e9ef1dbeedc13d682fece4a58e1eda4cb0961a](https://github.com/google/material-design-icons/tree/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android)
 
-- `app/src/main/res/drawable/ic_about_open_external.xml`: adapted; removed the Android
-  theme-attribute tint so Compose supplies the button color. The vector path,
-  dimensions, and automatic mirroring are unchanged.
+Each listed asset is adapted by removing the Android theme-attribute tint so
+Compose supplies the color, and adding a provenance comment. Vector paths,
+dimensions, and upstream automatic mirroring are unchanged.
+
+- `app/src/main/res/drawable/ic_arrow_back.xml`: adapted from [arrow_back](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/arrow_back/materialsymbolsrounded/arrow_back_24px.xml).
+- `app/src/main/res/drawable/ic_check.xml`: adapted from [check](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/check/materialsymbolsrounded/check_24px.xml).
+- `app/src/main/res/drawable/ic_close.xml`: adapted from [close](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/close/materialsymbolsrounded/close_24px.xml).
+- `app/src/main/res/drawable/ic_description.xml`: adapted from [description](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/description/materialsymbolsrounded/description_24px.xml).
+- `app/src/main/res/drawable/ic_edit.xml`: adapted from [edit](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/edit/materialsymbolsrounded/edit_24px.xml).
+- `app/src/main/res/drawable/ic_file_open.xml`: adapted from [file_open](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/file_open/materialsymbolsrounded/file_open_24px.xml).
+- `app/src/main/res/drawable/ic_format_list_bulleted.xml`: adapted from [format_list_bulleted](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/format_list_bulleted/materialsymbolsrounded/format_list_bulleted_24px.xml).
+- `app/src/main/res/drawable/ic_info.xml`: adapted from [info](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/info/materialsymbolsrounded/info_24px.xml).
+- `app/src/main/res/drawable/ic_keyboard_arrow_down.xml`: adapted from [keyboard_arrow_down](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/keyboard_arrow_down/materialsymbolsrounded/keyboard_arrow_down_24px.xml).
+- `app/src/main/res/drawable/ic_keyboard_arrow_up.xml`: adapted from [keyboard_arrow_up](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/keyboard_arrow_up/materialsymbolsrounded/keyboard_arrow_up_24px.xml).
+- `app/src/main/res/drawable/ic_more_vert.xml`: adapted from [more_vert](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/more_vert/materialsymbolsrounded/more_vert_24px.xml).
+- `app/src/main/res/drawable/ic_nfc.xml`: adapted from [nfc](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/nfc/materialsymbolsrounded/nfc_24px.xml).
+- `app/src/main/res/drawable/ic_note_add.xml`: adapted from [note_add](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/note_add/materialsymbolsrounded/note_add_24px.xml).
+- `app/src/main/res/drawable/ic_open_in_new.xml`: adapted from [open_in_new](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/open_in_new/materialsymbolsrounded/open_in_new_24px.xml).
+- `app/src/main/res/drawable/ic_print.xml`: adapted from [print](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/print/materialsymbolsrounded/print_24px.xml).
+- `app/src/main/res/drawable/ic_qr_code_2.xml`: adapted from [qr_code_2](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/qr_code_2/materialsymbolsrounded/qr_code_2_24px.xml).
+- `app/src/main/res/drawable/ic_redo.xml`: adapted from [redo](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/redo/materialsymbolsrounded/redo_24px.xml).
+- `app/src/main/res/drawable/ic_save.xml`: adapted from [save](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/save/materialsymbolsrounded/save_24px.xml).
+- `app/src/main/res/drawable/ic_search.xml`: adapted from [search](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/search/materialsymbolsrounded/search_24px.xml).
+- `app/src/main/res/drawable/ic_share.xml`: adapted from [share](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/share/materialsymbolsrounded/share_24px.xml).
+- `app/src/main/res/drawable/ic_undo.xml`: adapted from [undo](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/undo/materialsymbolsrounded/undo_24px.xml).
+- `app/src/main/res/drawable/ic_zoom_in.xml`: adapted from [zoom_in](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/zoom_in/materialsymbolsrounded/zoom_in_24px.xml).
+- `app/src/main/res/drawable/ic_zoom_out.xml`: adapted from [zoom_out](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/zoom_out/materialsymbolsrounded/zoom_out_24px.xml).
 
 ```text
 

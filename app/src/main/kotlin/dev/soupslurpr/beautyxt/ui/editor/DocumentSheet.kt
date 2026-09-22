@@ -1,6 +1,7 @@
 /* Defines the shared document-sheet surface and action vocabulary. */
 package dev.soupslurpr.beautyxt.ui.editor
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -25,7 +26,7 @@ import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,7 +88,7 @@ internal fun DocumentSheetHeading(title: String, subtitle: String) {
 internal fun DocumentSheetAction(
     title: String,
     description: String,
-    icon: ImageVector,
+    @DrawableRes iconRes: Int,
     enabled: Boolean,
     onClick: () -> Unit
 ) {
@@ -108,7 +109,7 @@ internal fun DocumentSheetAction(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(24.dp))
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 Text(

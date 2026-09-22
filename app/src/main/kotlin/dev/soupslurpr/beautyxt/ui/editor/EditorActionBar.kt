@@ -5,6 +5,7 @@
 
 package dev.soupslurpr.beautyxt.ui.editor
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -20,10 +21,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
@@ -47,9 +44,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -97,7 +94,7 @@ internal fun EditorActionBar(
     } else {
         stringResource(R.string.editor_preview_markdown)
     }
-    val modeIcon = if (isPreview) Icons.Default.Edit else EditorPreviewIcon
+    val modeIconRes = if (isPreview) R.drawable.ic_edit else R.drawable.ic_description
     val modeEnabled = if (isPreview) session.canShowTextEditor else session.canShowMarkdownPreview
     val onModeChange = if (isPreview) onEdit else onPreview
 
@@ -130,14 +127,14 @@ internal fun EditorActionBar(
         ) {
             if (!isPreview) {
                 EditorToolButton(
-                    icon = EditorUndoIcon,
+                    iconRes = R.drawable.ic_undo,
                     label = stringResource(R.string.editor_undo),
                     enabled = session.canUndo,
                     onClick = { session.requestUndo() }
                 )
                 if (!useOverflow) {
                     EditorToolButton(
-                        icon = EditorRedoIcon,
+                        iconRes = R.drawable.ic_redo,
                         label = stringResource(R.string.editor_redo),
                         enabled = session.canRedo,
                         onClick = { session.requestRedo() }
@@ -161,14 +158,18 @@ internal fun EditorActionBar(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(modeIcon, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Icon(
+                            painterResource(modeIconRes),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
                         Spacer(Modifier.width(8.dp))
                         Text(modeLabel)
                     }
                 }
             } else {
                 EditorToolButton(
-                    icon = modeIcon,
+                    iconRes = modeIconRes,
                     label = modeDescription,
                     enabled = modeEnabled,
                     onClick = onModeChange,
@@ -178,7 +179,7 @@ internal fun EditorActionBar(
             Spacer(Modifier.width(EditorModeSpacing))
             if (offersSave) {
                 EditorToolButton(
-                    icon = EditorSaveIcon,
+                    iconRes = R.drawable.ic_save,
                     label = if (session.isViewOnly) {
                         stringResource(
                             R.string.editor_save_editable
@@ -195,7 +196,7 @@ internal fun EditorActionBar(
                 EditorOverflowActions(session, shareEnabled, onShare)
             } else {
                 EditorToolButton(
-                    icon = Icons.Default.Share,
+                    iconRes = R.drawable.ic_share,
                     label = stringResource(R.string.editor_send_export_description),
                     enabled = shareEnabled,
                     onClick = onShare
@@ -215,7 +216,7 @@ private fun EditorOverflowActions(
     var expanded by remember { mutableStateOf(false) }
     Box {
         EditorToolButton(
-            icon = Icons.Default.MoreVert,
+            iconRes = R.drawable.ic_more_vert,
             label = stringResource(R.string.editor_more_actions),
             enabled = true,
             onClick = { expanded = true }
@@ -223,7 +224,7 @@ private fun EditorOverflowActions(
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.editor_redo)) },
-                leadingIcon = { Icon(EditorRedoIcon, contentDescription = null) },
+                leadingIcon = { Icon(painterResource(R.drawable.ic_redo), contentDescription = null) },
                 enabled = session.canRedo,
                 onClick = {
                     expanded = false
@@ -232,7 +233,7 @@ private fun EditorOverflowActions(
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.editor_send_export)) },
-                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                leadingIcon = { Icon(painterResource(R.drawable.ic_share), contentDescription = null) },
                 enabled = shareEnabled,
                 onClick = {
                     expanded = false
@@ -246,7 +247,7 @@ private fun EditorOverflowActions(
 /** Displays an accessible toolbar action with a tooltip and expressive press shape. */
 @Composable
 private fun EditorToolButton(
-    icon: ImageVector,
+    @DrawableRes iconRes: Int,
     label: String,
     enabled: Boolean,
     onClick: () -> Unit,
@@ -265,7 +266,7 @@ private fun EditorToolButton(
                 enabled = enabled,
                 modifier = Modifier.size(EditorActionSize)
             ) {
-                Icon(icon, contentDescription = label)
+                Icon(painterResource(iconRes), contentDescription = label)
             }
         } else {
             IconButton(
@@ -274,7 +275,7 @@ private fun EditorToolButton(
                 modifier = Modifier.size(EditorActionSize),
                 shapes = IconButtonDefaults.shapes()
             ) {
-                Icon(icon, contentDescription = label)
+                Icon(painterResource(iconRes), contentDescription = label)
             }
         }
     }

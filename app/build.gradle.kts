@@ -662,7 +662,6 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
     implementation(libs.androidx.compose.foundation)
-    implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.androidx.compose.runtime.retain)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
