@@ -47,6 +47,10 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".AboutActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ThirdPartyNoticesActivity"
             android:exported="false" />
 

@@ -74,8 +74,8 @@ class HomeActivity : ComponentActivity() {
             onScanQr = { handOff(createQrDocumentSessionIntent(this)) },
             isReadNfcEnabled = hasNfc && canStartAction,
             onReadNfc = { handOff(createNfcDocumentSessionIntent(this)) },
-            onOpenThirdPartyNotices = {
-                startActivity(Intent(this, ThirdPartyNoticesActivity::class.java))
+            onAbout = {
+                startActivity(Intent(this, AboutActivity::class.java))
             }
         )
     }

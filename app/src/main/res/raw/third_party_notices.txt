@@ -5664,6 +5664,17 @@ BeauTyXT's separate original files remain under MIT.
 
 
 
+Google Material Symbols
+-----------------------
+
+Material Symbols Rounded open_in_new (24px)
+Source: https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/open_in_new/materialsymbolsrounded/open_in_new_24px.xml
+
+Adapted for BeauTyXT by removing the Android theme-attribute tint so Compose
+supplies the button color. The vector path and automatic mirroring are unchanged.
+Licensed under the Apache License 2.0 reproduced above.
+
+
 Android and JVM dependencies
 ----------------------------
 

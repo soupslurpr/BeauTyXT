@@ -5,14 +5,11 @@
 
 package dev.soupslurpr.beautyxt.ui
 
-import android.content.ActivityNotFoundException
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,7 +28,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -40,33 +36,19 @@ import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ButtonGroupScope
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.platform.UriHandler
-import androidx.compose.ui.res.colorResource
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
@@ -78,6 +60,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
+import dev.soupslurpr.beautyxt.ui.designsystem.AppMark
 import dev.soupslurpr.beautyxt.ui.designsystem.BeauTyXTTheme
 
 private val CompactSpacing = 8.dp
@@ -109,11 +92,7 @@ private val HomePressedTrailingActionShape =
     RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp, topEnd = 24.dp, bottomEnd = 24.dp)
 private val HomeStandaloneActionShape = RoundedCornerShape(26.dp)
 private val HomePressedStandaloneActionShape = RoundedCornerShape(20.dp)
-private val AboutHorizontalPadding = 24.dp
-private val AboutBottomPadding = 32.dp
 private const val MAX_HORIZONTAL_LAYOUT_FONT_SCALE = 1.3f
-private const val APP_MARK_FOREGROUND_SCALE = 1.4f
-private const val SOURCE_CODE_URL = "https://github.com/soupslurpr/BeauTyXT"
 
 /** Describes one action inside a coordinated horizontal home group. */
 private data class HomeConnectedAction(
@@ -159,13 +138,9 @@ internal fun HomeScreen(
     onScanQr: () -> Unit,
     isReadNfcEnabled: Boolean,
     onReadNfc: () -> Unit,
-    onOpenThirdPartyNotices: () -> Unit,
+    onAbout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var isAboutVisible by rememberSaveable { mutableStateOf(false) }
-    var sourceCodeUnavailable by remember(isAboutVisible) { mutableStateOf(false) }
-    val uriHandler = LocalUriHandler.current
-
     Surface(modifier = modifier.fillMaxSize()) {
         Box(
             modifier =
@@ -187,19 +162,10 @@ internal fun HomeScreen(
                 onScanQr = onScanQr,
                 isReadNfcEnabled = isReadNfcEnabled,
                 onReadNfc = onReadNfc,
-                onAbout = { isAboutVisible = true },
+                onAbout = onAbout,
                 modifier = Modifier.fillMaxSize()
             )
         }
-    }
-
-    if (isAboutVisible) {
-        AboutSheet(
-            onDismiss = { isAboutVisible = false },
-            onOpenSourceCode = { sourceCodeUnavailable = !tryOpenSourceCode(uriHandler) },
-            sourceCodeUnavailable = sourceCodeUnavailable,
-            onOpenThirdPartyNotices = onOpenThirdPartyNotices
-        )
     }
 }
 
@@ -320,7 +286,7 @@ private fun HomeBrandIdentity(markSize: Dp, modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        HomeAppMark(size = markSize)
+        AppMark(size = markSize)
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = stringResource(R.string.home_brand_name),
@@ -334,24 +300,6 @@ private fun HomeBrandIdentity(markSize: Dp, modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodyMedium
             )
         }
-    }
-}
-
-/** Displays the production icon on its launcher background. */
-@Composable
-private fun HomeAppMark(size: Dp) {
-    Surface(
-        modifier = Modifier.size(size),
-        shape = RoundedCornerShape(percent = 30),
-        color = colorResource(R.color.launcher_background),
-        tonalElevation = 3.dp
-    ) {
-        Image(
-            painter = painterResource(R.drawable.ic_launcher_foreground_color),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize().scale(APP_MARK_FOREGROUND_SCALE),
-            contentScale = ContentScale.Fit
-        )
     }
 }
 
@@ -759,120 +707,6 @@ private fun OpenFeedback(openStatus: OpenStatus, modifier: Modifier = Modifier) 
     }
 }
 
-/** Displays factual app behavior, limits, and the source-code link. */
-@Composable
-private fun AboutSheet(
-    onDismiss: () -> Unit,
-    onOpenSourceCode: () -> Unit,
-    onOpenThirdPartyNotices: () -> Unit,
-    sourceCodeUnavailable: Boolean
-) {
-    val sheetState =
-        rememberBottomSheetState(
-            initialValue = SheetValue.Hidden,
-            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
-        )
-
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .windowInsetsPadding(
-                        WindowInsets.safeDrawing.only(
-                            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
-                        )
-                    )
-                    .padding(horizontal = AboutHorizontalPadding)
-                    .padding(bottom = AboutBottomPadding),
-            verticalArrangement = Arrangement.spacedBy(RelatedContentSpacing)
-        ) {
-            Text(
-                text = stringResource(R.string.about_title),
-                modifier = Modifier.semantics { heading() },
-                style = MaterialTheme.typography.headlineSmall
-            )
-            Text(
-                text = stringResource(R.string.about_summary),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.titleMedium
-            )
-            FlowRow {
-                TextButton(onClick = onOpenSourceCode) {
-                    Text(stringResource(R.string.about_view_source))
-                }
-                TextButton(onClick = onOpenThirdPartyNotices) {
-                    Text(stringResource(R.string.about_licenses))
-                }
-            }
-            if (sourceCodeUnavailable) {
-                Column(verticalArrangement = Arrangement.spacedBy(CompactSpacing)) {
-                    Text(
-                        text = stringResource(R.string.about_source_unavailable),
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    SelectionContainer {
-                        Text(SOURCE_CODE_URL, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            AboutSection(
-                title = stringResource(R.string.about_files_title),
-                text = stringResource(R.string.about_files)
-            )
-            AboutSection(
-                title = stringResource(R.string.about_storage_title),
-                text = stringResource(R.string.about_storage)
-            )
-            AboutSection(
-                title = stringResource(R.string.about_processing_title),
-                text = stringResource(R.string.about_processing)
-            )
-            AboutSection(
-                title = stringResource(R.string.about_limits_title),
-                text = stringResource(R.string.about_limits)
-            )
-        }
-    }
-}
-
-/** Opens the fixed project URL or returns a recoverable Android dispatch failure. */
-internal fun tryOpenSourceCode(uriHandler: UriHandler): Boolean = try {
-    uriHandler.openUri(SOURCE_CODE_URL)
-    true
-} catch (_: ActivityNotFoundException) {
-    false
-} catch (_: IllegalArgumentException) {
-    false
-} catch (_: SecurityException) {
-    false
-}
-
-/** Displays one factual About section. */
-@Composable
-private fun AboutSection(title: String, text: String) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = CompactSpacing),
-        verticalArrangement = Arrangement.spacedBy(CompactSpacing)
-    ) {
-        Text(
-            text = title,
-            modifier = Modifier.semantics { heading() },
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleMedium
-        )
-        Text(
-            text = text,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyLarge
-        )
-    }
-}
-
 /** Returns one context-sensitive label for the source-backed home action. */
 internal fun openDocumentActionLabel(openStatus: OpenStatus): UiText = when (openStatus) {
     OpenStatus.Selecting -> UiText.Resource(R.string.home_selecting_file)
@@ -900,7 +734,7 @@ private fun HomeScreenPreview() {
             onScanQr = {},
             isReadNfcEnabled = true,
             onReadNfc = {},
-            onOpenThirdPartyNotices = {}
+            onAbout = {}
         )
     }
 }
@@ -925,7 +759,7 @@ private fun WideHomeScreenPreview() {
             onScanQr = {},
             isReadNfcEnabled = true,
             onReadNfc = {},
-            onOpenThirdPartyNotices = {}
+            onAbout = {}
         )
     }
 }
@@ -951,7 +785,7 @@ private fun LargeFontHomeScreenPreview() {
             onScanQr = {},
             isReadNfcEnabled = false,
             onReadNfc = {},
-            onOpenThirdPartyNotices = {}
+            onAbout = {}
         )
     }
 }
