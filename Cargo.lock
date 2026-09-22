@@ -78,12 +78,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "beautyxt-diagram-jni"
+name = "beautyxt-diagram-service"
 version = "0.1.0"
 dependencies = [
  "beautyxt-diagram-core",
  "beautyxt-illustration-core",
- "jni",
+ "beautyxt-illustration-service",
+ "beautyxt-native-service",
 ]
 
 [[package]]
@@ -118,12 +119,12 @@ name = "beautyxt-export-core"
 version = "0.1.0"
 
 [[package]]
-name = "beautyxt-export-jni"
+name = "beautyxt-export-service"
 version = "0.1.0"
 dependencies = [
  "beautyxt-export-core",
+ "beautyxt-native-service",
  "beautyxt-source-save-core",
- "jni",
  "libc",
  "sha2",
 ]
@@ -136,6 +137,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "beautyxt-illustration-probe-service"
+version = "0.1.0"
+dependencies = [
+ "beautyxt-illustration-core",
+ "beautyxt-illustration-service",
+ "beautyxt-native-service",
+]
+
+[[package]]
+name = "beautyxt-illustration-service"
+version = "0.1.0"
+dependencies = [
+ "beautyxt-illustration-core",
+ "beautyxt-native-service",
+ "libc",
+]
+
+[[package]]
 name = "beautyxt-import-core"
 version = "0.1.0"
 dependencies = [
@@ -143,11 +162,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "beautyxt-import-jni"
+name = "beautyxt-import-service"
 version = "0.1.0"
 dependencies = [
  "beautyxt-import-core",
- "jni",
+ "beautyxt-native-service",
  "libc",
 ]
 
@@ -160,11 +179,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "beautyxt-markdown-jni"
+name = "beautyxt-markdown-service"
 version = "0.1.0"
 dependencies = [
  "beautyxt-markdown-core",
- "jni",
+ "beautyxt-native-service",
  "libc",
 ]
 
@@ -184,12 +203,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "beautyxt-math-jni"
+name = "beautyxt-math-service"
 version = "0.1.0"
 dependencies = [
  "beautyxt-illustration-core",
+ "beautyxt-illustration-service",
  "beautyxt-math-core",
- "jni",
+ "beautyxt-native-service",
+]
+
+[[package]]
+name = "beautyxt-native-service"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
@@ -221,11 +248,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "beautyxt-transfer-jni"
+name = "beautyxt-transfer-service"
 version = "0.1.0"
 dependencies = [
+ "beautyxt-native-service",
  "beautyxt-transfer-core",
- "jni",
  "libc",
 ]
 

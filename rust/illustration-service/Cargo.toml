@@ -1,0 +1,17 @@
+[package]
+name = "beautyxt-illustration-service"
+version = "0.1.0"
+description = "Native Binder host and hard deadlines for isolated illustration engines"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+beautyxt-native-service = { path = "../native-service" }
+beautyxt-illustration-core = { path = "../illustration-core" }
+libc = "0.2.189"
+
+[lints]
+workspace = true

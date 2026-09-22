@@ -204,27 +204,27 @@ private object RustFlagEncoding {
 val rustCargoPackages =
     listOf(
         "beautyxt-editor-jni",
-        "beautyxt-diagram-jni",
-        "beautyxt-export-jni",
-        "beautyxt-import-jni",
-        "beautyxt-markdown-jni",
-        "beautyxt-math-jni",
+        "beautyxt-diagram-service",
+        "beautyxt-export-service",
+        "beautyxt-import-service",
+        "beautyxt-markdown-service",
+        "beautyxt-math-service",
         "beautyxt-print-jni",
-        "beautyxt-transfer-jni"
+        "beautyxt-transfer-service"
     )
 val rustJniLibraries =
     listOf(
         "libbeautyxt_editor_jni.so",
-        "libbeautyxt_diagram_jni.so",
-        "libbeautyxt_export_jni.so",
-        "libbeautyxt_import_jni.so",
-        "libbeautyxt_markdown_jni.so",
-        "libbeautyxt_math_jni.so",
+        "libbeautyxt_diagram_service.so",
+        "libbeautyxt_export_service.so",
+        "libbeautyxt_import_service.so",
+        "libbeautyxt_markdown_service.so",
+        "libbeautyxt_math_service.so",
         "libbeautyxt_print_jni.so",
-        "libbeautyxt_transfer_jni.so"
+        "libbeautyxt_transfer_service.so"
     )
 
-/** Builds the Rust JNI libraries consumed by one Android variant. */
+/** Builds the native services and JNI bridges consumed by one Android variant. */
 @DisableCachingByDefault(because = "Cargo and the Android NDK are external toolchains")
 abstract class BuildRustJniLibsTask
 @Inject
@@ -603,10 +603,22 @@ androidComponents {
                 rustSources.from(rustFiles)
                 cargoExecutable.set("cargo")
                 cargoNdkVersion.set(requiredCargoNdkVersion)
-                cargoPackages.set(rustCargoPackages)
+                cargoPackages.set(
+                    rustCargoPackages + if (variant.buildType == "debug") {
+                        listOf("beautyxt-illustration-probe-service")
+                    } else {
+                        emptyList()
+                    }
+                )
                 androidPlatform.set(nativeApiLevel)
                 androidTargets.set(androidAbis)
-                expectedLibraries.set(rustJniLibraries)
+                expectedLibraries.set(
+                    rustJniLibraries + if (variant.buildType == "debug") {
+                        listOf("libbeautyxt_illustration_probe_service.so")
+                    } else {
+                        emptyList()
+                    }
+                )
                 ndkDirectoryPath.set(ndkPath)
                 releaseBuild.set(isRelease)
                 releaseRustFlags.set(releaseRustFlagArguments)

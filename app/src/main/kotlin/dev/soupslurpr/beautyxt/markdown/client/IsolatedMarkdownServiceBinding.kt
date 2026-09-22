@@ -7,9 +7,9 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.Looper
 import android.os.RemoteException
+import dev.soupslurpr.beautyxt.ipc.NativeServiceNames
 import dev.soupslurpr.beautyxt.ipc.newIsolatedServiceInstanceName
 import dev.soupslurpr.beautyxt.markdown.IMarkdownService
-import dev.soupslurpr.beautyxt.markdown.IsolatedMarkdownService
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
@@ -36,7 +36,7 @@ internal class IsolatedMarkdownServiceBinding(context: Context) :
             "isolated Markdown binding must start off the main thread"
         }
         check(!closed.get()) { "isolated Markdown binding is closed" }
-        val intent = Intent(applicationContext, IsolatedMarkdownService::class.java)
+        val intent = Intent().setClassName(applicationContext, NativeServiceNames.MARKDOWN)
         val accepted =
             try {
                 applicationContext.bindIsolatedService(

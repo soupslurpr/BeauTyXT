@@ -7,10 +7,9 @@ import android.os.Process
 import android.os.RemoteException
 import dev.soupslurpr.beautyxt.document.EditorDocumentSnapshot
 import dev.soupslurpr.beautyxt.illustration.IllustrationLimits
-import dev.soupslurpr.beautyxt.illustration.IsolatedDiagramService
-import dev.soupslurpr.beautyxt.illustration.IsolatedMathService
 import dev.soupslurpr.beautyxt.illustration.RestartingIllustrationWorker
 import dev.soupslurpr.beautyxt.illustration.illustrateMarkdown
+import dev.soupslurpr.beautyxt.ipc.NativeServiceNames
 import dev.soupslurpr.beautyxt.ipc.ReliableSnapshotPipe
 import dev.soupslurpr.beautyxt.ipc.TransferredFileDescriptor
 import dev.soupslurpr.beautyxt.markdown.IMarkdownCallback
@@ -53,12 +52,12 @@ internal class IsolatedMarkdownRenderer(context: Context) : MarkdownRenderer {
         return withContext(Dispatchers.IO) {
             RestartingIllustrationWorker(
                 applicationContext,
-                IsolatedMathService::class.java,
+                NativeServiceNames.MATH,
                 IllustrationLimits.MAX_MATH_SOURCE_BYTES
             ).use { math ->
                 RestartingIllustrationWorker(
                     applicationContext,
-                    IsolatedDiagramService::class.java,
+                    NativeServiceNames.DIAGRAM,
                     IllustrationLimits.MAX_DIAGRAM_SOURCE_BYTES
                 ).use { diagrams ->
                     illustrateMarkdown(document, math::render, renderDiagram = diagrams::render)

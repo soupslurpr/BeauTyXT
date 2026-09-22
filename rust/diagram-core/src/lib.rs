@@ -201,7 +201,7 @@ fn host_theme(family: &str) -> serde_json::Value {
     serde_json::Value::Object(values)
 }
 
-/// Validates direct-buffer capacities before borrowing fonts or allocating a font database.
+/// Validates font byte lengths before parsing or allocating a font database.
 ///
 /// # Errors
 /// Rejects empty, excessive, or overflow-sized collections before any font parsing.

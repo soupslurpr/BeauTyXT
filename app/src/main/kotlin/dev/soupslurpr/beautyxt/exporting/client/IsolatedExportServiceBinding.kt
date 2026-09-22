@@ -8,7 +8,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.RemoteException
 import dev.soupslurpr.beautyxt.exporting.IExportService
-import dev.soupslurpr.beautyxt.exporting.IsolatedExportService
+import dev.soupslurpr.beautyxt.ipc.NativeServiceNames
 import dev.soupslurpr.beautyxt.ipc.newIsolatedServiceInstanceName
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -36,7 +36,7 @@ internal class IsolatedExportServiceBinding(context: Context) :
             "isolated export binding must start off the main thread"
         }
         check(!closed.get()) { "isolated export binding is closed" }
-        val intent = Intent(applicationContext, IsolatedExportService::class.java)
+        val intent = Intent().setClassName(applicationContext, NativeServiceNames.EXPORT)
         val accepted =
             try {
                 applicationContext.bindIsolatedService(

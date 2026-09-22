@@ -20,7 +20,7 @@ fixtures are tested separately from math syntax.
 
 `mermaid` fences accept flowcharts (`flowchart` / `graph`), `sequenceDiagram`,
 state diagrams, `classDiagram`, and `erDiagram`. Merman uses a host-owned theme
-and a closed collection of platform fonts selected by Android's text shaper.
+and a closed collection of platform fonts selected by Android's NDK font matcher.
 Document frontmatter/configuration, CSS/style/class styling commands, click/link
 actions, modern asset-bearing shapes, HTML labels, and unsupported diagram families remain
 source. Semantic class declarations are accepted within class diagrams; this
@@ -68,11 +68,12 @@ RSS quota or a claim that a native parser cannot transiently allocate more.
 The isolation boundary contains worker failure without assigning the worker
 the app's identity or another worker's capabilities.
 
-Inside the diagram process, Android supplies read-only `Font.buffer` mappings
-for the normal, bold, and italic sans-serif runs needed by the bounded source.
-There are at most 16 distinct buffers, 48 MiB in aggregate, and 64 parsed font
-faces. JNI validates direct capacities before borrowing; font owners remain
-alive for the synchronous call. The font database makes one bounded owned copy.
+Both production renderers use ART-free native services and NDK Binder. Inside
+the diagram process, `AFontMatcher` selects platform font files for the normal,
+bold, and italic sans-serif runs needed by the bounded source. Only paths
+returned by the platform matcher may be opened. There are at most 16 distinct
+files, 48 MiB in aggregate, and 64 parsed font faces. Bounded reads reject a file
+whose length changes; the font database then makes a bounded owned copy.
 No platform font data travels through Binder or is included in the APK.
 Complete grapheme runs receive an available family before shaping, so mixed
 Latin/Arabic ligatures do not depend on index-based glyph substitution. Layout
@@ -179,11 +180,13 @@ that the parser or sandbox is free of other defects.
 ## Verification
 
 The normal document instrumentation suite includes `native math`, `native diagrams`,
-`illustration lifecycle`, and `diagram parser containment`. The lifecycle phase uses a debug-only private isolated probe
-to verify hangs, crashes, cancellation,
-and fresh-worker recovery. The parser-containment phase exercises a real upstream
+`illustration lifecycle`, and `diagram parser containment`. The lifecycle phase
+uses a debug-only native probe with the production Binder host and watchdog to
+verify hangs, crashes, cancellation, and fresh-worker recovery. The
+parser-containment phase exercises a real upstream
 sequence-parser stall, cancellation, exact source fallback, and the next valid
-diagram through the production worker. The probe is absent from staging/release manifests.
+diagram through the production worker. The probe library and component are
+absent from staging/release APKs.
 Opt-in visual journeys are `native math UI`, `native diagram UI`,
 `native diagram families UI`, `diagram parser containment UI`, and
 `progressive illustrations UI`.

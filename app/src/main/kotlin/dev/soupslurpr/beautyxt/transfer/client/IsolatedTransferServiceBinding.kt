@@ -7,9 +7,9 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.Looper
 import android.os.RemoteException
+import dev.soupslurpr.beautyxt.ipc.NativeServiceNames
 import dev.soupslurpr.beautyxt.ipc.newIsolatedServiceInstanceName
 import dev.soupslurpr.beautyxt.transfer.ITransferService
-import dev.soupslurpr.beautyxt.transfer.IsolatedTransferService
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
@@ -36,7 +36,7 @@ internal class IsolatedTransferServiceBinding(context: Context) :
             "isolated transfer binding must start off the main thread"
         }
         check(!closed.get()) { "isolated transfer binding is closed" }
-        val intent = Intent(applicationContext, IsolatedTransferService::class.java)
+        val intent = Intent().setClassName(applicationContext, NativeServiceNames.TRANSFER)
         val accepted =
             try {
                 applicationContext.bindIsolatedService(

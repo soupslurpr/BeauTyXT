@@ -1,0 +1,20 @@
+[package]
+name = "beautyxt-illustration-probe-service"
+version = "0.1.0"
+description = "Debug-only native worker crash and hard-deadline fixture"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+beautyxt-native-service = { path = "../native-service" }
+beautyxt-illustration-service = { path = "../illustration-service" }
+beautyxt-illustration-core = { path = "../illustration-core" }
+
+[lints]
+workspace = true
