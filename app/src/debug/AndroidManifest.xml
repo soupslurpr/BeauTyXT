@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="dev.soupslurpr.beautyxt.testproviders.ACCESS" />
 
@@ -8,7 +9,13 @@
             android:name=".illustration.IsolatedIllustrationProbeService"
             android:exported="false"
             android:isolatedProcess="true"
-            android:process=":illustration_probe" />
+            android:nativeService="true"
+            android:process=":illustration_probe"
+            tools:ignore="MissingClass">
+            <property
+                android:name="android.app.PROPERTY_NATIVE_SERVICE_LIBRARY_NAME"
+                android:value="libbeautyxt_illustration_probe_service.so" />
+        </service>
     </application>
 
 </manifest>

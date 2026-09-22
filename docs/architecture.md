@@ -134,17 +134,22 @@ binding cannot cancel or occupy a different document's worker. Multiple open
 documents can therefore use the same role concurrently, at the cost of separate
 process startup and memory. Unbinding releases the operation's worker;
 illustration workers also terminate themselves on unbind.
-Its minimal Kotlin host owns only lifecycle and descriptor plumbing; the
-capability logic runs through its dedicated Rust JNI library. Every worker
-preserves the same split. A compromised worker gains neither the app's
-identity nor another worker's authority.
+All six production workers are Android 17 ART-free native isolated services.
+Each manifest component sets `nativeService` and names its Rust shared library;
+Android calls `ANativeService_onCreate` without loading a Kotlin service or ART.
+A shared Rust adapter owns NDK Binder references, bounded AIDL decoding,
+descriptor ownership, serial admission, and callback-death cancellation. The
+pinned NDK r30 targets native API 37, matching the app's minimum OS. The editor
+and print bridges still use JNI in the application process. A compromised
+worker gains neither the app's identity nor another worker's authority.
 
-The pinned NDK r30 toolchain now builds and links the Rust libraries against
-native API 37, matching the app's minimum OS. Android 17 also defines ART-free
-native isolated services, but adopting the toolchain does not migrate these
-services: their minimal Kotlin hosts and narrow Binder contracts remain in
-place. A native-only transport would be a separate implementation and review,
-not a requirement for unique isolated worker instances.
+Reliable descriptors transfer their data and status handles separately. The
+ordinary NDK parcel-file-descriptor reader detaches a reliable descriptor's
+error channel, so the custom Parcelable preserves both capabilities before
+the native worker takes ownership. Rust checks the bounded provider status
+after input completion and reports success or a fixed error before closing
+the handles. The format is internal to this APK and is tested against Android
+provider failures and ownership transitions.
 
 The control plane carries job identifiers, options, status, cancellation, and
 descriptors. Full documents, snapshots, transfer envelopes, and render output use

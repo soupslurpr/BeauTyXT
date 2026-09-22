@@ -96,6 +96,7 @@
             </intent-filter>
         </activity>
 
+        <!-- Native service names are components, not JVM classes (lint does not yet recognize this). -->
         <service
             android:name=".importing.IsolatedImportService"
             android:allowSharedIsolatedProcess="false"
@@ -104,8 +105,14 @@
             android:exported="false"
             android:externalService="false"
             android:isolatedProcess="true"
+            android:nativeService="true"
+            tools:ignore="MissingClass"
             android:process=":import"
-            android:useAppZygote="false" />
+            android:useAppZygote="false">
+            <property
+                android:name="android.app.PROPERTY_NATIVE_SERVICE_LIBRARY_NAME"
+                android:value="libbeautyxt_import_service.so" />
+        </service>
 
         <service
             android:name=".exporting.IsolatedExportService"
@@ -115,8 +122,14 @@
             android:exported="false"
             android:externalService="false"
             android:isolatedProcess="true"
+            android:nativeService="true"
+            tools:ignore="MissingClass"
             android:process=":export"
-            android:useAppZygote="false" />
+            android:useAppZygote="false">
+            <property
+                android:name="android.app.PROPERTY_NATIVE_SERVICE_LIBRARY_NAME"
+                android:value="libbeautyxt_export_service.so" />
+        </service>
 
         <service
             android:name=".markdown.IsolatedMarkdownService"
@@ -126,8 +139,14 @@
             android:exported="false"
             android:externalService="false"
             android:isolatedProcess="true"
+            android:nativeService="true"
+            tools:ignore="MissingClass"
             android:process=":markdown"
-            android:useAppZygote="false" />
+            android:useAppZygote="false">
+            <property
+                android:name="android.app.PROPERTY_NATIVE_SERVICE_LIBRARY_NAME"
+                android:value="libbeautyxt_markdown_service.so" />
+        </service>
 
         <service
             android:name=".illustration.IsolatedDiagramService"
@@ -136,8 +155,14 @@
             android:exported="false"
             android:externalService="false"
             android:isolatedProcess="true"
+            android:nativeService="true"
+            tools:ignore="MissingClass"
             android:process=":diagram"
-            android:useAppZygote="false" />
+            android:useAppZygote="false">
+            <property
+                android:name="android.app.PROPERTY_NATIVE_SERVICE_LIBRARY_NAME"
+                android:value="libbeautyxt_diagram_service.so" />
+        </service>
 
         <service
             android:name=".illustration.IsolatedMathService"
@@ -146,8 +171,14 @@
             android:exported="false"
             android:externalService="false"
             android:isolatedProcess="true"
+            android:nativeService="true"
+            tools:ignore="MissingClass"
             android:process=":math"
-            android:useAppZygote="false" />
+            android:useAppZygote="false">
+            <property
+                android:name="android.app.PROPERTY_NATIVE_SERVICE_LIBRARY_NAME"
+                android:value="libbeautyxt_math_service.so" />
+        </service>
 
         <service
             android:name=".transfer.IsolatedTransferService"
@@ -157,8 +188,14 @@
             android:exported="false"
             android:externalService="false"
             android:isolatedProcess="true"
+            android:nativeService="true"
+            tools:ignore="MissingClass"
             android:process=":transfer"
-            android:useAppZygote="false" />
+            android:useAppZygote="false">
+            <property
+                android:name="android.app.PROPERTY_NATIVE_SERVICE_LIBRARY_NAME"
+                android:value="libbeautyxt_transfer_service.so" />
+        </service>
     </application>
 
 </manifest>

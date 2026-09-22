@@ -2,13 +2,12 @@ package dev.soupslurpr.beautyxt.importing.client
 
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.Looper
 import android.os.RemoteException
 import dev.soupslurpr.beautyxt.importing.IImportService
-import dev.soupslurpr.beautyxt.importing.IsolatedImportService
+import dev.soupslurpr.beautyxt.importing.importServiceIntent
 import dev.soupslurpr.beautyxt.ipc.newIsolatedServiceInstanceName
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -36,7 +35,7 @@ internal class IsolatedImportServiceBinding(context: Context) :
             "isolated import binding must start off the main thread"
         }
         check(!closed.get()) { "isolated import binding is closed" }
-        val intent = Intent(applicationContext, IsolatedImportService::class.java)
+        val intent = importServiceIntent(applicationContext)
         val accepted =
             try {
                 applicationContext.bindIsolatedService(

@@ -25,7 +25,7 @@ import kotlinx.coroutines.withTimeout
 /** One private worker instance per enrichment operation; calls on that instance are serialized. */
 internal class IllustrationWorkerConnection(
     context: Context,
-    private val serviceClass: Class<out IsolatedIllustrationService>,
+    private val serviceName: String,
     private val maximumInputBytes: Int
 ) : ServiceConnection,
     IBinder.DeathRecipient,
@@ -142,7 +142,7 @@ internal class IllustrationWorkerConnection(
 
     private fun bind() {
         val accepted = application.bindIsolatedService(
-            Intent(application, serviceClass),
+            Intent().setClassName(application, serviceName),
             Context.BIND_AUTO_CREATE,
             instanceName,
             application.mainExecutor,

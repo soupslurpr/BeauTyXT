@@ -1,24 +1,27 @@
 [workspace]
 members = [
     "rust/diagram-core",
-    "rust/diagram-jni",
+    "rust/diagram-service",
     "rust/editor-bridge-protocol",
     "rust/editor-core",
     "rust/editor-jni",
     "rust/export-core",
-    "rust/export-jni",
+    "rust/export-service",
     "rust/import-core",
-    "rust/import-jni",
+    "rust/import-service",
+    "rust/native-service",
     "rust/illustration-core",
+    "rust/illustration-probe-service",
+    "rust/illustration-service",
     "rust/math-core",
-    "rust/math-jni",
+    "rust/math-service",
     "rust/markdown-core",
-    "rust/markdown-jni",
+    "rust/markdown-service",
     "rust/print-core",
     "rust/print-jni",
     "rust/source-save-core",
     "rust/transfer-core",
-    "rust/transfer-jni",
+    "rust/transfer-service",
 ]
 resolver = "3"
 

@@ -9,6 +9,7 @@ import android.os.RemoteException
 import dev.soupslurpr.beautyxt.document.RustDocument
 import dev.soupslurpr.beautyxt.importing.IImportCallback
 import dev.soupslurpr.beautyxt.importing.ImportProtocol
+import dev.soupslurpr.beautyxt.ipc.TransferredFileDescriptor
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -28,7 +29,11 @@ private const val FIRST_IMPORT_JOB_ID = 1L
 private val nextImportJobId = AtomicLong(FIRST_IMPORT_JOB_ID)
 
 /** Opens one selected document through isolated UTF-8 validation. */
-internal class IsolatedDocumentImporter(context: Context) {
+internal class IsolatedDocumentImporter(
+    context: Context,
+    private val bindingFactory: (Context) -> IsolatedImportServiceBinding =
+        ::IsolatedImportServiceBinding
+) {
     private val applicationContext = context.applicationContext
 
     /** Opens one content URI and optionally probes its autosave capability. */
@@ -142,7 +147,7 @@ internal class IsolatedDocumentImporter(context: Context) {
         buffer: AnonymousImportBuffer
     ): RustDocument {
         val jobId = nextJobId()
-        val binding = IsolatedImportServiceBinding(applicationContext)
+        val binding = bindingFactory(applicationContext)
         var sourceDescriptor: ParcelFileDescriptor? = null
         var bufferWriter: ParcelFileDescriptor? = null
         var completion: CompletableDeferred<ImportTerminalStatus>? = null
@@ -181,8 +186,8 @@ internal class IsolatedDocumentImporter(context: Context) {
                 try {
                     service.startImport(
                         jobId,
-                        sourceDescriptor,
-                        bufferWriter,
+                        TransferredFileDescriptor.from(sourceDescriptor),
+                        TransferredFileDescriptor.from(bufferWriter),
                         ImportProtocol.MAX_BYTE_LIMIT,
                         ImportProtocol.MAX_BYTE_LIMIT,
                         IMPORT_TIMEOUT_MILLIS,
@@ -201,8 +206,8 @@ internal class IsolatedDocumentImporter(context: Context) {
             accepted = true
             currentCoroutineContext().ensureActive()
 
-            // Retain the source until the service closes its copy so reliable
-            // provider status remains authoritative.
+            // The service owns the transferred data and reliable provider status.
+            // Wait for its terminal receipt before opening the validated buffer.
             val terminalStatus =
                 try {
                     withTimeout(IMPORT_WATCHDOG_MILLIS) {

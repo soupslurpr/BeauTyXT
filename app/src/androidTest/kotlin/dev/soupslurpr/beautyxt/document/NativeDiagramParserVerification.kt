@@ -29,8 +29,8 @@ import android.os.SystemClock
 import android.util.Log
 import dev.soupslurpr.beautyxt.illustration.IllustrationLimits
 import dev.soupslurpr.beautyxt.illustration.IllustrationResult
-import dev.soupslurpr.beautyxt.illustration.IsolatedDiagramService
 import dev.soupslurpr.beautyxt.illustration.RestartingIllustrationWorker
+import dev.soupslurpr.beautyxt.ipc.NativeServiceNames
 import dev.soupslurpr.beautyxt.markdown.MarkdownBlockKind
 import dev.soupslurpr.beautyxt.markdown.client.IsolatedMarkdownRenderer
 import kotlinx.coroutines.async
@@ -54,7 +54,7 @@ internal fun verifyNativeDiagramParserContainment(context: Context) = runBlockin
     val appPid = Process.myPid()
     RestartingIllustrationWorker(
         context,
-        IsolatedDiagramService::class.java,
+        NativeServiceNames.DIAGRAM,
         IllustrationLimits.MAX_DIAGRAM_SOURCE_BYTES
     ).use { worker ->
         check(worker.render(READY_DIAGRAM, true) is IllustrationResult.Rendered)

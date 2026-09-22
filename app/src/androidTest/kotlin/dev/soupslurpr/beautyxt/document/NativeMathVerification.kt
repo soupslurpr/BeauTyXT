@@ -25,11 +25,9 @@ import dev.soupslurpr.beautyxt.illustration.IllustrationPacketBuffer
 import dev.soupslurpr.beautyxt.illustration.IllustrationPath
 import dev.soupslurpr.beautyxt.illustration.IllustrationResult
 import dev.soupslurpr.beautyxt.illustration.IllustrationWorkerConnection
-import dev.soupslurpr.beautyxt.illustration.IsolatedDiagramService
-import dev.soupslurpr.beautyxt.illustration.IsolatedIllustrationProbeService
-import dev.soupslurpr.beautyxt.illustration.IsolatedMathService
 import dev.soupslurpr.beautyxt.illustration.NativeIllustration
 import dev.soupslurpr.beautyxt.illustration.RestartingIllustrationWorker
+import dev.soupslurpr.beautyxt.ipc.NativeServiceNames
 import dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument
 import dev.soupslurpr.beautyxt.markdown.client.IsolatedMarkdownRenderer
 import dev.soupslurpr.beautyxt.printing.IllustrationPrintSpan
@@ -110,11 +108,14 @@ private val extraDiagramSources = linkedMapOf(
         "flowchart TD\naccTitle: Read in your language\naccDescr: A path from reading to sharing.\nA[Read 你好] --> B[Refine العربية]\nB --> C[Share עברית]"
 )
 
+private const val ILLUSTRATION_PROBE_SERVICE =
+    "dev.soupslurpr.beautyxt.illustration.IsolatedIllustrationProbeService"
+
 internal fun verifyNativeDiagrams(context: Context) = runBlocking {
     verifyIllustrationPrintSurface()
     IllustrationWorkerConnection(
         context,
-        IsolatedDiagramService::class.java,
+        NativeServiceNames.DIAGRAM,
         IllustrationLimits.MAX_DIAGRAM_SOURCE_BYTES
     ).use { worker ->
         for (label in listOf(
@@ -243,7 +244,7 @@ private fun verifyIllustrationPrintSurface() {
 internal fun verifyIllustrationWorkerLifecycle(context: Context) = runBlocking {
     RestartingIllustrationWorker(
         context,
-        IsolatedIllustrationProbeService::class.java,
+        ILLUSTRATION_PROBE_SERVICE,
         16
     ).use { worker ->
         for (source in listOf("hang", "crash")) {
@@ -260,7 +261,7 @@ internal fun verifyIllustrationWorkerLifecycle(context: Context) = runBlocking {
         ) { "foregrounding could not acquire a fresh worker" }
     }
     fun connection() =
-        IllustrationWorkerConnection(context, IsolatedIllustrationProbeService::class.java, 16)
+        IllustrationWorkerConnection(context, ILLUSTRATION_PROBE_SERVICE, 16)
     for (failure in listOf("hang", "crash")) {
         connection().use { worker ->
             check(
@@ -331,7 +332,7 @@ internal fun verifyNativeMath(context: Context) = runBlocking {
             async {
                 IllustrationWorkerConnection(
                     context,
-                    IsolatedMathService::class.java,
+                    NativeServiceNames.MATH,
                     IllustrationLimits.MAX_MATH_SOURCE_BYTES
                 ).use { worker ->
                     for (formula in listOf(

@@ -8,7 +8,7 @@ import android.content.Context
  */
 internal class RestartingIllustrationWorker(
     context: Context,
-    private val serviceClass: Class<out IsolatedIllustrationService>,
+    private val serviceName: String,
     private val maximumInputBytes: Int
 ) : AutoCloseable {
     private val application = context.applicationContext
@@ -21,7 +21,7 @@ internal class RestartingIllustrationWorker(
             if (closed) return IllustrationResult.Fallback(IllustrationFailure.Unavailable)
             current?.takeUnless { it.isClosed } ?: IllustrationWorkerConnection(
                 application,
-                serviceClass,
+                serviceName,
                 maximumInputBytes
             ).also { current = it }
         }

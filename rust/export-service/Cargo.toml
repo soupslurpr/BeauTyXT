@@ -1,0 +1,22 @@
+[package]
+name = "beautyxt-export-service"
+version = "0.1.0"
+description = "ART-free Android service for isolated BeauTyXT exports"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+beautyxt-native-service = { path = "../native-service" }
+beautyxt-export-core = { path = "../export-core" }
+beautyxt-source-save-core = { path = "../source-save-core" }
+libc = "0.2.189"
+sha2 = { version = "0.11.0", default-features = false }
+
+[lints]
+workspace = true

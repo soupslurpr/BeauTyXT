@@ -20,6 +20,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.IBinder
 import android.os.Looper
+import android.os.Parcel
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.SystemClock
@@ -46,16 +47,18 @@ import dev.soupslurpr.beautyxt.exporting.client.TransientSourceDescriptor
 import dev.soupslurpr.beautyxt.importing.IImportCallback
 import dev.soupslurpr.beautyxt.importing.IImportService
 import dev.soupslurpr.beautyxt.importing.ImportProtocol
-import dev.soupslurpr.beautyxt.importing.IsolatedImportService
 import dev.soupslurpr.beautyxt.importing.client.DocumentImportException
 import dev.soupslurpr.beautyxt.importing.client.DocumentImportFailure
 import dev.soupslurpr.beautyxt.importing.client.ImportedDocument
 import dev.soupslurpr.beautyxt.importing.client.ImportedSourceAccess
 import dev.soupslurpr.beautyxt.importing.client.IsolatedDocumentImporter
+import dev.soupslurpr.beautyxt.importing.client.IsolatedImportServiceBinding
 import dev.soupslurpr.beautyxt.importing.client.SelectedDocumentSource
 import dev.soupslurpr.beautyxt.importing.client.StatelessImportTestSources
 import dev.soupslurpr.beautyxt.importing.client.isCompatibleAutosaveDescriptor
 import dev.soupslurpr.beautyxt.importing.client.querySelectedDocumentDisplayName
+import dev.soupslurpr.beautyxt.importing.importServiceIntent
+import dev.soupslurpr.beautyxt.ipc.TransferredFileDescriptor
 import dev.soupslurpr.beautyxt.markdown.MarkdownBlockKind
 import dev.soupslurpr.beautyxt.markdown.MarkdownExternalAction
 import dev.soupslurpr.beautyxt.markdown.MarkdownLinkAction
@@ -207,7 +210,7 @@ private const val TEST_PROVIDER_POLL_MILLIS = 10L
 private const val TEST_IMPORT_PROCESS_SUFFIX = ":import"
 private const val TEST_PROCESS_COMPONENT_SEPARATOR = ":"
 private const val TEST_PROCESS_LOOKUP_COMMAND = "pgrep -f"
-private const val TEST_PROCESS_CRASH_COMMAND = "am crash --user current"
+private const val TEST_NATIVE_PROCESS_EXIT_TRANSACTION = 0x00ff_fffe
 private const val TEST_HASH_ALGORITHM = "SHA-256"
 private const val TEST_LOWERCASE_HEX_DIGITS = "0123456789abcdef"
 private const val TEST_FILE_READ_BUFFER_BYTES = 16 * 1024
@@ -509,6 +512,9 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                     "staging scanner process death",
                     ::verifyStagingScannerProcessDeath
                 )
+                verifyOptInPhase("import service profile") {
+                    profileImportService(targetContext, uiAutomation::executeShellCommand)
+                }
                 verifyPhase("direct isolated import", ::verifyIsolatedImportService)
                 verifyPhase("direct provider failure", ::verifyReliableProviderFailure)
                 verifyPhase("selected document import", ::verifyProductionDocumentImporter)
@@ -2117,7 +2123,7 @@ class DocumentBridgeInstrumentation : Instrumentation() {
         var isBound = false
         var primaryFailure: Throwable? = null
         try {
-            val intent = Intent(applicationContext, IsolatedImportService::class.java)
+            val intent = importServiceIntent(applicationContext)
             isBound =
                 applicationContext.bindIsolatedService(
                     intent,
@@ -2135,8 +2141,8 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                     outputBuffer.duplicate().use { outputDescriptor ->
                         service.startImport(
                             TEST_IMPORT_JOB_ID,
-                            inputDescriptor,
-                            outputDescriptor,
+                            TransferredFileDescriptor.from(inputDescriptor),
+                            TransferredFileDescriptor.from(outputDescriptor),
                             TEST_IMPORT_MAX_BYTES,
                             TEST_IMPORT_MAX_BYTES,
                             TEST_IMPORT_TIMEOUT_MILLIS,
@@ -2229,7 +2235,7 @@ class DocumentBridgeInstrumentation : Instrumentation() {
         var primaryFailure: Throwable? = null
         try {
             writeProviderFailure(providerDescriptor)
-            val intent = Intent(applicationContext, IsolatedImportService::class.java)
+            val intent = importServiceIntent(applicationContext)
             isBound =
                 applicationContext.bindIsolatedService(
                     intent,
@@ -2247,8 +2253,8 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                     outputBuffer.duplicate().use { output ->
                         service.startImport(
                             TEST_PROVIDER_ERROR_JOB_ID,
-                            source,
-                            output,
+                            TransferredFileDescriptor.from(source),
+                            TransferredFileDescriptor.from(output),
                             TEST_IMPORT_MAX_BYTES,
                             TEST_IMPORT_MAX_BYTES,
                             TEST_IMPORT_TIMEOUT_MILLIS,
@@ -3157,6 +3163,7 @@ class DocumentBridgeInstrumentation : Instrumentation() {
     /** Verifies isolated-service death discards the anonymous import buffer. */
     private fun verifyProductionServiceDeath() {
         val applicationContext = targetContext.applicationContext
+        val binding = IsolatedImportServiceBinding(applicationContext)
         val resolver = applicationContext.contentResolver
         val authorityPackage = context.packageName
         StatelessImportTestSources.resetPaused(
@@ -3171,7 +3178,7 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                     supervisorScope {
                         val deferred =
                             async {
-                                IsolatedDocumentImporter(applicationContext).open(
+                                IsolatedDocumentImporter(applicationContext) { binding }.open(
                                     StatelessImportTestSources.paused(
                                         authorityPackage = authorityPackage,
                                         operationTokenHex = TEST_OPERATION_TOKEN_HEX
@@ -3191,7 +3198,19 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                                 verifySuspendingPhase("isolated service death process lookup") {
                                     awaitIsolatedImportProcessId(applicationContext)
                                 }
-                            crashProcess(processId)
+                            val worker = binding.awaitService().asBinder()
+                            val crash = Parcel.obtain()
+                            try {
+                                crash.writeInterfaceToken(IImportService.DESCRIPTOR)
+                                check(worker.transact(
+                                    TEST_NATIVE_PROCESS_EXIT_TRANSACTION,
+                                    crash,
+                                    null,
+                                    IBinder.FLAG_ONEWAY
+                                ))
+                            } finally {
+                                crash.recycle()
+                            }
                             verifySuspendingPhase("isolated service death process exit") {
                                 awaitIsolatedImportProcessIdAbsent(
                                     applicationContext = applicationContext,
@@ -3229,6 +3248,9 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                         }
                     }
                 }
+            } catch (failure: Throwable) {
+                Log.e(TAG, "isolated service death failed during $currentVerificationPhase", failure)
+                throw failure
             } finally {
                 runBlocking {
                     verifySuspendingPhase("isolated service death cleanup") {
@@ -4072,12 +4094,6 @@ class DocumentBridgeInstrumentation : Instrumentation() {
             .filter(String::isNotBlank)
             .mapNotNull(String::toIntOrNull)
             .toList()
-    }
-
-    /** Crashes one observed isolated process through Activity Manager. */
-    private fun crashProcess(processId: Int) {
-        require(processId > 0) { "process identifier must be positive" }
-        runShellCommand("$TEST_PROCESS_CRASH_COMMAND $processId")
     }
 
     /** Runs one fixed instrumentation shell command and returns bounded output. */

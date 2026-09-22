@@ -21,11 +21,10 @@ import dev.soupslurpr.beautyxt.illustration.IllustrationKind
 import dev.soupslurpr.beautyxt.illustration.IllustrationLimits
 import dev.soupslurpr.beautyxt.illustration.IllustrationRequest
 import dev.soupslurpr.beautyxt.illustration.IllustrationResult
-import dev.soupslurpr.beautyxt.illustration.IsolatedDiagramService
-import dev.soupslurpr.beautyxt.illustration.IsolatedMathService
 import dev.soupslurpr.beautyxt.illustration.MarkdownIllustrationPlan
 import dev.soupslurpr.beautyxt.illustration.ProgressiveIllustrations
 import dev.soupslurpr.beautyxt.illustration.RestartingIllustrationWorker
+import dev.soupslurpr.beautyxt.ipc.NativeServiceNames
 import dev.soupslurpr.beautyxt.markdown.renderedUtf16OffsetForSource
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -60,13 +59,13 @@ internal fun rememberMarkdownIllustrations(
         val math =
             RestartingIllustrationWorker(
                 application,
-                IsolatedMathService::class.java,
+                NativeServiceNames.MATH,
                 IllustrationLimits.MAX_MATH_SOURCE_BYTES
             )
         val diagrams =
             RestartingIllustrationWorker(
                 application,
-                IsolatedDiagramService::class.java,
+                NativeServiceNames.DIAGRAM,
                 IllustrationLimits.MAX_DIAGRAM_SOURCE_BYTES
             )
         math to diagrams

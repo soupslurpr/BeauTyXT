@@ -1,0 +1,15 @@
+[package]
+name = "beautyxt-native-service"
+version = "0.1.0"
+description = "ART-free service lifecycle and bounded NDK Binder transport"
+edition.workspace = true
+license = "MIT AND Apache-2.0"
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+libc = "0.2.189"
+
+[lints]
+workspace = true

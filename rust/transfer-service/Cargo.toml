@@ -1,0 +1,20 @@
+[package]
+name = "beautyxt-transfer-service"
+version = "0.1.0"
+description = "ART-free Android service for isolated BeauTyXT transfers"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+beautyxt-native-service = { path = "../native-service" }
+beautyxt-transfer-core = { path = "../transfer-core" }
+libc = "0.2.189"
+
+[lints]
+workspace = true

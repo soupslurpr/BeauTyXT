@@ -1,15 +1,18 @@
 package dev.soupslurpr.beautyxt.importing;
 
-import android.os.ParcelFileDescriptor;
+import dev.soupslurpr.beautyxt.ipc.TransferredFileDescriptor;
 import dev.soupslurpr.beautyxt.importing.IImportCallback;
 
 /** Controls one descriptor-based import job at a time. */
 interface IImportService {
-    /** Validates and copies input bytes into one anonymous, seekable output descriptor. */
+    /**
+     * Validates and copies into an anonymous, seekable output. Descriptor transfer
+     * includes ownership of each data handle and any reliable error channel.
+     */
     int startImport(
         long jobId,
-        in ParcelFileDescriptor input,
-        in ParcelFileDescriptor output,
+        in TransferredFileDescriptor input,
+        in TransferredFileDescriptor output,
         long maxInputBytes,
         long maxOutputBytes,
         long timeoutMillis,

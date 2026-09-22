@@ -122,6 +122,14 @@ checks run with `:app:verifyDeviceTestResultsGuard` and as part of `:app:check`.
 This does not fix the upstream launch error: until that is resolved, use the
 direct command above to run the tests.
 
+The `isolated service death` phase uses a debug-only native Binder transaction
+to terminate the import worker: `am crash` requests a VM crash and cannot test
+an ART-free service. Cargo's release profile excludes this transaction from
+staging and release builds. The illustration crash/hang probe is a separate
+native library packaged only in debug builds. The opt-in `import service
+profile` phase measures seven fresh bindings with `dumpsys meminfo --local`;
+ordinary application memory dumps require a managed runtime in the target.
+
 ## Native print diagnostics
 
 Instrumentation removes its named PDF-fixture directories before verification
