@@ -306,9 +306,11 @@ class DocumentBridgeInstrumentation : Instrumentation() {
     private var currentVerificationPhase = TEST_INITIAL_VERIFICATION_PHASE
     private var selectedVerificationPhase: String? = null
     private var retainPrintArtifacts = false
+    private var profileArguments = Bundle()
     private var executedVerificationPhases = 0
 
     override fun onCreate(arguments: Bundle?) {
+        profileArguments = arguments?.let(::Bundle) ?: Bundle()
         selectedVerificationPhase = arguments?.getString(TEST_PHASE_ARGUMENT)
         retainPrintArtifacts =
             arguments?.getString(TEST_RETAIN_PRINT_ARTIFACTS_ARGUMENT)?.toBooleanStrict() ?: false
@@ -514,6 +516,9 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 )
                 verifyOptInPhase("import service profile") {
                     profileImportService(targetContext, uiAutomation::executeShellCommand)
+                }
+                verifyOptInPhase("staging editing profile") {
+                    profileStagingEditing(profileArguments)
                 }
                 verifyPhase("direct isolated import", ::verifyIsolatedImportService)
                 verifyPhase("direct provider failure", ::verifyReliableProviderFailure)

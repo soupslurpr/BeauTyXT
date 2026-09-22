@@ -130,6 +130,37 @@ native library packaged only in debug builds. The opt-in `import service
 profile` phase measures seven fresh bindings with `dumpsys meminfo --local`;
 ordinary application memory dumps require a managed runtime in the target.
 
+The opt-in `staging editing profile` phase drives the separately installed
+minified staging app through a synthetic MediaStore file. Select
+`-e profileWorkload small`, `large`, or `markdown`, and give each invocation a
+unique `-e profileRun NAME` (letters, digits, underscores, and hyphens only).
+It records cold open-to-editable time, injected-key-to-observed-text time,
+foreground and background save completion, scroll frames, and illustrated
+Markdown preview readiness. Every completed workflow verifies exact saved
+bytes. Use a keyboard that commits words at spaces; an unfinished IME
+composition intentionally defers foreground autosave.
+
+Results remain in the debug target's `files/editing-profile/NAME` directory.
+Pull them into an ignored local directory with:
+
+```sh
+adb -s SERIAL exec-out run-as dev.soupslurpr.beautyxt.debug \
+    tar -c -C files/editing-profile NAME > captures/editing-profile-NAME.tar
+```
+
+The phase force-stops staging between runs and removes its synthetic source.
+Use the same instrumentation APK, keyboard, compilation mode, and physical
+device for both app builds. Alternate repeated runs and exclude warmups.
+The accessibility observation time includes automation overhead; it is not
+input-to-display latency. Frame dumps after each gesture avoid truncating the
+scroll sequence to Android's rolling frame buffer. Optional
+`-e profileMemory true` samples combined main-process and worker PSS; run it
+separately from timings because sampling itself perturbs the workload, and
+report sampled peaks rather than claiming exact peak memory.
+For Markdown memory runs, `-e profileHoldPreview true` holds the completed
+formula and diagram on screen for six seconds before scrolling, allowing
+repeated samples while both illustrations remain on screen.
+
 ## Native print diagnostics
 
 Instrumentation removes its named PDF-fixture directories before verification
