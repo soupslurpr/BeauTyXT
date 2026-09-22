@@ -482,6 +482,9 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 }
                 verifyPhase("edit scroll resize", ::verifyEditScrollRestorationAfterResize)
                 verifyPhase("initial reading back", ::verifyInitialReadingBack)
+                verifyPhase("external document task closure", ::verifyExternalDocumentTaskClosure)
+                verifyPhase("multiple document task closure", ::verifyMultipleDocumentTaskClosure)
+                verifyPhase("document closing presentation", ::verifyDocumentClosingPresentation)
                 verifyPhase("Markdown recovery presentation") {
                     verifyMarkdownRecoveryPresentation()
                 }
