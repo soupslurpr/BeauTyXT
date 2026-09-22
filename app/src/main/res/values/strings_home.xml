@@ -13,7 +13,8 @@
     <string name="home_cancelling_open">Cancelling open</string>
     <string name="about_title">About BeauTyXT</string>
     <string name="about_summary">View, edit, and share plain text and Markdown on Android.</string>
-    <string name="about_view_source">View source code</string>
+    <string name="about_view_source">Source code</string>
+    <string name="about_version_and_copyright">BeauTyXT %1$s\n© 2026 soupslurpr</string>
     <string name="about_licenses">Open-source licenses</string>
     <string name="about_loading_licenses">Loading licenses…</string>
     <string name="about_source_unavailable">No app could open the source-code link. You can copy it below.</string>

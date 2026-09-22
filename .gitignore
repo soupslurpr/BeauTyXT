@@ -13,6 +13,7 @@ local.properties
 
 captures/
 design/home-screen-candidates/
+design/about-candidates/
 *.hprof
 *.profraw
 .DS_Store
