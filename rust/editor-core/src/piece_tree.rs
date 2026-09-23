@@ -85,14 +85,15 @@ impl TextSummary {
         let mut chars = 0_usize;
         let mut utf16_units = 0_usize;
         let mut line_feeds = 0_usize;
+        let mut words = WordSummary::default();
         for character in text.chars() {
             chars += 1;
             utf16_units += character.len_utf16();
+            words.observe(character);
             if character == '\n' {
                 line_feeds += 1;
             }
         }
-        let (words, first_is_word, last_is_word) = summarize_words(text);
         let expanded_line_ending_bytes = line_feeds
             .checked_mul(line_ending.bytes().len() - 1)
             .expect("bounded edit newline expansion must fit serialized metrics");
@@ -128,7 +129,7 @@ impl TextSummary {
             chars,
             utf16_units,
             line_feeds,
-            words,
+            words: words.count,
             line_endings,
             line_endings_after_initial_lf: if line_feeds
                 == usize::from(first_serialized_byte == Some(b'\n'))
@@ -137,8 +138,8 @@ impl TextSummary {
             } else {
                 line_endings
             },
-            first_is_word,
-            last_is_word,
+            first_is_word: words.first_is_word,
+            last_is_word: words.last_is_word,
             first_serialized_byte,
             last_serialized_byte,
         }
@@ -152,8 +153,10 @@ impl TextSummary {
         let mut line_feeds = 0;
         let mut line_endings = 0;
         let mut line_endings_after_initial_lf = 0;
+        let mut words = WordSummary::default();
         let mut characters = text.chars().peekable();
         while let Some(character) = characters.next() {
+            words.observe(character);
             if character == '\r' {
                 let flag = if characters.peek() == Some(&'\n') {
                     characters.next();
@@ -182,18 +185,17 @@ impl TextSummary {
                 utf16_units += character.len_utf16();
             }
         }
-        let (words, first_is_word, last_is_word) = summarize_words(text);
         Self {
             bytes,
             serialized_bytes: text.len(),
             chars,
             utf16_units,
             line_feeds,
-            words,
+            words: words.count,
             line_endings,
             line_endings_after_initial_lf,
-            first_is_word,
-            last_is_word,
+            first_is_word: words.first_is_word,
+            last_is_word: words.last_is_word,
             first_serialized_byte: text.as_bytes().first().copied(),
             last_serialized_byte: text.as_bytes().last().copied(),
         }
@@ -240,23 +242,24 @@ impl TextSummary {
     }
 }
 
-/// Summarizes Unicode-whitespace-delimited words and boundary state.
-fn summarize_words(text: &str) -> (usize, Option<bool>, Option<bool>) {
-    let mut characters = text.chars();
-    let Some(first_character) = characters.next() else {
-        return (0, None, None);
-    };
-    let first_is_word = !first_character.is_whitespace();
-    let mut words = usize::from(first_is_word);
-    let mut previous_is_word = first_is_word;
-    for character in characters {
+/// Counts words during the existing scalar scan, retaining cross-piece boundaries.
+#[derive(Default)]
+struct WordSummary {
+    count: usize,
+    first_is_word: Option<bool>,
+    last_is_word: Option<bool>,
+}
+
+impl WordSummary {
+    /// Incorporates one scalar; collapsing CRLF does not change word boundaries.
+    fn observe(&mut self, character: char) {
         let is_word = !character.is_whitespace();
-        if is_word && !previous_is_word {
-            words += 1;
+        if is_word && self.last_is_word != Some(true) {
+            self.count += 1;
         }
-        previous_is_word = is_word;
+        self.first_is_word.get_or_insert(is_word);
+        self.last_is_word = Some(is_word);
     }
-    (words, Some(first_is_word), Some(previous_is_word))
 }
 
 /// Returns the presence flag for one serialized line-ending style.
@@ -1849,23 +1852,25 @@ impl PrefixState {
         if self.stopped {
             return;
         }
+        let mut appended_bytes = 0;
         for character in text.chars() {
             let character_utf16_units = character.len_utf16();
             let Some(next_utf16_units) = self.utf16_units.checked_add(character_utf16_units) else {
                 self.stopped = true;
-                return;
+                break;
             };
             if next_utf16_units > self.max_utf16_units {
                 self.stopped = true;
-                return;
+                break;
             }
-            self.text.push(character);
             self.utf16_units = next_utf16_units;
+            appended_bytes += character.len_utf8();
             self.copied_bytes += character.len_utf8();
             if self.copied_bytes == self.range_bytes {
-                return;
+                break;
             }
         }
+        self.text.push_str(&text[..appended_bytes]);
     }
 }
 
@@ -2344,6 +2349,9 @@ fn position_at_utf16(
                 return prefix.checked_add(nearest);
             }
             let position = piece.with_text(cache, |text| {
+                if piece.summary.bytes == piece.summary.utf16_units {
+                    return ascii_position_at_utf16(text, nearest, utf16_offset);
+                }
                 scan_utf16_position(text, nearest, utf16_offset)?.ok_or(
                     DocumentError::MisalignedUtf16Offset {
                         offset: requested_offset,
@@ -2374,6 +2382,36 @@ fn position_at_utf16(
             }
         }
     }
+}
+
+/// Resolves an ASCII offset using its identical byte offset and newline count.
+fn ascii_position_at_utf16(
+    text: &str,
+    origin: LogicalPosition,
+    utf16_offset: usize,
+) -> Result<LogicalPosition, DocumentError> {
+    let line_feeds = if origin.utf16_units <= utf16_offset {
+        let traversed = text
+            .get(origin.bytes..utf16_offset)
+            .ok_or_else(invalid_tree_summary)?;
+        checked_metric_add(
+            origin.line_feeds,
+            memchr::memchr_iter(b'\n', traversed.as_bytes()).count(),
+        )?
+    } else {
+        let traversed = text
+            .get(utf16_offset..origin.bytes)
+            .ok_or_else(invalid_tree_summary)?;
+        origin
+            .line_feeds
+            .checked_sub(memchr::memchr_iter(b'\n', traversed.as_bytes()).count())
+            .ok_or_else(invalid_tree_summary)?
+    };
+    Ok(LogicalPosition {
+        bytes: utf16_offset,
+        utf16_units: utf16_offset,
+        line_feeds,
+    })
 }
 
 /// Scans from a known position in either direction without splitting a scalar.
@@ -2712,17 +2750,17 @@ fn normalize_source_text(source_text: &str) -> String {
     }
 
     let mut logical_text = String::with_capacity(source_text.len());
-    let mut characters = source_text.chars().peekable();
-    while let Some(character) = characters.next() {
-        if character == '\r' {
-            if characters.peek() == Some(&'\n') {
-                characters.next();
-            }
-            logical_text.push('\n');
-        } else {
-            logical_text.push(character);
+    let bytes = source_text.as_bytes();
+    let mut copied_bytes = 0;
+    for carriage_return in memchr::memchr_iter(b'\r', bytes) {
+        logical_text.push_str(&source_text[copied_bytes..carriage_return]);
+        logical_text.push('\n');
+        copied_bytes = carriage_return + 1;
+        if bytes.get(copied_bytes) == Some(&b'\n') {
+            copied_bytes += 1;
         }
     }
+    logical_text.push_str(&source_text[copied_bytes..]);
     logical_text
 }
 
@@ -3019,6 +3057,64 @@ mod tests {
     const PACKAGE_SOURCE_REPETITIONS: usize = 4;
     const PACKAGE_SOURCE_PREFIX: &str = "beautyxt-piece-package-source";
     static NEXT_PACKAGE_SOURCE_ID: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn preserves_unicode_word_counts_when_summarizing_normalized_source() {
+        for text in ["", " \t\r\n", "😀alpha\u{2003}β\r\n東京\rword\n\u{a0}end"] {
+            let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+            for summary in [
+                TextSummary::from_source_text(text),
+                TextSummary::from_text(&normalized),
+            ] {
+                assert_eq!(summary.words, text.split_whitespace().count());
+                assert_eq!(summary.chars, normalized.chars().count());
+                assert_eq!(summary.utf16_units, normalized.encode_utf16().count());
+                assert_eq!(summary.bytes, normalized.len());
+                assert_eq!(
+                    summary.first_is_word,
+                    text.chars().next().map(|c| !c.is_whitespace())
+                );
+                assert_eq!(
+                    summary.last_is_word,
+                    text.chars().next_back().map(|c| !c.is_whitespace())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bounds_bulk_prefix_copy_at_unicode_and_piece_boundaries() {
+        let source = "a😀β\r\nword\r".repeat(MAX_PIECE_BYTES / 8);
+        let normalized = source.replace("\r\n", "\n").replace('\r', "\n");
+        let (source_tree, _) = open_tracking_tree(&source, usize::MAX);
+        for tree in [source_tree, PieceTree::from_text(&normalized)] {
+            let length = tree.summary().utf16_units;
+            let mut reader = tree.reader();
+            for limit in [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                MAX_PIECE_BYTES - 1,
+                MAX_PIECE_BYTES,
+                length,
+            ] {
+                let mut expected_units: Vec<_> = normalized.encode_utf16().take(limit).collect();
+                if matches!(expected_units.last(), Some(0xd800..=0xdbff)) {
+                    expected_units.pop();
+                }
+                let expected = String::from_utf16(&expected_units).unwrap();
+                let prefix = reader
+                    .bounded_text_prefix(Utf16Range::new(0, length), limit)
+                    .unwrap();
+                assert_eq!(prefix.text, expected);
+                assert_eq!(prefix.utf16_units, expected_units.len());
+                assert_eq!(prefix.reached_end, expected == normalized);
+            }
+        }
+    }
 
     #[test]
     fn mixed_line_ending_summaries_match_serialization_in_any_tree_order() {
@@ -3463,6 +3559,23 @@ mod tests {
             .expect("cross-piece mixed-ending edit should remain valid");
     }
 
+    /// Verifies bulk normalization preserves Unicode around every newline pairing.
+    #[test]
+    fn normalizes_adjacent_newlines_without_splitting_unicode() {
+        let fragments = ["", "a", "😀", "β", "\r", "\n", "\r\n"];
+        for first in fragments {
+            for second in fragments {
+                for third in fragments {
+                    let text = format!("{first}{second}{third}");
+                    assert_eq!(
+                        normalize_source_text(&text),
+                        text.replace("\r\n", "\n").replace('\r', "\n")
+                    );
+                }
+            }
+        }
+    }
+
     /// Verifies raw source bytes remain exact while logical text is normalized.
     #[test]
     fn preserves_bom_and_mixed_source_line_endings() {
@@ -3704,40 +3817,43 @@ mod tests {
 
     /// Verifies cached positions remain exact through forward, reverse and evicting reads.
     #[test]
-    fn preserves_cached_unicode_positions() {
+    fn preserves_cached_scalar_positions() {
         const SAMPLE_STRIDE: usize = 127;
-        let text = "a😀\nβ\n".repeat(MAX_PIECE_BYTES / 4);
-        let mut expected_positions = vec![LogicalPosition::default()];
-        let mut position = LogicalPosition::default();
-        for character in text.chars() {
-            position.bytes += character.len_utf8();
-            position.utf16_units += character.len_utf16();
-            position.line_feeds += usize::from(character == '\n');
-            expected_positions.push(position);
-        }
-        let samples: Vec<_> = expected_positions.iter().step_by(SAMPLE_STRIDE).collect();
-        let (source_tree, _) = open_tracking_tree(&text, usize::MAX);
-        for tree in [PieceTree::from_text(&text), source_tree] {
-            let mut reader = tree.reader();
-            for &expected in samples.iter().chain(samples.iter().rev()) {
-                let actual = reader
-                    .position_at_utf16(expected.utf16_units)
-                    .expect("cached scalar boundary should remain readable");
-                assert_eq!(actual, *expected);
-                let bounds = reader
-                    .line_bounds(expected.line_feeds)
-                    .expect("interleaved line lookup should remain exact");
-                assert!(bounds.content_start_utf16 <= expected.utf16_units);
-                assert!(bounds.content_end_utf16 >= expected.utf16_units);
-                if text[expected.bytes..].starts_with('😀') {
-                    assert!(matches!(
-                        reader.position_at_utf16(expected.utf16_units + 1),
-                        Err(DocumentError::MisalignedUtf16Offset { .. })
-                    ));
-                }
-                assert!(reader.cache.positions.len() <= MAX_CACHED_PIECE_POSITIONS);
+        for line in ["alpha\nbeta\n", "a😀\nβ\n"] {
+            let text = line.repeat(MAX_PIECE_BYTES / 4);
+            let mut expected_positions = vec![LogicalPosition::default()];
+            let mut position = LogicalPosition::default();
+            for character in text.chars() {
+                position.bytes += character.len_utf8();
+                position.utf16_units += character.len_utf16();
+                position.line_feeds += usize::from(character == '\n');
+                expected_positions.push(position);
             }
-            assert_eq!(reader.cache.positions.len(), MAX_CACHED_PIECE_POSITIONS);
+            let samples: Vec<_> = expected_positions.iter().step_by(SAMPLE_STRIDE).collect();
+            let (source_tree, _) = open_tracking_tree(&text, usize::MAX);
+            let (crlf_tree, _) = open_tracking_tree(&text.replace('\n', "\r\n"), usize::MAX);
+            for tree in [PieceTree::from_text(&text), source_tree, crlf_tree] {
+                let mut reader = tree.reader();
+                for &expected in samples.iter().chain(samples.iter().rev()) {
+                    let actual = reader
+                        .position_at_utf16(expected.utf16_units)
+                        .expect("cached scalar boundary should remain readable");
+                    assert_eq!(actual, *expected);
+                    let bounds = reader
+                        .line_bounds(expected.line_feeds)
+                        .expect("interleaved line lookup should remain exact");
+                    assert!(bounds.content_start_utf16 <= expected.utf16_units);
+                    assert!(bounds.content_end_utf16 >= expected.utf16_units);
+                    if text[expected.bytes..].starts_with('😀') {
+                        assert!(matches!(
+                            reader.position_at_utf16(expected.utf16_units + 1),
+                            Err(DocumentError::MisalignedUtf16Offset { .. })
+                        ));
+                    }
+                    assert!(reader.cache.positions.len() <= MAX_CACHED_PIECE_POSITIONS);
+                }
+                assert_eq!(reader.cache.positions.len(), MAX_CACHED_PIECE_POSITIONS);
+            }
         }
     }
 
