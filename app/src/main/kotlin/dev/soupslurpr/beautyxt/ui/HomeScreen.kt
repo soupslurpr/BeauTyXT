@@ -52,8 +52,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -67,36 +69,26 @@ import dev.soupslurpr.beautyxt.ui.designsystem.BeauTyXTTheme
 private val CompactSpacing = 8.dp
 private val RelatedContentSpacing = 12.dp
 private val HomeHorizontalPadding = 24.dp
-private val HomeActionHeight = 64.dp
-private val HomeDocumentActionHeight = 120.dp
-private val HomeStackedActionMinHeight = 60.dp
+private val HomeDocumentActionHeight = 64.dp
+private val HomeStackedActionMinHeight = 64.dp
 private val HomeBrandMarkSize = 80.dp
-private val HomeWideVerticalPadding = 48.dp
+private val HomeWideVerticalPadding = 16.dp
 private val HomeVerticalPadding = 24.dp
-private val HomeConnectedActionSpacing = 3.dp
+private val HomeActionSpacing = 8.dp
 private val HomeContentMaxWidth = 520.dp
 private val HomeWideContentMaxWidth = 960.dp
 private val HomeWideLayoutMinWidth = 680.dp
 private val HomeBrandActionSpacing = 40.dp
-private val HomeWideActionTopInset = 16.dp
-private val HomeHorizontalActionsMinWidth = 320.dp
+private val HomeHorizontalActionsMinWidth = 440.dp
 private val OpenProgressSize = 24.dp
 private val HomeActionIconSize = 24.dp
 private val HomeActionHorizontalPadding = 8.dp
-private val HomeLeadingActionShape =
-    RoundedCornerShape(topStart = 34.dp, bottomStart = 34.dp, topEnd = 10.dp, bottomEnd = 10.dp)
-private val HomeTrailingActionShape =
-    RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp, topEnd = 34.dp, bottomEnd = 34.dp)
-private val HomePressedLeadingActionShape =
-    RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp, topEnd = 12.dp, bottomEnd = 12.dp)
-private val HomePressedTrailingActionShape =
-    RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp, topEnd = 24.dp, bottomEnd = 24.dp)
-private val HomeStandaloneActionShape = RoundedCornerShape(26.dp)
-private val HomePressedStandaloneActionShape = RoundedCornerShape(20.dp)
+private val HomeActionShape = RoundedCornerShape(percent = 50)
+private val HomePressedActionShape = RoundedCornerShape(20.dp)
 private const val MAX_HORIZONTAL_LAYOUT_FONT_SCALE = 1.3f
 
-/** Describes one action inside a coordinated horizontal home group. */
-private data class HomeConnectedAction(
+/** Describes one action inside a responsive horizontal home group. */
+private data class HomeAction(
     val label: String,
     @DrawableRes val iconRes: Int,
     val onClick: () -> Unit,
@@ -105,11 +97,10 @@ private data class HomeConnectedAction(
     val pressedShape: Shape,
     val containerColor: Color,
     val contentColor: Color,
-    val emphasized: Boolean = false,
-    val verticalContent: Boolean = false
+    val emphasized: Boolean = false
 )
 
-/** Returns whether one action family has enough room for a connected row. */
+/** Returns whether the leading icons and labels have enough room for one row. */
 internal fun usesHorizontalHomeActions(maxWidth: Dp, fontScale: Float): Boolean {
     require(maxWidth > 0.dp) { "action width must be positive" }
     require(fontScale.isFinite() && fontScale > 0f) { "font scale must be positive and finite" }
@@ -135,8 +126,10 @@ internal fun HomeScreen(
     onNewDocument: () -> Unit,
     onOpenDocument: () -> Unit,
     onCancelDocumentOpen: () -> Unit,
+    isCameraAvailable: Boolean,
     isScanQrEnabled: Boolean,
     onScanQr: () -> Unit,
+    isNfcAvailable: Boolean,
     isReadNfcEnabled: Boolean,
     onReadNfc: () -> Unit,
     onAbout: () -> Unit,
@@ -159,8 +152,10 @@ internal fun HomeScreen(
                 onNewDocument = onNewDocument,
                 onOpenDocument = onOpenDocument,
                 onCancelDocumentOpen = onCancelDocumentOpen,
+                isCameraAvailable = isCameraAvailable,
                 isScanQrEnabled = isScanQrEnabled,
                 onScanQr = onScanQr,
+                isNfcAvailable = isNfcAvailable,
                 isReadNfcEnabled = isReadNfcEnabled,
                 onReadNfc = onReadNfc,
                 onAbout = onAbout,
@@ -178,8 +173,10 @@ private fun HomeContent(
     onNewDocument: () -> Unit,
     onOpenDocument: () -> Unit,
     onCancelDocumentOpen: () -> Unit,
+    isCameraAvailable: Boolean,
     isScanQrEnabled: Boolean,
     onScanQr: () -> Unit,
+    isNfcAvailable: Boolean,
     isReadNfcEnabled: Boolean,
     onReadNfc: () -> Unit,
     onAbout: () -> Unit,
@@ -199,13 +196,15 @@ private fun HomeContent(
                     onNewDocument = onNewDocument,
                     onOpenDocument = onOpenDocument,
                     onCancelDocumentOpen = onCancelDocumentOpen,
+                    isCameraAvailable = isCameraAvailable,
                     isScanQrEnabled = isScanQrEnabled,
                     onScanQr = onScanQr,
+                    isNfcAvailable = isNfcAvailable,
                     isReadNfcEnabled = isReadNfcEnabled,
                     onReadNfc = onReadNfc,
                     modifier = Modifier.fillMaxWidth()
                 )
-                TextButton(onClick = onAbout) { Text(stringResource(R.string.about_title)) }
+                TextButton(onClick = onAbout) { Text(stringResource(R.string.home_about)) }
             }
         }
 
@@ -231,7 +230,7 @@ private fun HomeContent(
                     modifier = Modifier.weight(0.8f)
                 )
                 HomeActionRegion(
-                    modifier = Modifier.weight(1.2f).padding(top = HomeWideActionTopInset),
+                    modifier = Modifier.weight(1.2f),
                     actions = actions
                 )
             }
@@ -312,8 +311,10 @@ private fun HomeActionSections(
     onNewDocument: () -> Unit,
     onOpenDocument: () -> Unit,
     onCancelDocumentOpen: () -> Unit,
+    isCameraAvailable: Boolean,
     isScanQrEnabled: Boolean,
     onScanQr: () -> Unit,
+    isNfcAvailable: Boolean,
     isReadNfcEnabled: Boolean,
     onReadNfc: () -> Unit,
     modifier: Modifier = Modifier
@@ -331,8 +332,10 @@ private fun HomeActionSections(
         )
         OpenFeedback(openStatus = openStatus)
         ReceiveActions(
+            isCameraAvailable = isCameraAvailable,
             isScanQrEnabled = isScanQrEnabled,
             onScanQr = onScanQr,
+            isNfcAvailable = isNfcAvailable,
             isReadNfcEnabled = isReadNfcEnabled,
             onReadNfc = onReadNfc
         )
@@ -360,31 +363,29 @@ private fun DocumentActions(
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         if (usesHorizontalHomeActions(maxWidth, LocalDensity.current.fontScale)) {
-            HomeConnectedActionGroup(
+            HomeActionGroup(
                 leadingAction =
-                    HomeConnectedAction(
+                    HomeAction(
                         label = openDocumentActionLabel(openStatus).asString(),
                         iconRes = R.drawable.ic_file_open,
                         onClick = onOpenClick,
                         enabled = openButtonEnabled,
-                        shape = HomeLeadingActionShape,
-                        pressedShape = HomePressedLeadingActionShape,
+                        shape = HomeActionShape,
+                        pressedShape = HomePressedActionShape,
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
-                        emphasized = true,
-                        verticalContent = true
+                        emphasized = true
                     ),
                 trailingAction =
-                    HomeConnectedAction(
+                    HomeAction(
                         label = stringResource(R.string.home_new_document),
                         iconRes = R.drawable.ic_note_add,
                         onClick = onNewDocument,
                         enabled = isNewDocumentEnabled,
-                        shape = HomeTrailingActionShape,
-                        pressedShape = HomePressedTrailingActionShape,
+                        shape = HomeActionShape,
+                        pressedShape = HomePressedActionShape,
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        verticalContent = true
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                     )
             )
         } else {
@@ -397,8 +398,8 @@ private fun DocumentActions(
                     iconRes = R.drawable.ic_file_open,
                     onClick = onOpenClick,
                     enabled = openButtonEnabled,
-                    shape = HomeStandaloneActionShape,
-                    pressedShape = HomePressedStandaloneActionShape,
+                    shape = HomeActionShape,
+                    pressedShape = HomePressedActionShape,
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     emphasized = true,
@@ -412,8 +413,8 @@ private fun DocumentActions(
                     iconRes = R.drawable.ic_note_add,
                     onClick = onNewDocument,
                     enabled = isNewDocumentEnabled,
-                    shape = HomeStandaloneActionShape,
-                    pressedShape = HomePressedStandaloneActionShape,
+                    shape = HomeActionShape,
+                    pressedShape = HomePressedActionShape,
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier =
@@ -426,73 +427,104 @@ private fun DocumentActions(
     }
 }
 
-/** Displays local QR and NFC receive actions. */
+/** Groups direct receive actions in one quiet surface with hardware availability. */
 @Composable
 private fun ReceiveActions(
+    isCameraAvailable: Boolean,
     isScanQrEnabled: Boolean,
     onScanQr: () -> Unit,
+    isNfcAvailable: Boolean,
     isReadNfcEnabled: Boolean,
     onReadNfc: () -> Unit
 ) {
-    HomeSection(title = stringResource(R.string.home_receive_text)) {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            if (usesHorizontalHomeActions(maxWidth, LocalDensity.current.fontScale)) {
-                HomeConnectedActionGroup(
-                    leadingAction =
-                        HomeConnectedAction(
-                            label = stringResource(R.string.action_scan_qr),
-                            iconRes = R.drawable.ic_qr_code_2,
-                            onClick = onScanQr,
-                            enabled = isScanQrEnabled,
-                            shape = HomeLeadingActionShape,
-                            pressedShape = HomePressedLeadingActionShape,
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                    trailingAction =
-                        HomeConnectedAction(
-                            label = stringResource(R.string.action_read_nfc),
-                            iconRes = R.drawable.ic_nfc,
-                            onClick = onReadNfc,
-                            enabled = isReadNfcEnabled,
-                            shape = HomeTrailingActionShape,
-                            pressedShape = HomePressedTrailingActionShape,
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        )
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = MaterialTheme.shapes.extraLarge
+    ) {
+        Column(modifier = Modifier.padding(CompactSpacing)) {
+            Text(
+                text = stringResource(R.string.home_receive_text),
+                modifier = Modifier
+                    .padding(horizontal = RelatedContentSpacing, vertical = CompactSpacing)
+                    .semantics { heading() },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium
+            )
+            ReceiveAction(
+                label = stringResource(R.string.action_scan_qr),
+                iconRes = R.drawable.ic_qr_code_2,
+                onClick = onScanQr,
+                enabled = isCameraAvailable && isScanQrEnabled,
+                supportingText = if (isCameraAvailable) {
+                    null
+                } else {
+                    stringResource(R.string.home_camera_unavailable)
+                }
+            )
+            ReceiveAction(
+                label = stringResource(R.string.action_read_nfc),
+                iconRes = R.drawable.ic_nfc,
+                onClick = onReadNfc,
+                enabled = isNfcAvailable && isReadNfcEnabled,
+                supportingText = if (isNfcAvailable) {
+                    null
+                } else {
+                    stringResource(R.string.home_nfc_unavailable)
+                }
+            )
+        }
+    }
+}
+
+/** Keeps an unavailable action's explanation readable and part of its accessibility label. */
+@Composable
+private fun ReceiveAction(
+    label: String,
+    @DrawableRes iconRes: Int,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    supportingText: String? = null
+) {
+    val actionColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth().semantics { role = Role.Button },
+        color = Color.Transparent,
+        shape = MaterialTheme.shapes.large
+    ) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = 56.dp)
+                .padding(RelatedContentSpacing),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(HomeActionIconSize),
+                tint = if (enabled) MaterialTheme.colorScheme.primary else actionColor
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = label,
+                    color = actionColor,
+                    style = MaterialTheme.typography.labelLarge
                 )
-            } else {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(CompactSpacing)
-                ) {
-                    HomeActionButton(
-                        label = stringResource(R.string.action_scan_qr),
-                        iconRes = R.drawable.ic_qr_code_2,
-                        onClick = onScanQr,
-                        enabled = isScanQrEnabled,
-                        shape = HomeStandaloneActionShape,
-                        pressedShape = HomePressedStandaloneActionShape,
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = HomeStackedActionMinHeight)
-                    )
-                    HomeActionButton(
-                        label = stringResource(R.string.action_read_nfc),
-                        iconRes = R.drawable.ic_nfc,
-                        onClick = onReadNfc,
-                        enabled = isReadNfcEnabled,
-                        shape = HomeStandaloneActionShape,
-                        pressedShape = HomePressedStandaloneActionShape,
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = HomeStackedActionMinHeight)
+                if (supportingText != null) {
+                    Text(
+                        text = supportingText,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
@@ -502,9 +534,9 @@ private fun ReceiveActions(
 
 /** Displays two actions whose widths and shapes respond as one expressive group. */
 @Composable
-private fun HomeConnectedActionGroup(
-    leadingAction: HomeConnectedAction,
-    trailingAction: HomeConnectedAction
+private fun HomeActionGroup(
+    leadingAction: HomeAction,
+    trailingAction: HomeAction
 ) {
     val leadingInteractionSource = remember { MutableInteractionSource() }
     val trailingInteractionSource = remember { MutableInteractionSource() }
@@ -514,17 +546,17 @@ private fun HomeConnectedActionGroup(
             ButtonGroupDefaults.OverflowIndicator(menuState = menuState)
         },
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(HomeConnectedActionSpacing),
+        horizontalArrangement = Arrangement.spacedBy(HomeActionSpacing),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        homeConnectedActionItem(leadingAction, leadingInteractionSource)
-        homeConnectedActionItem(trailingAction, trailingInteractionSource)
+        homeActionItem(leadingAction, leadingInteractionSource)
+        homeActionItem(trailingAction, trailingInteractionSource)
     }
 }
 
 /** Adds one custom BeauTyXT action to a Material expressive button group. */
-private fun ButtonGroupScope.homeConnectedActionItem(
-    action: HomeConnectedAction,
+private fun ButtonGroupScope.homeActionItem(
+    action: HomeAction,
     interactionSource: MutableInteractionSource
 ) {
     customItem(
@@ -539,7 +571,6 @@ private fun ButtonGroupScope.homeConnectedActionItem(
                 containerColor = action.containerColor,
                 contentColor = action.contentColor,
                 emphasized = action.emphasized,
-                verticalContent = action.verticalContent,
                 interactionSource = interactionSource,
                 modifier =
                     Modifier
@@ -548,13 +579,7 @@ private fun ButtonGroupScope.homeConnectedActionItem(
                             interactionSource = interactionSource,
                             compressionLimit = HomeActionHorizontalPadding
                         )
-                        .height(
-                            if (action.verticalContent) {
-                                HomeDocumentActionHeight
-                            } else {
-                                HomeActionHeight
-                            }
-                        )
+                        .height(HomeDocumentActionHeight)
             )
         },
         menuContent = { menuState ->
@@ -587,7 +612,6 @@ private fun HomeActionButton(
     modifier: Modifier = Modifier,
     pressedShape: Shape = ButtonDefaults.pressedShape,
     emphasized: Boolean = false,
-    verticalContent: Boolean = false,
     interactionSource: MutableInteractionSource? = null
 ) {
     Button(
@@ -619,41 +643,12 @@ private fun HomeActionButton(
             Text(
                 text = label,
                 fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Medium,
-                style = if (verticalContent) {
-                    MaterialTheme.typography.titleMedium
-                } else {
-                    MaterialTheme.typography.labelLarge
-                }
+                style = ButtonDefaults.textStyleFor(HomeDocumentActionHeight)
             )
         }
-        if (verticalContent) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(RelatedContentSpacing)
-            ) {
-                actionIcon()
-                actionLabel()
-            }
-        } else {
-            actionIcon()
-            Spacer(modifier = Modifier.width(RelatedContentSpacing))
-            actionLabel()
-        }
-    }
-}
-
-/** Displays one consistently styled group of home actions. */
-@Composable
-private fun HomeSection(title: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(CompactSpacing)) {
-        Text(
-            text = title,
-            modifier = Modifier.semantics { heading() },
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.SemiBold,
-            style = MaterialTheme.typography.titleSmall
-        )
-        content()
+        actionIcon()
+        Spacer(modifier = Modifier.width(RelatedContentSpacing))
+        actionLabel()
     }
 }
 
@@ -735,8 +730,10 @@ private fun HomeScreenPreview() {
             onNewDocument = {},
             onOpenDocument = {},
             onCancelDocumentOpen = {},
+            isCameraAvailable = true,
             isScanQrEnabled = true,
             onScanQr = {},
+            isNfcAvailable = true,
             isReadNfcEnabled = true,
             onReadNfc = {},
             onAbout = {}
@@ -760,16 +757,18 @@ private fun WideHomeScreenPreview() {
             onNewDocument = {},
             onOpenDocument = {},
             onCancelDocumentOpen = {},
+            isCameraAvailable = true,
             isScanQrEnabled = false,
             onScanQr = {},
-            isReadNfcEnabled = true,
+            isNfcAvailable = true,
+            isReadNfcEnabled = false,
             onReadNfc = {},
             onAbout = {}
         )
     }
 }
 
-/** Previews the landing layout at a large font scale. */
+/** Previews large text with both receive hardware explanations. */
 @Preview(
     name = "Large font",
     showBackground = true,
@@ -786,8 +785,10 @@ private fun LargeFontHomeScreenPreview() {
             onNewDocument = {},
             onOpenDocument = {},
             onCancelDocumentOpen = {},
-            isScanQrEnabled = true,
+            isCameraAvailable = false,
+            isScanQrEnabled = false,
             onScanQr = {},
+            isNfcAvailable = false,
             isReadNfcEnabled = false,
             onReadNfc = {},
             onAbout = {}

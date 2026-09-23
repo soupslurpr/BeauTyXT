@@ -70,8 +70,10 @@ class HomeActivity : ComponentActivity() {
             onNewDocument = { handOff(createNewDocumentSessionIntent(this)) },
             onOpenDocument = { handOff(createDocumentSelectionIntent(this)) },
             onCancelDocumentOpen = { openStatus = OpenStatus.Idle },
+            isCameraAvailable = hasCamera,
             isScanQrEnabled = hasCamera && canStartAction,
             onScanQr = { handOff(createQrDocumentSessionIntent(this)) },
+            isNfcAvailable = hasNfc,
             isReadNfcEnabled = hasNfc && canStartAction,
             onReadNfc = { handOff(createNfcDocumentSessionIntent(this)) },
             onAbout = {

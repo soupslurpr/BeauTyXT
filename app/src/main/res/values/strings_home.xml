@@ -4,7 +4,10 @@
     <string name="home_brand_name" translatable="false">BeauTyXT</string>
     <string name="home_tagline">Plain text &amp; Markdown</string>
     <string name="home_new_document">New document</string>
-    <string name="home_receive_text">Receive text</string>
+    <string name="home_receive_text">Receive</string>
+    <string name="home_camera_unavailable">No camera is available on this device</string>
+    <string name="home_nfc_unavailable">NFC isn\'t available on this device</string>
+    <string name="home_about">About</string>
     <string name="home_open_file">Open file</string>
     <string name="home_selecting_file">Selecting file</string>
     <string name="home_cancel_open">Cancel open</string>
@@ -18,11 +21,11 @@
     <string name="about_licenses">Open-source licenses</string>
     <string name="about_loading_licenses">Loading licenses…</string>
     <string name="about_source_unavailable">No app could open the source-code link. You can copy it below.</string>
-    <string name="about_files_title">Files</string>
+    <string name="about_files_title">Opening and saving files</string>
     <string name="about_files">Open files stay with the storage provider you choose. Compatible files save automatically after edits. New and received text remains in memory until you choose Save.</string>
-    <string name="about_storage_title">Storage</string>
+    <string name="about_storage_title">Keeping your work</string>
     <string name="about_storage">BeauTyXT keeps no app-private document copies or recovery files. Undo history is kept only for the current session. Unsaved content is lost if Android ends the app process. Your selected storage provider may still sync its files.</string>
-    <string name="about_processing_title">Processing</string>
+    <string name="about_processing_title">On your device</string>
     <string name="about_processing">Text parsing, Markdown preview, and QR and NFC validation run on this device. BeauTyXT has no Internet permission and does not run scripts or fetch document images.</string>
     <string name="about_limits_title">Current limits</string>
     <string name="about_limits">BeauTyXT supports UTF-8 plain text and Markdown files up to 256 MiB. Markdown previews are limited to 16 MiB, QR transfers to 1,536 UTF-8 bytes, and complete NFC messages to 256 KiB. Printing can use source text or formatted Markdown.</string>

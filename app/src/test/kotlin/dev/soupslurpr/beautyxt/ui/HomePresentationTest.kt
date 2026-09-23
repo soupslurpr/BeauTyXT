@@ -64,13 +64,13 @@ class HomePresentationTest {
         )
     }
 
-    /** Verifies connected rows yield before labels become cramped. */
+    /** Verifies horizontal rows yield before leading icons and labels become cramped. */
     @Test
-    fun selectsConnectedHomeActions() {
-        assertTrue(usesHorizontalHomeActions(maxWidth = 320.dp, fontScale = 1f))
-        assertFalse(usesHorizontalHomeActions(maxWidth = 319.dp, fontScale = 1f))
-        assertTrue(usesHorizontalHomeActions(maxWidth = 416.dp, fontScale = 1.3f))
-        assertFalse(usesHorizontalHomeActions(maxWidth = 415.dp, fontScale = 1.3f))
+    fun selectsHorizontalHomeActions() {
+        assertTrue(usesHorizontalHomeActions(maxWidth = 440.dp, fontScale = 1f))
+        assertFalse(usesHorizontalHomeActions(maxWidth = 439.dp, fontScale = 1f))
+        assertTrue(usesHorizontalHomeActions(maxWidth = 572.dp, fontScale = 1.3f))
+        assertFalse(usesHorizontalHomeActions(maxWidth = 571.dp, fontScale = 1.3f))
         assertFalse(usesHorizontalHomeActions(maxWidth = 400.dp, fontScale = 1.31f))
     }
 
