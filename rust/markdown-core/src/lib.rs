@@ -489,6 +489,13 @@ impl<'a> SourceOffsetIndex<'a> {
         if byte_offset > self.source.len() || !self.source.is_char_boundary(byte_offset) {
             return Err(RenderError::State);
         }
+        // UTF-8 bytes exceed logical UTF-16 units for every non-ASCII scalar and
+        // collapsed CRLF. Equal totals therefore make every byte offset exact.
+        if self.logical_utf16_units
+            == u64::try_from(self.source.len()).map_err(|_| RenderError::ArithmeticOverflow)?
+        {
+            return u64::try_from(byte_offset).map_err(|_| RenderError::ArithmeticOverflow);
+        }
         let checkpoint_index = self
             .checkpoints
             .partition_point(|checkpoint| checkpoint.byte_offset <= byte_offset)
@@ -2646,6 +2653,26 @@ fn encode_u64(bytes: &mut [u8], offset: usize, value: u64) {
 #[cfg(test)]
 mod tests {
     //! Verifies bounded Markdown parsing and deterministic packet encoding.
+
+    #[test]
+    fn maps_every_source_boundary_with_ascii_unicode_and_crlf() {
+        for text in ["", "plain\rtext\n", "\r\n", "😀é東京\r\nend"] {
+            let source = text.repeat(150);
+            let offsets = super::SourceOffsetIndex::new(&source).unwrap();
+            for byte_offset in 0..=source.len() {
+                let Some(prefix) = source.get(..byte_offset) else {
+                    assert!(offsets.logical_utf16_at(byte_offset).is_err());
+                    continue;
+                };
+                let expected = prefix.replace("\r\n", "\n").encode_utf16().count();
+                assert_eq!(
+                    offsets.logical_utf16_at(byte_offset).unwrap(),
+                    expected as u64
+                );
+            }
+            assert!(offsets.logical_utf16_at(source.len() + 1).is_err());
+        }
+    }
 
     use super::{
         BLOCK_FLAG_CONTINUATION, BLOCK_FLAG_ORDERED_LIST, BLOCK_FLAG_QUOTE_ALERT_START,
