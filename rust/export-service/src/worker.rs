@@ -388,11 +388,9 @@ impl<'input> PackageInput<'input> {
         self.next_record_index += 1;
         Ok(true)
     }
-}
 
-impl Read for PackageInput<'_> {
-    /// Reads reconstructed bytes without mutating package or backing cursors.
-    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+    /// Reads within one record without mutating package or backing cursors.
+    fn read_record(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
         if buffer.is_empty() || self.output_bytes == self.validated_package.header().output_bytes()
         {
             return Ok(0);
@@ -462,6 +460,19 @@ impl Read for PackageInput<'_> {
             .checked_add(bytes_read)
             .ok_or_else(|| std::io::Error::other("package output count overflowed"))?;
         usize::try_from(bytes_read).map_err(|_| std::io::Error::other("read count exceeds usize"))
+    }
+}
+
+impl Read for PackageInput<'_> {
+    /// Fills the caller's existing buffer across immutable record boundaries.
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let mut filled_bytes = 0;
+        while filled_bytes < buffer.len()
+            && self.output_bytes < self.validated_package.header().output_bytes()
+        {
+            filled_bytes += self.read_record(&mut buffer[filled_bytes..])?;
+        }
+        Ok(filled_bytes)
     }
 }
 
@@ -2587,6 +2598,82 @@ mod tests {
         );
         drop(source);
         remove_file(source_path).expect("positioned-input source should be removed");
+    }
+
+    /// Verifies bounded reads combine records while preserving arbitrary byte boundaries.
+    #[test]
+    fn package_input_fills_across_source_and_payload_boundaries() {
+        let backing_bytes = "A\r\n😀Z".as_bytes();
+        let payload = "\r\nβ".as_bytes();
+        let expected = "A\r\n\r\n😀βZ".as_bytes();
+        let package_bytes = encode_source_save_package(
+            &[
+                TestPackageRecord {
+                    kind: RECORD_KIND_SOURCE,
+                    offset: 0,
+                    byte_length: 3,
+                },
+                TestPackageRecord {
+                    kind: RECORD_KIND_PAYLOAD,
+                    offset: 0,
+                    byte_length: 2,
+                },
+                TestPackageRecord {
+                    kind: RECORD_KIND_SOURCE,
+                    offset: 3,
+                    byte_length: 4,
+                },
+                TestPackageRecord {
+                    kind: RECORD_KIND_PAYLOAD,
+                    offset: 2,
+                    byte_length: 2,
+                },
+                TestPackageRecord {
+                    kind: RECORD_KIND_SOURCE,
+                    offset: 7,
+                    byte_length: 1,
+                },
+            ],
+            payload,
+            Some(backing_bytes.len() as u64),
+            expected.len() as u64,
+        );
+        let package = create_sealed_memfd("combined-record-package", &package_bytes);
+        let backing = create_sealed_memfd("combined-record-backing", backing_bytes);
+        for capacity in [1, 2, 3, 4, 5, 11, 12, 13] {
+            let job = JobControl::new().expect("test job should be created");
+            job.start().expect("test job should start once");
+            let deadline = Instant::now() + TEST_DEADLINE_OFFSET;
+            let validated = super::validate_source_save_package(
+                &package,
+                package_bytes.len() as u64,
+                Some(backing_bytes.len() as u64),
+                expected.len() as u64,
+                &job,
+                deadline,
+            )
+            .unwrap_or_else(|_| panic!("test package should validate"));
+            let mut input =
+                super::PackageInput::new(&package, Some(&backing), validated, &job, deadline);
+            let mut reconstructed = Vec::new();
+            loop {
+                assert_eq!(input.read(&mut []).expect("empty read should succeed"), 0);
+                let mut buffer = [0xcd; 14];
+                let bytes_read = input
+                    .read(&mut buffer[..capacity])
+                    .expect("combined records should read");
+                assert_eq!(
+                    bytes_read,
+                    capacity.min(expected.len() - reconstructed.len())
+                );
+                assert!(buffer[bytes_read..].iter().all(|&byte| byte == 0xcd));
+                if bytes_read == 0 {
+                    break;
+                }
+                reconstructed.extend_from_slice(&buffer[..bytes_read]);
+            }
+            assert_eq!(reconstructed, expected);
+        }
     }
 
     /// Verifies conditional saving requires an exact read-write source capability.
