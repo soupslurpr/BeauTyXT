@@ -29,6 +29,11 @@ private const val PROFILE_TIMEOUT_MS = 45_000L
 internal fun Instrumentation.profileStagingEditing(arguments: Bundle) {
     val workload = arguments.getString("profileWorkload") ?: "small"
     require(workload in setOf("small", "large", "markdown"))
+    val markdownParagraphs = arguments.getString("profileMarkdownParagraphs")?.toInt() ?: 160
+    require(markdownParagraphs in 1..12_000)
+    require(workload == "markdown" || markdownParagraphs == 160)
+    val lineEnding = arguments.getString("profileLineEnding") ?: "lf"
+    require(lineEnding in setOf("lf", "crlf"))
     val run = arguments.getString("profileRun") ?: "manual"
     require(run.matches(Regex("[a-zA-Z0-9_-]{1,80}")))
     val measureMemory = arguments.getString("profileMemory") == "true"
@@ -40,6 +45,8 @@ internal fun Instrumentation.profileStagingEditing(arguments: Bundle) {
     val result = JSONObject().put("run", run).put("workload", workload)
         .put("memorySampling", measureMemory)
         .put("holdPreview", holdPreview)
+        .put("markdownParagraphs", markdownParagraphs)
+        .put("lineEnding", lineEnding)
     val stage = AtomicReference("setup")
     val sampling = AtomicBoolean(measureMemory)
     var memoryThread: Thread? = null
@@ -86,9 +93,11 @@ internal fun Instrumentation.profileStagingEditing(arguments: Bundle) {
             "large" -> "\nProfile document\n" + "The quick brown fox edits a local file. 0123456789\n".repeat(350_000)
             else -> "\nProfile document\n\n\$\$\nx^2 + y^2 = z^2\n\$\$\n\n" +
                 "```mermaid\nflowchart LR\nA[Open] --> B[Edit]\n```\n\n" +
-                "A paragraph with **bold**, *emphasis*, and `code`.\n\n".repeat(160)
+                "A paragraph with **bold**, *emphasis*, and `code`.\n\n".repeat(markdownParagraphs)
         }
-        val original = text.toByteArray(Charsets.UTF_8)
+        val original =
+            (if (lineEnding == "crlf") text.replace("\n", "\r\n") else text)
+                .toByteArray(Charsets.UTF_8)
         result.put("sourceBytes", original.size)
         val name = "beautyxt-profile-$run.${if (workload == "markdown") "md" else "txt"}"
         val mime = if (workload == "markdown") "text/markdown" else "text/plain"

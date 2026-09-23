@@ -140,6 +140,14 @@ Markdown preview readiness. Every completed workflow verifies exact saved
 bytes. Use a keyboard that commits words at spaces; an unfinished IME
 composition intentionally defers foreground autosave.
 
+For larger Markdown previews, add `-e profileMarkdownParagraphs COUNT` with
+1–12,000 paragraphs (default 160). Keep that count identical between builds;
+the result records both the count and the exact source byte size.
+
+Use `-e profileLineEnding crlf` to exercise CRLF source normalization and
+format-preserving saves (default `lf`). Keep the selected line ending
+identical between builds; it is recorded in the result.
+
 Results remain in the debug target's `files/editing-profile/NAME` directory.
 Pull them into an ignored local directory with:
 
