@@ -286,11 +286,18 @@ private fun FileActionsSection(
     onRefresh: () -> Unit,
     onRequest: (DocumentRemovalAction) -> Unit
 ) {
-    if (status is DocumentRemovalStatus.Ready &&
-        (status.capabilities.canTrash || status.capabilities.canDelete)
+    val capabilities =
+        when (status) {
+            is DocumentRemovalStatus.Ready -> status.capabilities
+            is DocumentRemovalStatus.Confirming -> status.capabilities
+            else -> null
+        }
+    // Keep the sheet's height and scroll position stable beneath confirmation dialogs.
+    if (capabilities != null &&
+        (capabilities.canTrash || capabilities.canDelete)
     ) {
         SegmentedFileActionsSection(
-            capabilities = status.capabilities,
+            capabilities = capabilities,
             unavailableReason = unavailableReason,
             onRequest = onRequest
         )
@@ -298,7 +305,10 @@ private fun FileActionsSection(
     }
     Text(
         text = stringResource(R.string.file_info_actions),
-        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+        modifier =
+            Modifier
+                .padding(start = 4.dp, bottom = 8.dp)
+                .semantics { heading() },
         color = MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.titleSmall
     )
@@ -385,7 +395,10 @@ private fun SegmentedFileActionsSection(
         }
     Text(
         text = stringResource(R.string.file_info_actions),
-        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+        modifier =
+            Modifier
+                .padding(start = 4.dp, bottom = 8.dp)
+                .semantics { heading() },
         color = MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.titleSmall
     )
