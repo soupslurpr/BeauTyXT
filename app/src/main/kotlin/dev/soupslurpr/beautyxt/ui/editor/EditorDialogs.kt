@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 /* Displays explicit save, navigation, QR, and NFC choices. */
 package dev.soupslurpr.beautyxt.ui.editor
 
@@ -24,14 +26,12 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,6 +73,8 @@ import dev.soupslurpr.beautyxt.transfer.canonicalNfcTagLabelOrNull
 import dev.soupslurpr.beautyxt.transfer.isValidNfcTagLabelInput
 import dev.soupslurpr.beautyxt.transfer.suggestNfcTagLabel
 import dev.soupslurpr.beautyxt.ui.asString
+import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceButtons
+import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceOption
 import java.util.Locale
 
 private val CompactQrDialogHeight = 600.dp
@@ -172,7 +174,13 @@ internal fun NfcTagLabelDialog(
                     verticalArrangement = Arrangement.spacedBy(EditorCompactSpacing)
                 ) {
                     TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
-                    Button(onClick = confirm) { Text(stringResource(R.string.action_continue)) }
+                    Button(
+                        onClick = confirm,
+                        shapes = ButtonDefaults.shapes(),
+                        contentPadding = ButtonDefaults.ContentPadding
+                    ) {
+                        Text(stringResource(R.string.action_continue))
+                    }
                 }
             }
         }
@@ -260,24 +268,19 @@ internal fun QrShareDialog(
                         stringResource(R.string.qr_image_format),
                         style = MaterialTheme.typography.labelLarge
                     )
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        QrImageFormat.entries.forEachIndexed { index, format ->
-                            SegmentedButton(
-                                selected = imageFormat == format,
-                                enabled = !imageSaveActive,
-                                onClick = { onFormatChange(format) },
-                                shape = SegmentedButtonDefaults.itemShape(
-                                    index = index,
-                                    count = QrImageFormat.entries.size
-                                )
-                            ) {
-                                Text(stringResource(when (format) {
+                    SingleChoiceButtons(
+                        choices = QrImageFormat.entries.map { format ->
+                            SingleChoiceOption(
+                                label = stringResource(when (format) {
                                     QrImageFormat.WebP -> R.string.qr_image_format_webp
                                     QrImageFormat.Png -> R.string.qr_image_format_png
-                                }))
-                            }
+                                }),
+                                selected = imageFormat == format,
+                                enabled = !imageSaveActive,
+                                onClick = { onFormatChange(format) }
+                            )
                         }
-                    }
+                    )
                     Text(
                         stringResource(R.string.qr_image_format_hint),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -360,7 +363,12 @@ internal fun QrShareDialog(
                             }
                         )
                     }
-                    Button(onClick = onDismiss, enabled = !imageSaveActive) {
+                    Button(
+                        onClick = onDismiss,
+                        enabled = !imageSaveActive,
+                        shapes = ButtonDefaults.shapes(),
+                        contentPadding = ButtonDefaults.ContentPadding
+                    ) {
                         Text(stringResource(R.string.action_done))
                     }
                 }
@@ -553,6 +561,8 @@ internal fun SaveFormatDialog(
                     ).asString()
                 )
                 OutlinedButton(
+                    shapes = ButtonDefaults.shapes(),
+                    contentPadding = ButtonDefaults.ContentPadding,
                     onClick = { onSelect(DocumentFormat.PlainText) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = selectionEnabled
@@ -560,6 +570,8 @@ internal fun SaveFormatDialog(
                     Text(stringResource(R.string.format_plain_text_file))
                 }
                 OutlinedButton(
+                    shapes = ButtonDefaults.shapes(),
+                    contentPadding = ButtonDefaults.ContentPadding,
                     onClick = { onSelect(DocumentFormat.Markdown) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = selectionEnabled

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuPopup
 import androidx.compose.material3.FilledTonalButton
@@ -154,6 +155,8 @@ internal fun EditorActionBar(
             }
             if (showLabel) {
                 FilledTonalButton(
+                    shapes = ButtonDefaults.shapes(),
+                    contentPadding = ButtonDefaults.ContentPadding,
                     onClick = onModeChange,
                     enabled = modeEnabled,
                     modifier = Modifier.semantics { contentDescription = modeDescription }
@@ -274,6 +277,7 @@ private fun EditorToolButton(
     ) {
         if (emphasized) {
             FilledTonalIconButton(
+                shapes = IconButtonDefaults.shapes(),
                 onClick = onClick,
                 enabled = enabled,
                 modifier = Modifier.size(EditorActionSize)

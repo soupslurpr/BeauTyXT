@@ -1,4 +1,7 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class
+)
 
 package dev.soupslurpr.beautyxt.ui
 
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -126,6 +130,8 @@ internal fun AboutScreen(
                     verticalArrangement = Arrangement.spacedBy(AboutRelatedSpacing)
                 ) {
                     FilledTonalButton(
+                        shapes = ButtonDefaults.shapes(),
+                        contentPadding = ButtonDefaults.ContentPadding,
                         onClick = { sourceCodeUnavailable = !tryOpenSourceCode(uriHandler) }
                     ) {
                         Text(stringResource(R.string.about_view_source))

@@ -1,15 +1,21 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.soupslurpr.beautyxt.ui.editor
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -19,24 +25,19 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SheetValue
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -50,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -61,7 +63,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.printing.PrintContentMode
@@ -72,6 +73,8 @@ import dev.soupslurpr.beautyxt.printing.PrintSetupDraft
 import dev.soupslurpr.beautyxt.printing.convertPrintMarginUnit
 import dev.soupslurpr.beautyxt.printing.maximumPrintMarginText
 import dev.soupslurpr.beautyxt.printing.validatePrintSetup
+import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceButtons
+import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceOption
 
 private val PrintSetupHorizontalPadding = 16.dp
 private val PrintSetupBottomPadding = 24.dp
@@ -79,14 +82,6 @@ private val PrintSetupSectionSpacing = 16.dp
 private val PrintSetupItemSpacing = 12.dp
 private val PrintSetupControlSpacing = 8.dp
 private val PrintSetupPinnedActionsMinimumHeight = 480.dp
-
-/** Describes one mutually exclusive print option. */
-private data class PrintChoice(
-    val label: String,
-    val selected: Boolean,
-    val onClick: () -> Unit,
-    val enabled: Boolean = true
-)
 
 /** Displays transient, rotation-stable options before Android's print screen. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -154,10 +149,10 @@ internal fun PrintSetupSheet(session: EditorSession) {
                 Spacer(Modifier.height(PrintSetupSectionSpacing))
                 PrintSetupSection(title = stringResource(R.string.print_content)) {
                     val contentControls: @Composable () -> Unit = {
-                        PrintChoiceGroup(
+                        SingleChoiceButtons(
                             choices =
                                 listOf(
-                                    PrintChoice(
+                                    SingleChoiceOption(
                                         label = stringResource(R.string.print_source_text),
                                         selected = draft.contentMode == PrintContentMode.Source,
                                         onClick = {
@@ -166,7 +161,7 @@ internal fun PrintSetupSheet(session: EditorSession) {
                                             )
                                         }
                                     ),
-                                    PrintChoice(
+                                    SingleChoiceOption(
                                         label = stringResource(R.string.print_formatted_markdown),
                                         selected =
                                             draft.contentMode == PrintContentMode.FormattedMarkdown,
@@ -218,10 +213,10 @@ internal fun PrintSetupSheet(session: EditorSession) {
                     hasError = validation.invalidMarginFields.isNotEmpty()
                 ) {
                     val marginUnitControls: @Composable () -> Unit = {
-                        PrintChoiceGroup(
+                        SingleChoiceButtons(
                             choices =
                                 listOf(
-                                    PrintChoice(
+                                    SingleChoiceOption(
                                         label = stringResource(R.string.print_inches),
                                         selected = draft.marginUnit == PrintMarginUnit.Inches,
                                         onClick = {
@@ -233,7 +228,7 @@ internal fun PrintSetupSheet(session: EditorSession) {
                                             )
                                         }
                                     ),
-                                    PrintChoice(
+                                    SingleChoiceOption(
                                         label = stringResource(R.string.print_millimetres),
                                         selected = draft.marginUnit == PrintMarginUnit.Millimetres,
                                         onClick = {
@@ -308,10 +303,10 @@ internal fun PrintSetupSheet(session: EditorSession) {
                     hasError = validation.isFontSizeInvalid
                 ) {
                     val fontControls: @Composable () -> Unit = {
-                        PrintChoiceGroup(
+                        SingleChoiceButtons(
                             choices =
                                 PrintFontFamily.entries.map { family ->
-                                    PrintChoice(
+                                    SingleChoiceOption(
                                         label = family.label,
                                         selected = draft.fontFamily == family,
                                         onClick = {
@@ -423,6 +418,8 @@ internal fun PrintSetupSheet(session: EditorSession) {
                 }
                 Button(
                     onClick = { session.confirmPrintSetup() },
+                    shapes = ButtonDefaults.shapes(),
+                    contentPadding = ButtonDefaults.ContentPadding,
                     enabled =
                         validation.isValid &&
                             (
@@ -447,6 +444,11 @@ private fun PrintSetupSection(
 ) {
     var expanded by retain { mutableStateOf(summary == null) }
     val showControls = expanded
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (showControls) 180f else 0f,
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+        label = "Print section expansion"
+    )
     val focusManager = LocalFocusManager.current
     val expansionState = stringResource(
         if (showControls) R.string.print_section_expanded else R.string.print_section_collapsed
@@ -499,17 +501,26 @@ private fun PrintSetupSection(
                             )
                         }
                         Icon(
-                            painterResource(
-                                if (showControls) R.drawable.ic_keyboard_arrow_up
-                                else R.drawable.ic_keyboard_arrow_down
-                            ),
+                            painterResource(R.drawable.ic_keyboard_arrow_down),
                             contentDescription = null,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(24.dp).graphicsLayer {
+                                rotationZ = chevronRotation
+                            }
                         )
                     }
                 }
             }
-            if (showControls) {
+            AnimatedVisibility(
+                visible = showControls,
+                enter = expandVertically(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                    expandFrom = Alignment.Top
+                ) + fadeIn(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec()),
+                exit = shrinkVertically(
+                    animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec(),
+                    shrinkTowards = Alignment.Top
+                ) + fadeOut(animationSpec = MaterialTheme.motionScheme.fastEffectsSpec())
+            ) {
                 Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                     content()
                 }
@@ -546,90 +557,6 @@ private fun PrintSetupToggleItem(
                 onValueChange = onCheckedChange
             ).padding(vertical = PrintSetupControlSpacing)
     )
-}
-
-/** Stacks mutually exclusive choices when their labels cannot fit beside one another. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun PrintChoiceGroup(choices: List<PrintChoice>) {
-    require(choices.isNotEmpty()) { "print choice group must not be empty" }
-    require(choices.count { choice -> choice.selected } == 1) {
-        "print choice group must have exactly one selected option"
-    }
-    val density = LocalDensity.current
-    val textMeasurer = rememberTextMeasurer()
-    val labelStyle = MaterialTheme.typography.labelLarge
-    val widestLabel = choices.maxOf { choice ->
-        textMeasurer.measure(
-            text = choice.label,
-            style = labelStyle,
-            maxLines = 1,
-            softWrap = false
-        ).size.width
-    }
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val labelSpace = with(density) { (maxWidth / choices.size - 40.dp).toPx() }
-        if (widestLabel <= labelSpace) {
-            SingleChoiceSegmentedButtonRow(
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
-            ) {
-                choices.forEachIndexed { choiceIndex, choice ->
-                    SegmentedButton(
-                        selected = choice.selected,
-                        onClick = choice.onClick,
-                        shape = SegmentedButtonDefaults.itemShape(choiceIndex, choices.size),
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                        enabled = choice.enabled,
-                        label = { Text(choice.label) }
-                    )
-                }
-            }
-        } else {
-            Column(
-                modifier = Modifier.selectableGroup(),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                choices.forEach { choice ->
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = if (choice.selected) {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        } else {
-                            Color.Transparent
-                        }
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().selectable(
-                                selected = choice.selected,
-                                enabled = choice.enabled,
-                                role = Role.RadioButton,
-                                onClick = choice.onClick
-                            ).heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            RadioButton(
-                                selected = choice.selected,
-                                onClick = null,
-                                enabled = choice.enabled,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Text(
-                                choice.label,
-                                modifier = Modifier.weight(1f),
-                                style = labelStyle,
-                                color = if (choice.enabled) {
-                                    MaterialTheme.colorScheme.onSurface
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 /** Displays two independent physical margin fields. */

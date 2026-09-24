@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.soupslurpr.beautyxt.ui.transfer
 
 import android.annotation.SuppressLint
@@ -25,11 +27,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -84,6 +88,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
+private val ScannerPermissionMaxWidth = 520.dp
 private val ScannerHorizontalPadding = 20.dp
 private val ScannerVerticalPadding = 16.dp
 private val ScannerSpacing = 12.dp
@@ -246,30 +251,39 @@ private fun QrCameraPermissionScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(
-                text = stringResource(R.string.scanner_permission_title),
-                modifier = Modifier.semantics { heading() },
-                style = MaterialTheme.typography.headlineSmall
-            )
-            Spacer(modifier = Modifier.size(ScannerSpacing))
-            Text(
-                text =
-                    stringResource(R.string.scanner_permission_message),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Spacer(modifier = Modifier.size(ScannerVerticalPadding))
-            Button(
-                onClick = onRequestPermission,
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier.widthIn(max = ScannerPermissionMaxWidth).fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(stringResource(R.string.scanner_allow_camera))
-            }
-            OutlinedButton(
-                onClick = onClose,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.scanner_not_now))
+                Text(
+                    text = stringResource(R.string.scanner_permission_title),
+                    modifier = Modifier.semantics { heading() },
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Spacer(modifier = Modifier.size(ScannerSpacing))
+                Text(
+                    text =
+                        stringResource(R.string.scanner_permission_message),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Spacer(modifier = Modifier.size(ScannerVerticalPadding))
+                Button(
+                    onClick = onRequestPermission,
+                    shapes = ButtonDefaults.shapes(),
+                    contentPadding = ButtonDefaults.ContentPadding,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.scanner_allow_camera))
+                }
+                OutlinedButton(
+                    onClick = onClose,
+                    shapes = ButtonDefaults.shapes(),
+                    contentPadding = ButtonDefaults.ContentPadding,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.scanner_not_now))
+                }
             }
         }
     }
