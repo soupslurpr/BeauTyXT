@@ -9,6 +9,25 @@ import org.junit.Test
 
 /** Verifies bounded CameraX luminance copying independently from camera hardware. */
 class QrScannerFrameTest {
+    /** Accepts the larger scan frame and bounded fallbacks in either orientation. */
+    @Test
+    fun acceptsBoundedAnalysisResolutions() {
+        assertTrue(isSupportedQrAnalysisSize(1280, 960))
+        assertTrue(isSupportedQrAnalysisSize(960, 1280))
+        assertTrue(isSupportedQrAnalysisSize(1280, 720))
+        assertTrue(isSupportedQrAnalysisSize(640, 480))
+    }
+
+    /** Filters unsupported camera sizes before they can starve the analyzer. */
+    @Test
+    fun rejectsAnalysisResolutionsOutsideDecoderBounds() {
+        assertFalse(isSupportedQrAnalysisSize(1920, 1080))
+        assertFalse(isSupportedQrAnalysisSize(1280, 961))
+        assertFalse(isSupportedQrAnalysisSize(47, 640))
+        assertFalse(isSupportedQrAnalysisSize(640, 0))
+        assertFalse(isSupportedQrAnalysisSize(Int.MAX_VALUE, Int.MAX_VALUE))
+    }
+
     /** Verifies row padding is omitted without moving the provider buffer position. */
     @Test
     fun copiesPaddedLuminanceRows() {

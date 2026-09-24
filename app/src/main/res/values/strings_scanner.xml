@@ -14,6 +14,6 @@
     <string name="scanner_permission_title">Camera access is needed to scan</string>
     <string name="scanner_allow_camera">Allow camera</string>
     <string name="scanner_not_now">Not now</string>
-    <string name="scanner_fit_code">Fit the entire QR code inside the frame.</string>
+    <string name="scanner_fit_code">Keep the whole QR code visible in the camera view.</string>
     <string name="scanner_permission_message">BeauTyXT uses the camera only while this scanner is open. Frames are processed on device and never saved.</string>
 </resources>

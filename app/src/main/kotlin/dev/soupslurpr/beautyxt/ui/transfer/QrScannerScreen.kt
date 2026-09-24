@@ -98,7 +98,7 @@ private val ScannerSpacing = 12.dp
 private val ScannerGuideSize = 264.dp
 private val ScannerGuideStroke = 3.dp
 private val ScannerLoadingSize = 48.dp
-private val TargetAnalysisResolution = Size(640, 480)
+private val TargetAnalysisResolution = Size(1280, 960)
 private val CAMERA_UNAVAILABLE_MESSAGE = UiText.Resource(
     R.string.scanner_camera_unavailable_message
 )
@@ -367,7 +367,12 @@ private fun QrCameraPreview(
                                     TargetAnalysisResolution,
                                     ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
                                 )
-                            ).build()
+                            )
+                            .setResolutionFilter { sizes, _ ->
+                                sizes.filter { size ->
+                                    isSupportedQrAnalysisSize(size.width, size.height)
+                                }
+                            }.build()
                     val analysis =
                         ImageAnalysis.Builder()
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -535,6 +540,12 @@ internal class QrFrameAnalyzer(
         }
     }
 }
+
+/** Keeps CameraX fallback sizes within the isolated decoder's frame bounds. */
+internal fun isSupportedQrAnalysisSize(width: Int, height: Int): Boolean =
+    width >= TransferProtocol.MIN_QR_FRAME_SIDE &&
+        height >= TransferProtocol.MIN_QR_FRAME_SIDE &&
+        width.toLong() * height.toLong() <= TransferProtocol.MAX_QR_FRAME_PIXELS
 
 /** Copies one strided luminance plane without changing its source position. */
 internal fun copyLuminancePlane(

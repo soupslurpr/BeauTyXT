@@ -423,6 +423,9 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                         report = { Log.i(TAG, it) }
                     )
                 }
+                verifyPhase("QR camera scanning") {
+                    verifyQrCameraScanning(targetContext) { Log.i(TAG, it) }
+                }
                 verifyOptInPhase("QR image benchmark") {
                     verifyQrImageEncodings(
                         targetContext,

@@ -2,12 +2,17 @@
 
 #![forbid(unsafe_code)]
 
+mod luminance;
 mod ndef;
 
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 use qrcode::{Color, EcLevel, QrCode};
+use rxing::{
+    BarcodeFormat, BinaryBitmap, DecodeHints, Luma8LuminanceSource, common::HybridBinarizer,
+    multi::MultipleBarcodeReader, qrcode::cpp_port::QrReader,
+};
 use sha2::{Digest, Sha256};
 
 pub use ndef::{
@@ -372,22 +377,30 @@ pub fn decode_qr_frame(
         return Err(TransferError::InvalidFrame);
     }
 
-    let standard = scan_qr_luminance(width, height, luminance)?;
+    let mut scanner = quircs::Quirc::default();
+    let scan = scan_qr_polarities(&mut scanner, width, height, luminance)?;
+
+    scan.received.ok_or(if scan.saw_qr {
+        TransferError::UnsupportedEnvelope
+    } else {
+        TransferError::QrNotFound
+    })
+}
+
+/// Observes both QR polarities while reusing the detector's bounded storage.
+fn scan_qr_polarities(
+    scanner: &mut quircs::Quirc,
+    width: usize,
+    height: usize,
+    luminance: &[u8],
+) -> Result<QrPolarityScan, TransferError> {
+    let mut standard = scan_qr_luminance(scanner, width, height, luminance)?;
     let mut inverted_luminance = Vec::with_capacity(luminance.len());
     inverted_luminance.extend(luminance.iter().map(|value| u8::MAX - value));
-    let inverted = scan_qr_luminance(width, height, &inverted_luminance);
+    let inverted = scan_qr_luminance(scanner, width, height, &inverted_luminance);
     inverted_luminance.fill(0);
-    let inverted = inverted?;
-
-    match (standard.received, inverted.received) {
-        (Some(first), Some(second)) if first != second => Err(TransferError::AmbiguousQr),
-        (Some(received), _) | (_, Some(received)) => Ok(received),
-        (None, None) => Err(if standard.saw_qr || inverted.saw_qr {
-            TransferError::UnsupportedEnvelope
-        } else {
-            TransferError::QrNotFound
-        }),
-    }
+    standard.merge(inverted?)?;
+    Ok(standard)
 }
 
 /// Contains supported transfer observations from one QR polarity scan.
@@ -396,36 +409,94 @@ struct QrPolarityScan {
     received: Option<ReceivedText>,
 }
 
+impl QrPolarityScan {
+    /// Validates raw bytes without a charset conversion or a first-code shortcut.
+    fn observe(&mut self, payload: &[u8]) -> Result<(), TransferError> {
+        self.saw_qr = true;
+        let Ok(current) = decode_envelope(payload, MAX_QR_TEXT_BYTES) else {
+            return Ok(());
+        };
+        if current.tag_label().is_some() {
+            return Ok(());
+        }
+        self.merge(Self {
+            saw_qr: true,
+            received: Some(current),
+        })
+    }
+
+    /// Combines observations without silently selecting between distinct texts.
+    fn merge(&mut self, other: Self) -> Result<(), TransferError> {
+        self.saw_qr |= other.saw_qr;
+        if let Some(current) = other.received {
+            match &self.received {
+                None => self.received = Some(current),
+                Some(previous) if previous == &current => {}
+                Some(_) => return Err(TransferError::AmbiguousQr),
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Scans one luminance polarity for a single distinct supported transfer.
 fn scan_qr_luminance(
+    scanner: &mut quircs::Quirc,
     width: usize,
     height: usize,
     luminance: &[u8],
 ) -> Result<QrPolarityScan, TransferError> {
-    let mut scanner = quircs::Quirc::default();
-    let mut saw_qr = false;
-    let mut received: Option<ReceivedText> = None;
-    for candidate in scanner.identify(width, height, luminance) {
-        saw_qr = true;
-        let Ok(code) = candidate else {
-            continue;
-        };
-        let Ok(decoded) = code.decode() else {
-            continue;
-        };
-        let Ok(current) = decode_envelope(&decoded.payload, MAX_QR_TEXT_BYTES) else {
-            continue;
-        };
-        if current.tag_label().is_some() {
-            continue;
-        }
-        match &received {
-            None => received = Some(current),
-            Some(previous) if previous == &current => {}
-            Some(_) => return Err(TransferError::AmbiguousQr),
+    let mut scan = QrPolarityScan {
+        saw_qr: false,
+        received: None,
+    };
+    scan_quirc(scanner, width, height, luminance, &mut scan)?;
+    // A faint second code must still participate in ambiguity detection, even
+    // when the whole-frame threshold found a high-contrast code elsewhere.
+    let mut local = luminance::local_threshold(width, height, luminance);
+    let local_scan = scan_quirc(scanner, width, height, &local, &mut scan);
+    local.fill(0);
+    local_scan?;
+
+    // The geometric detector handles dense, rotated modules and local lighting
+    // better; quirc complements it at steep perspective angles. Both inspect
+    // the full frame, and all observations participate in ambiguity detection.
+    let source = Luma8LuminanceSource::new(
+        luminance.to_vec(),
+        u32::try_from(width).map_err(|_| TransferError::InvalidFrame)?,
+        u32::try_from(height).map_err(|_| TransferError::InvalidFrame)?,
+    )
+    .map_err(|_| TransferError::InvalidFrame)?;
+    let mut bitmap = BinaryBitmap::new(HybridBinarizer::new(source));
+    let hints = DecodeHints {
+        TryHarder: Some(true),
+        PossibleFormats: Some([BarcodeFormat::QR_CODE].into()),
+        ..DecodeHints::default()
+    };
+    if let Ok(codes) = QrReader.decode_multiple_with_hints(&mut bitmap, &hints) {
+        for code in codes {
+            // QrReader exposes payload bytes here; the legacy QRCodeMultiReader
+            // exposes QR codewords instead and is not interchangeable.
+            scan.observe(code.getRawBytes())?;
         }
     }
-    Ok(QrPolarityScan { saw_qr, received })
+    Ok(scan)
+}
+
+/// Records fully decoded symbols, leaving partial finder patterns as no result.
+fn scan_quirc(
+    scanner: &mut quircs::Quirc,
+    width: usize,
+    height: usize,
+    luminance: &[u8],
+    scan: &mut QrPolarityScan,
+) -> Result<(), TransferError> {
+    for candidate in scanner.identify(width, height, luminance) {
+        let Ok(code) = candidate else { continue };
+        let Ok(decoded) = code.decode() else { continue };
+        scan.observe(&decoded.payload)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -565,6 +636,173 @@ mod tests {
             encode_qr_text(&text, TransferFormat::PlainText),
             Err(TransferError::TextLimit)
         );
+    }
+
+    #[test]
+    fn qr_decodes_a_small_off_center_code_under_a_lighting_gradient() {
+        let text = b"# Camera scan\n\nSmall, shaded and away from the guide.\n";
+        let grid = encode_qr_text(text, TransferFormat::Markdown).unwrap();
+        let mut scene = vec![245_u8; 1280 * 960];
+        place_qr_in_scene(&mut scene, &grid, 860, 520, false, (65, 190));
+        for (index, pixel) in scene.iter_mut().enumerate() {
+            let brightness = 30 + 70 * (index % 1280) / 1279;
+            *pixel = u8::try_from(usize::from(*pixel) * brightness / 100).unwrap();
+        }
+
+        let received = decode_qr_frame(1280, 960, &scene).unwrap();
+
+        assert_eq!(received.text().as_bytes(), text);
+        assert_eq!(received.format(), TransferFormat::Markdown);
+
+        for pixel in &mut scene {
+            *pixel = 255 - *pixel;
+        }
+        assert_eq!(
+            decode_qr_frame(1280, 960, &scene)
+                .unwrap()
+                .text()
+                .as_bytes(),
+            text
+        );
+    }
+
+    #[test]
+    fn qr_decodes_an_off_center_rotated_inverted_code() {
+        let text = b"A rotated code away from the guide";
+        let grid = encode_qr_text(text, TransferFormat::PlainText).unwrap();
+        let mut scene = vec![30_u8; 1280 * 960];
+        place_qr_in_scene(&mut scene, &grid, 60, 90, true, (220, 40));
+
+        assert_eq!(
+            decode_qr_frame(1280, 960, &scene)
+                .unwrap()
+                .text()
+                .as_bytes(),
+            text
+        );
+    }
+
+    #[test]
+    fn qr_rejects_distinct_transfers_with_different_local_contrast() {
+        let first = encode_qr_text(b"First document", TransferFormat::PlainText).unwrap();
+        let second = encode_qr_text(b"Second document", TransferFormat::Markdown).unwrap();
+        let mut scene = vec![255_u8; 1280 * 960];
+        place_qr_in_scene(&mut scene, &first, 80, 120, false, (0, 255));
+        place_qr_in_scene(&mut scene, &second, 850, 550, false, (105, 155));
+
+        assert_eq!(
+            decode_qr_frame(1280, 960, &scene),
+            Err(TransferError::AmbiguousQr)
+        );
+    }
+
+    #[test]
+    fn qr_accepts_repeated_copies_of_the_same_transfer() {
+        let text = b"The same document";
+        let grid = encode_qr_text(text, TransferFormat::Markdown).unwrap();
+        let mut scene = vec![240_u8; 1280 * 960];
+        place_qr_in_scene(&mut scene, &grid, 70, 110, false, (20, 230));
+        place_qr_in_scene(&mut scene, &grid, 850, 550, true, (90, 170));
+
+        assert_eq!(
+            decode_qr_frame(1280, 960, &scene)
+                .unwrap()
+                .text()
+                .as_bytes(),
+            text
+        );
+    }
+
+    #[test]
+    fn qr_keeps_scanning_when_finders_are_visible_but_data_is_unreadable() {
+        let grid =
+            encode_qr_text(b"A damaged camera observation", TransferFormat::PlainText).unwrap();
+        let (side, mut image) = render_qr_luminance(&grid, false);
+        let dimension = usize::from(grid.dimension());
+        for row in 9..dimension {
+            for column in 9..dimension {
+                let top = (row + QUIET_ZONE_MODULES) * MODULE_SCALE;
+                let left = (column + QUIET_ZONE_MODULES) * MODULE_SCALE;
+                for y in top..top + MODULE_SCALE {
+                    image[y * side + left..y * side + left + MODULE_SCALE].fill(255);
+                }
+            }
+        }
+
+        assert_eq!(
+            decode_qr_frame(side, side, &image),
+            Err(TransferError::QrNotFound)
+        );
+    }
+
+    #[test]
+    fn qr_reports_a_readable_unrelated_code_as_unsupported() {
+        let code = qrcode::QrCode::new(b"https://example.com/unrelated").unwrap();
+        let side = (code.width() + QUIET_ZONE_MODULES * 2) * MODULE_SCALE;
+        let mut image = vec![255; side * side];
+        for row in 0..code.width() {
+            for column in 0..code.width() {
+                if code[(column, row)] == qrcode::Color::Dark {
+                    for y in 0..MODULE_SCALE {
+                        let offset = ((row + QUIET_ZONE_MODULES) * MODULE_SCALE + y) * side
+                            + (column + QUIET_ZONE_MODULES) * MODULE_SCALE;
+                        image[offset..offset + MODULE_SCALE].fill(0);
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            decode_qr_frame(side, side, &image),
+            Err(TransferError::UnsupportedEnvelope)
+        );
+    }
+
+    #[test]
+    fn qr_rejects_empty_and_out_of_bounds_frames() {
+        assert_eq!(
+            decode_qr_frame(640, 480, &vec![127; 640 * 480]),
+            Err(TransferError::QrNotFound)
+        );
+        assert_eq!(
+            decode_qr_frame(1280, 961, &[]),
+            Err(TransferError::InvalidFrame)
+        );
+        assert_eq!(
+            decode_qr_frame(usize::MAX, 960, &[]),
+            Err(TransferError::InvalidFrame)
+        );
+        assert_eq!(
+            decode_qr_frame(47, 48, &vec![0; 47 * 48]),
+            Err(TransferError::InvalidFrame)
+        );
+    }
+
+    /// Places a complete four-pixel-per-module code in a larger camera scene.
+    fn place_qr_in_scene(
+        scene: &mut [u8],
+        grid: &super::QrModuleGrid,
+        left: usize,
+        top: usize,
+        rotated: bool,
+        (dark, light): (u8, u8),
+    ) {
+        let dimension = usize::from(grid.dimension());
+        let side = (dimension + 8) * 4;
+        for y in 0..side {
+            for x in 0..side {
+                let (row, column) = if rotated {
+                    (x / 4, (side - 1 - y) / 4)
+                } else {
+                    (y / 4, x / 4)
+                };
+                let is_dark = row >= 4
+                    && column >= 4
+                    && row < dimension + 4
+                    && column < dimension + 4
+                    && grid.is_dark(row - 4, column - 4);
+                scene[(top + y) * 1280 + left + x] = if is_dark { dark } else { light };
+            }
+        }
     }
 
     /// Renders one exact module grid in the selected luminance polarity.

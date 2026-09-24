@@ -37,6 +37,7 @@ class ThirdPartyNoticesTest {
             "pulldown-cmark 0.13.4",
             "qrcode 0.14.1",
             "quircs 0.10.3",
+            "rxing 0.9.3",
             "2010-2012 Daniel Beer",
             "unicode-ident 1.0.26",
             "skrifa 0.47.0",

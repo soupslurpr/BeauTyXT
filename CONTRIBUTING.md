@@ -111,6 +111,12 @@ Require the explicit verification-passed message, a completed test status, and
 The runner reports one test for the selected batch, with individual phases in
 logcat. An unknown `-e phase` is a failure, not an empty successful run.
 
+The `QR camera scanning` phase renders the app's actual QR images into
+synthetic camera frames and checks exact text through the isolated decoder.
+It covers short, Unicode, and maximum-size transfers at different sizes,
+positions, angles, lighting, and polarities. It does not access the camera;
+physical autofocus, glare, and display moire need separate camera checks.
+
 With AGP 9.4.1, the connected-test task's `--serial` filter throws an upstream
 immutable-list exception. `ANDROID_SERIAL=SERIAL` avoids that filter, but on the
 API 37 emulator the runner then passes an invalid Android user ID (`-2`) and

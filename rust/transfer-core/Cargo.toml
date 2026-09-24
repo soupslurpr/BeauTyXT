@@ -11,6 +11,7 @@ rust-version.workspace = true
 [dependencies]
 qrcode = { version = "0.14.1", default-features = false }
 quircs = "0.10.3"
+rxing = { version = "0.9.3", default-features = false, features = ["decoders", "qrcode", "multi_barcode_readers", "encoding_rs"] }
 sha2 = { version = "0.11.0", default-features = false }
 
 [lints]
