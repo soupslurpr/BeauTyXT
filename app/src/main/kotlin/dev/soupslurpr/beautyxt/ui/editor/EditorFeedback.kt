@@ -155,8 +155,7 @@ private fun PendingCloseBanner(visible: Boolean, onKeepEditing: () -> Unit) {
                 .padding(
                     horizontal = EditorHorizontalPadding,
                     vertical = EditorCompactSpacing
-                )
-                .semantics { liveRegion = LiveRegionMode.Polite },
+                ),
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         shape = MaterialTheme.shapes.large
@@ -167,7 +166,11 @@ private fun PendingCloseBanner(visible: Boolean, onKeepEditing: () -> Unit) {
         ) {
             Text(
                 text = stringResource(R.string.feedback_closing),
-                modifier = Modifier.semantics { heading() },
+                modifier =
+                    Modifier.semantics {
+                        heading()
+                        liveRegion = LiveRegionMode.Polite
+                    },
                 fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.titleSmall
             )
@@ -225,8 +228,7 @@ private fun SourceSaveFailureBanner(
                 .padding(
                     horizontal = EditorHorizontalPadding,
                     vertical = EditorCompactSpacing
-                )
-                .semantics { liveRegion = LiveRegionMode.Polite },
+                ),
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         shape = MaterialTheme.shapes.large
@@ -241,7 +243,11 @@ private fun SourceSaveFailureBanner(
                 fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.titleSmall
             )
-            Text(text = message, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = message,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                style = MaterialTheme.typography.bodyMedium
+            )
             if (status is SourceSaveStatus.Failed) {
                 Button(
                     onClick = onRetry,
@@ -272,7 +278,10 @@ private fun SourceSaveFailureBanner(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = reloadEnabled
                 ) {
-                    Text(stringResource(R.string.feedback_reload_source))
+                    Text(
+                        text = stringResource(R.string.feedback_reload_source),
+                        textAlign = TextAlign.Center
+                    )
                 }
                 TextButton(
                     onClick = onOverwrite,
@@ -283,7 +292,10 @@ private fun SourceSaveFailureBanner(
                             contentColor = MaterialTheme.colorScheme.error
                         )
                 ) {
-                    Text(stringResource(R.string.feedback_overwrite_source))
+                    Text(
+                        text = stringResource(R.string.feedback_overwrite_source),
+                        textAlign = TextAlign.Center
+                    )
                 }
             } else {
                 OutlinedButton(
@@ -333,7 +345,8 @@ internal fun SourceConflictConfirmationDialog(
                     stringResource(R.string.feedback_reload_confirmation)
                 } else {
                     stringResource(R.string.feedback_overwrite_confirmation)
-                }
+                },
+                modifier = Modifier.verticalScroll(rememberScrollState())
             )
         },
         confirmButton = {
@@ -529,7 +542,7 @@ private fun NfcWriteFeedback(
                         .padding(
                             horizontal = EditorHorizontalPadding,
                             vertical = EditorCompactSpacing
-                        ).semantics { liveRegion = LiveRegionMode.Polite },
+                        ),
                 color = MaterialTheme.colorScheme.secondaryContainer,
                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 shape = MaterialTheme.shapes.large
@@ -541,7 +554,10 @@ private fun NfcWriteFeedback(
                 ) {
                     Text(
                         text = stringResource(R.string.feedback_nfc_written),
-                        modifier = Modifier.weight(1f),
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .semantics { liveRegion = LiveRegionMode.Polite },
                         fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -597,8 +613,7 @@ private fun EditorFailureBanner(
                 .padding(
                     horizontal = EditorHorizontalPadding,
                     vertical = EditorCompactSpacing
-                )
-                .semantics { liveRegion = LiveRegionMode.Polite },
+                ),
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
         shape = MaterialTheme.shapes.large
@@ -613,7 +628,11 @@ private fun EditorFailureBanner(
                 fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.titleSmall
             )
-            Text(text = message, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = message,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                style = MaterialTheme.typography.bodyMedium
+            )
             Button(
                 onClick = onAction,
                 modifier = Modifier.fillMaxWidth(),

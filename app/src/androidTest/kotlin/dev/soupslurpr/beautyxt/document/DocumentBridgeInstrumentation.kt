@@ -481,6 +481,13 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                     verifyFindHighlights(capturePreviews = true)
                 }
                 verifyPhase("compact print setup", ::verifyCompactPrintSetup)
+                verifyPhase("source recovery controls") { verifySourceRecovery() }
+                verifyOptInPhase("source recovery visuals") {
+                    verifySourceRecovery(capturePreviews = true)
+                }
+                verifyOptInPhase("source recovery landscape visuals") {
+                    verifySourceRecovery(capturePreviews = true, landscape = true)
+                }
                 verifyPhase("short document edit recovery") { verifyShortDocumentEditRecovery() }
                 verifyOptInPhase("edit recovery visuals") {
                     verifyShortDocumentEditRecovery(capturePreviews = true)

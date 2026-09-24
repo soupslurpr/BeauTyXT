@@ -9,8 +9,8 @@
     <string name="feedback_retry_save">Retry save</string>
     <string name="feedback_choose_another">Choose another file</string>
     <string name="feedback_save_new">Save as new file</string>
-    <string name="feedback_reload_source">Reload file</string>
-    <string name="feedback_overwrite_source">Overwrite file</string>
+    <string name="feedback_reload_source">Discard your edits and reload</string>
+    <string name="feedback_overwrite_source">Replace file with your edits</string>
     <string name="feedback_reload_title">Reload file?</string>
     <string name="feedback_overwrite_title">Overwrite file?</string>
     <string name="feedback_reload">Reload</string>
