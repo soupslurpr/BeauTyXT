@@ -11,17 +11,21 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenuGroup
+import androidx.compose.material3.DropdownMenuPopup
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -43,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.ui.UiText
 import dev.soupslurpr.beautyxt.ui.asString
+import dev.soupslurpr.beautyxt.ui.designsystem.ActionMenuItem
 
 /** Groups secondary navigation without duplicating document capability state. */
 internal data class EditorNavigationActions(
@@ -188,57 +193,73 @@ internal fun EditorTopBar(
                         contentDescription = stringResource(R.string.editor_more_options)
                     )
                 }
-                DropdownMenu(
+                DropdownMenuPopup(
                     expanded = isOverflowExpanded,
                     onDismissRequest = { onOverflowExpandedChange(false) }
                 ) {
-                    if (session.presentation == EditorPresentation.Text) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.editor_go_to_line)) },
+                    DropdownMenuGroup(
+                        shapes = MenuDefaults.groupShape(index = 0, count = 1),
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        containerColor = MenuDefaults.groupStandardContainerColor
+                    ) {
+                        if (session.presentation == EditorPresentation.Text) {
+                            ActionMenuItem(
+                                shape = MenuDefaults.leadingItemShape,
+                                label = stringResource(R.string.editor_go_to_line),
+                                leadingIcon = {
+                                    Text("#", modifier = Modifier.clearAndSetSemantics {})
+                                },
+                                onClick = {
+                                    onOverflowExpandedChange(false)
+                                    actions.onGoToLine()
+                                },
+                                enabled = session.canNavigateToLine
+                            )
+                        }
+                        ActionMenuItem(
+                            shape = if (session.presentation == EditorPresentation.Text) {
+                                MenuDefaults.middleItemShape
+                            } else {
+                                MenuDefaults.leadingItemShape
+                            },
+                            label = stringResource(R.string.editor_file_info),
                             leadingIcon = {
-                                Text("#", modifier = Modifier.clearAndSetSemantics {})
+                                Icon(painterResource(R.drawable.ic_info), contentDescription = null)
                             },
                             onClick = {
                                 onOverflowExpandedChange(false)
-                                actions.onGoToLine()
+                                actions.onFileInfo()
                             },
-                            enabled = session.canNavigateToLine
+                            enabled = session.canShowFileInfo
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(MenuDefaults.HorizontalDividerPadding)
+                        )
+                        ActionMenuItem(
+                            shape = MenuDefaults.middleItemShape,
+                            label = stringResource(R.string.action_scan_qr),
+                            leadingIcon = {
+                                Icon(painterResource(R.drawable.ic_qr_code_2), contentDescription = null)
+                            },
+                            onClick = {
+                                onOverflowExpandedChange(false)
+                                actions.onScanQr()
+                            },
+                            enabled = scanQrEnabled
+                        )
+                        ActionMenuItem(
+                            shape = MenuDefaults.trailingItemShape,
+                            label = stringResource(R.string.action_read_nfc),
+                            leadingIcon = {
+                                Icon(painterResource(R.drawable.ic_nfc), contentDescription = null)
+                            },
+                            onClick = {
+                                onOverflowExpandedChange(false)
+                                actions.onReadNfc()
+                            },
+                            enabled = readNfcEnabled
                         )
                     }
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.editor_file_info)) },
-                        leadingIcon = {
-                            Icon(painterResource(R.drawable.ic_info), contentDescription = null)
-                        },
-                        onClick = {
-                            onOverflowExpandedChange(false)
-                            actions.onFileInfo()
-                        },
-                        enabled = session.canShowFileInfo
-                    )
-                    HorizontalDivider()
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.action_scan_qr)) },
-                        leadingIcon = {
-                            Icon(painterResource(R.drawable.ic_qr_code_2), contentDescription = null)
-                        },
-                        onClick = {
-                            onOverflowExpandedChange(false)
-                            actions.onScanQr()
-                        },
-                        enabled = scanQrEnabled
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.action_read_nfc)) },
-                        leadingIcon = {
-                            Icon(painterResource(R.drawable.ic_nfc), contentDescription = null)
-                        },
-                        onClick = {
-                            onOverflowExpandedChange(false)
-                            actions.onReadNfc()
-                        },
-                        enabled = readNfcEnabled
-                    )
                 }
             }
         }

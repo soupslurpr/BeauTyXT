@@ -21,8 +21,10 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenuGroup
+import androidx.compose.material3.DropdownMenuPopup
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingToolbarDefaults
@@ -30,6 +32,7 @@ import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TooltipAnchorPosition
@@ -53,6 +56,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
+import dev.soupslurpr.beautyxt.ui.designsystem.ActionMenuItem
 
 private val EditorActionSize = 48.dp
 private val EditorActionBarPadding = 8.dp
@@ -221,25 +225,33 @@ private fun EditorOverflowActions(
             enabled = true,
             onClick = { expanded = true }
         )
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.editor_redo)) },
-                leadingIcon = { Icon(painterResource(R.drawable.ic_redo), contentDescription = null) },
-                enabled = session.canRedo,
-                onClick = {
-                    expanded = false
-                    session.requestRedo()
-                }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.editor_send_export)) },
-                leadingIcon = { Icon(painterResource(R.drawable.ic_share), contentDescription = null) },
-                enabled = shareEnabled,
-                onClick = {
-                    expanded = false
-                    onShare()
-                }
-            )
+        DropdownMenuPopup(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuGroup(
+                shapes = MenuDefaults.groupShape(index = 0, count = 1),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                containerColor = MenuDefaults.groupStandardContainerColor
+            ) {
+                ActionMenuItem(
+                    shape = MenuDefaults.leadingItemShape,
+                    label = stringResource(R.string.editor_redo),
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_redo), contentDescription = null) },
+                    enabled = session.canRedo,
+                    onClick = {
+                        expanded = false
+                        session.requestRedo()
+                    }
+                )
+                ActionMenuItem(
+                    shape = MenuDefaults.trailingItemShape,
+                    label = stringResource(R.string.editor_send_export),
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_share), contentDescription = null) },
+                    enabled = shareEnabled,
+                    onClick = {
+                        expanded = false
+                        onShare()
+                    }
+                )
+            }
         }
     }
 }
