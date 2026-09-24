@@ -11,6 +11,10 @@ internal val TopBarProgressIndicatorSize = 12.dp
 
 internal val ProgressIndicatorSize = 24.dp
 
+internal val CenteredLoadingIndicatorSize = 48.dp
+
+internal val ViewportLoadingIndicatorSize = 32.dp
+
 internal val MinimumBlockHeight = 48.dp
 
 internal val EditorCompactSpacing = 8.dp

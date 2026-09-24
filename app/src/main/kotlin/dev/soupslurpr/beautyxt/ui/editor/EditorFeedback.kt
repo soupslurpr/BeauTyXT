@@ -21,7 +21,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -41,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.ui.asString
+import dev.soupslurpr.beautyxt.ui.designsystem.ShortLoadingIndicator
 
 /** Keeps recovery actions reachable without allowing them to displace the editor. */
 @Composable
@@ -684,10 +684,10 @@ internal fun CenteredEditorMessage(
                 )
         ) {
             if (showProgress) {
-                CircularProgressIndicator(
+                ShortLoadingIndicator(
                     modifier =
                         Modifier
-                            .size(ProgressIndicatorSize)
+                            .size(CenteredLoadingIndicatorSize)
                             .clearAndSetSemantics {}
                 )
             }
@@ -764,10 +764,10 @@ internal fun ViewportProgressMessage(message: String, modifier: Modifier = Modif
             horizontalArrangement = Arrangement.spacedBy(EditorSectionSpacing),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            CircularProgressIndicator(
+            ShortLoadingIndicator(
                 modifier =
                     Modifier
-                        .size(ProgressIndicatorSize)
+                        .size(ViewportLoadingIndicatorSize)
                         .clearAndSetSemantics {}
             )
             Text(

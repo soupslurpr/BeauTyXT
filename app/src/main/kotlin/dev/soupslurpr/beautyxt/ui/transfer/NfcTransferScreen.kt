@@ -30,7 +30,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -71,6 +71,7 @@ import dev.soupslurpr.beautyxt.transfer.reportedNfcTagId
 import dev.soupslurpr.beautyxt.ui.PredictiveBackMotionHandler
 import dev.soupslurpr.beautyxt.ui.UiText
 import dev.soupslurpr.beautyxt.ui.asString
+import dev.soupslurpr.beautyxt.ui.designsystem.ShortLoadingIndicator
 import dev.soupslurpr.beautyxt.ui.editor.NfcWriteStatus
 import dev.soupslurpr.beautyxt.ui.editor.formatTransferByteCount
 import dev.soupslurpr.beautyxt.ui.predictiveBackMotion
@@ -94,7 +95,7 @@ private val NfcCompactSpacing = 8.dp
 private val NfcContentMaxWidth = 560.dp
 private val NfcSignalSize = 80.dp
 private val NfcSignalShape = RoundedCornerShape(28.dp)
-private val NfcProgressSize = 28.dp
+private val NfcLoadingSize = 48.dp
 private const val NFC_READER_FLAGS =
     NfcAdapter.FLAG_READER_NFC_A or
         NfcAdapter.FLAG_READER_NFC_B or
@@ -388,7 +389,10 @@ private fun NfcTransferScaffold(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (isWorking) {
-                            CircularProgressIndicator(modifier = Modifier.size(NfcProgressSize))
+                            ShortLoadingIndicator(
+                                modifier = Modifier.size(NfcLoadingSize).clearAndSetSemantics {},
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
                         } else {
                             Text(
                                 text = stringResource(R.string.nfc_symbol),
@@ -400,10 +404,7 @@ private fun NfcTransferScaffold(
                 }
                 Spacer(modifier = Modifier.height(NfcContentSpacing))
                 Column(
-                    modifier =
-                        Modifier
-                            .widthIn(max = NfcContentMaxWidth)
-                            .semantics { liveRegion = LiveRegionMode.Polite },
+                    modifier = Modifier.widthIn(max = NfcContentMaxWidth),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(NfcCompactSpacing)
                 ) {
@@ -416,6 +417,7 @@ private fun NfcTransferScaffold(
                     )
                     Text(
                         text = message,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyLarge
                     )

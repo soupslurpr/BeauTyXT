@@ -16,6 +16,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -34,7 +35,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -64,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Observer
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.transfer.TransferProtocol
@@ -75,6 +77,7 @@ import dev.soupslurpr.beautyxt.transfer.client.TransferFailure
 import dev.soupslurpr.beautyxt.ui.PredictiveBackMotionHandler
 import dev.soupslurpr.beautyxt.ui.UiText
 import dev.soupslurpr.beautyxt.ui.asString
+import dev.soupslurpr.beautyxt.ui.designsystem.ShortLoadingIndicator
 import dev.soupslurpr.beautyxt.ui.predictiveBackMotion
 import dev.soupslurpr.beautyxt.ui.rememberPredictiveBackMotionState
 import java.nio.ByteBuffer
@@ -93,9 +96,8 @@ private val ScannerHorizontalPadding = 20.dp
 private val ScannerVerticalPadding = 16.dp
 private val ScannerSpacing = 12.dp
 private val ScannerGuideSize = 264.dp
-private val ScannerGuideShape = RoundedCornerShape(44.dp)
 private val ScannerGuideStroke = 3.dp
-private val ScannerProgressSize = 28.dp
+private val ScannerLoadingSize = 48.dp
 private val TargetAnalysisResolution = Size(640, 480)
 private val CAMERA_UNAVAILABLE_MESSAGE = UiText.Resource(
     R.string.scanner_camera_unavailable_message
@@ -146,7 +148,7 @@ internal fun QrScannerScreen(
             onReceived = onReceived,
             modifier = Modifier.fillMaxSize()
         )
-        Box(
+        Column(
             modifier =
                 Modifier
                     .fillMaxSize()
@@ -166,22 +168,32 @@ internal fun QrScannerScreen(
                 windowInsets =
                     WindowInsets.safeDrawing.only(
                         WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                    ),
-                modifier = Modifier.align(Alignment.TopCenter)
+                    )
             )
-            Surface(
+            BoxWithConstraints(
                 modifier =
                     Modifier
-                        .align(Alignment.Center)
-                        .size(ScannerGuideSize),
-                color = Color.Transparent,
-                shape = ScannerGuideShape,
-                border = BorderStroke(ScannerGuideStroke, Color.White)
-            ) {}
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+                        )
+                        .padding(horizontal = ScannerHorizontalPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                val guideSize = minOf(ScannerGuideSize, maxWidth, maxHeight)
+                if (!isCameraStarting) {
+                    Surface(
+                        modifier = Modifier.size(guideSize),
+                        color = Color.Transparent,
+                        shape = RoundedCornerShape(guideSize / 6),
+                        border = BorderStroke(ScannerGuideStroke, Color.White)
+                    ) {}
+                }
+            }
             Column(
                 modifier =
                     Modifier
-                        .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .windowInsetsPadding(
                             WindowInsets.safeDrawing.only(
@@ -196,8 +208,8 @@ internal fun QrScannerScreen(
                 verticalArrangement = Arrangement.spacedBy(ScannerSpacing)
             ) {
                 if (isCameraStarting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(ScannerProgressSize),
+                    ShortLoadingIndicator(
+                        modifier = Modifier.size(ScannerLoadingSize).clearAndSetSemantics {},
                         color = Color.White
                     )
                 }
@@ -207,18 +219,22 @@ internal fun QrScannerScreen(
                     shape = MaterialTheme.shapes.large
                 ) {
                     Column(
-                        modifier =
-                            Modifier
-                                .padding(ScannerVerticalPadding)
-                                .semantics { liveRegion = LiveRegionMode.Polite },
+                        modifier = Modifier.padding(ScannerVerticalPadding),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(ScannerSpacing)
                     ) {
                         Text(
                             text =
                                 scannerMessage?.asString()
-                                    ?: stringResource(R.string.scanner_fit_code),
-                            style = MaterialTheme.typography.bodyLarge
+                                    ?: stringResource(
+                                        if (isCameraStarting) {
+                                            R.string.scanner_starting_camera
+                                        } else {
+                                            R.string.scanner_fit_code
+                                        }
+                                    ),
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
                         )
                         Text(
                             text = stringResource(R.string.scanner_frames),
@@ -326,6 +342,13 @@ private fun QrCameraPreview(
         val mainExecutor = ContextCompat.getMainExecutor(context)
         var disposed = false
         var releaseUseCases: (() -> Unit)? = null
+        val streamObserver = Observer<PreviewView.StreamState> { state ->
+            if (!disposed && state == PreviewView.StreamState.STREAMING) {
+                currentOnCameraReady()
+            }
+        }
+        // In COMPATIBLE mode, STREAMING means the preview is actually visible.
+        previewView.previewStreamState.observe(lifecycleOwner, streamObserver)
         providerFuture.addListener(
             {
                 if (disposed) {
@@ -367,7 +390,6 @@ private fun QrCameraPreview(
                         preview,
                         analysis
                     )
-                    currentOnCameraReady()
                 } catch (_: Exception) {
                     currentOnFailure(CAMERA_UNAVAILABLE_MESSAGE)
                 } catch (_: LinkageError) {
@@ -378,6 +400,7 @@ private fun QrCameraPreview(
         )
         onDispose {
             disposed = true
+            previewView.previewStreamState.removeObserver(streamObserver)
             analyzer.close()
             try {
                 releaseUseCases?.invoke()

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="scanner_starting_camera">Starting camera…</string>
     <string name="scanner_camera_unavailable_message">The camera is unavailable. Close other camera apps, then try again.</string>
     <string name="scanner_camera_frame_message">The camera frame could not be read.</string>
     <string name="scanner_qr_unsupported_message">That isn\'t a BeauTyXT QR code.</string>
