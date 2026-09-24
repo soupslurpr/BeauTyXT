@@ -1,5 +1,7 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -16,32 +18,34 @@ private const val VERSION_FORTY_DIMENSION = 177
 
 /** Verifies scan-critical QR structures remain conventionally rendered. */
 class ExpressiveQrCodeTest {
-    /** Verifies light-theme role colors retain their natural QR polarity. */
+    /** Verifies both themes use the selected fixed pair rather than ordinary containers. */
     @Test
-    fun ordersLightThemeColorsForScanning() {
+    fun usesFixedPrimaryColorsForScanning() {
         val background = Color(0xffafc6ff)
         val modules = Color(0xff17315e)
 
-        assertEquals(
-            QrCodeColors(modules = modules, background = background),
-            scanSafeQrCodeColors(
-                primaryContainer = background,
-                onPrimaryContainer = modules
-            )
+        val schemes = listOf(
+            lightColorScheme(primaryFixed = background, onPrimaryFixed = modules),
+            darkColorScheme(primaryFixed = background, onPrimaryFixed = modules)
         )
+        schemes.forEach { scheme ->
+            assertEquals(
+                QrCodeColors(modules = modules, background = background),
+                scanSafeQrCodeColors(scheme)
+            )
+        }
     }
 
-    /** Verifies dark-theme role colors swap while remaining fully dynamic. */
+    /** Verifies reversed custom colors still produce conventional QR polarity. */
     @Test
-    fun ordersDarkThemeColorsForScanning() {
+    fun ordersReversedColorsForScanning() {
         val modules = Color(0xff4f638c)
         val background = Color(0xffd9e2ff)
 
         assertEquals(
             QrCodeColors(modules = modules, background = background),
             scanSafeQrCodeColors(
-                primaryContainer = modules,
-                onPrimaryContainer = background
+                darkColorScheme(primaryFixed = modules, onPrimaryFixed = background)
             )
         )
     }
@@ -103,8 +107,7 @@ class ExpressiveQrCodeTest {
     fun rejectsInvalidGeometryInputs() {
         assertThrows(IllegalArgumentException::class.java) {
             scanSafeQrCodeColors(
-                primaryContainer = Color.Unspecified,
-                onPrimaryContainer = Color.Black
+                lightColorScheme(primaryFixed = Color.Unspecified, onPrimaryFixed = Color.Black)
             )
         }
         assertThrows(IllegalArgumentException::class.java) {

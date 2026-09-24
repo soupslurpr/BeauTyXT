@@ -1,9 +1,13 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package dev.soupslurpr.beautyxt.ui.editor
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -15,6 +19,7 @@ import androidx.compose.ui.graphics.Canvas as GraphicsCanvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.ImageBitmapConfig
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -34,9 +39,9 @@ private val QrCodeSurfacePadding = 12.dp
 private const val QR_QUIET_ZONE_MODULES = 4
 private const val QR_FINDER_MODULES = 7
 private const val QR_ALIGNMENT_MODULES = 5
-private const val QR_DATA_MODULE_INSET_FRACTION = 0.06f
-private const val QR_DATA_MODULE_RADIUS_FRACTION = 0.28f
-private const val QR_FINDER_CENTER_RADIUS_FRACTION = 0.72f
+private const val QR_DATA_MODULE_RADIUS_FRACTION = 0.42f
+private const val QR_FINDER_OUTER_RADIUS_MODULES = 2f
+private const val QR_FINDER_INNER_RADIUS_MODULES = 1f
 private const val QR_MIN_VERSION = 1
 private const val QR_MAX_VERSION = 40
 private const val QR_VERSION_DIMENSION_OFFSET = 17
@@ -47,21 +52,17 @@ private const val QR_VERSION_WITH_VERSION_INFORMATION = 7
 private const val QR_SPECIAL_ALIGNMENT_STEP_VERSION = 32
 private const val QR_SPECIAL_ALIGNMENT_STEP = 26
 
-/** Displays one Material 3 Expressive QR code using paired container colors. */
+/** Displays one Material 3 Expressive QR code using fixed primary colors. */
 @Composable
 internal fun ExpressiveQrCode(grid: QrCodeGrid, modifier: Modifier = Modifier) {
     val label = stringResource(R.string.qr_code_description)
-    val colors =
-        scanSafeQrCodeColors(
-            primaryContainer = MaterialTheme.colorScheme.primaryContainer,
-            onPrimaryContainer = MaterialTheme.colorScheme.onPrimaryContainer
-        )
+    val colors = scanSafeQrCodeColors(MaterialTheme.colorScheme)
     Surface(
         modifier =
             modifier.semantics {
                 contentDescription = label
             },
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.extraLargeIncreased,
         color = colors.background,
         contentColor = colors.modules
     ) {
@@ -83,19 +84,18 @@ internal fun ExpressiveQrCode(grid: QrCodeGrid, modifier: Modifier = Modifier) {
 /** Contains one dynamically themed color pair in conventional QR polarity. */
 internal data class QrCodeColors(val modules: Color, val background: Color)
 
-/** Orders paired Material container colors into dark modules on a light background. */
-internal fun scanSafeQrCodeColors(
-    primaryContainer: Color,
-    onPrimaryContainer: Color
-): QrCodeColors {
-    require(primaryContainer != Color.Unspecified) { "QR primary container color is unspecified" }
-    require(onPrimaryContainer != Color.Unspecified) {
-        "QR on-primary container color is unspecified"
+/** Shares the fixed primary pair between the dialog and exports, in conventional polarity. */
+internal fun scanSafeQrCodeColors(colorScheme: ColorScheme): QrCodeColors {
+    val background = colorScheme.primaryFixed
+    val modules = colorScheme.onPrimaryFixed
+    require(background != Color.Unspecified) { "QR primary fixed color is unspecified" }
+    require(modules != Color.Unspecified) {
+        "QR on-primary fixed color is unspecified"
     }
-    return if (primaryContainer.luminance() <= onPrimaryContainer.luminance()) {
-        QrCodeColors(modules = primaryContainer, background = onPrimaryContainer)
+    return if (modules.luminance() <= background.luminance()) {
+        QrCodeColors(modules = modules, background = background)
     } else {
-        QrCodeColors(modules = onPrimaryContainer, background = primaryContainer)
+        QrCodeColors(modules = background, background = modules)
     }
 }
 
@@ -328,46 +328,44 @@ private fun DrawScope.drawConnectedDataModule(
     color: Color
 ) {
     val origin = moduleOffset(row, column, matrixOrigin, modulePixels)
-    val inset = modulePixels * QR_DATA_MODULE_INSET_FRACTION
-    val insetSize = modulePixels - inset * 2f
     drawRoundRect(
         color = color,
-        topLeft = Offset(origin.x + inset, origin.y + inset),
-        size = Size(insetSize, insetSize),
+        topLeft = origin,
+        size = Size(modulePixels, modulePixels),
         cornerRadius = CornerRadius(modulePixels * QR_DATA_MODULE_RADIUS_FRACTION)
     )
     val halfModule = modulePixels / 2f
     if (grid.hasDarkModule(row = row, column = column - 1)) {
         drawRect(
             color = color,
-            topLeft = Offset(origin.x, origin.y + inset),
-            size = Size(halfModule, insetSize)
+            topLeft = origin,
+            size = Size(halfModule, modulePixels)
         )
     }
     if (grid.hasDarkModule(row = row, column = column + 1)) {
         drawRect(
             color = color,
-            topLeft = Offset(origin.x + halfModule, origin.y + inset),
-            size = Size(halfModule, insetSize)
+            topLeft = Offset(origin.x + halfModule, origin.y),
+            size = Size(halfModule, modulePixels)
         )
     }
     if (grid.hasDarkModule(row = row - 1, column = column)) {
         drawRect(
             color = color,
-            topLeft = Offset(origin.x + inset, origin.y),
-            size = Size(insetSize, halfModule)
+            topLeft = origin,
+            size = Size(modulePixels, halfModule)
         )
     }
     if (grid.hasDarkModule(row = row + 1, column = column)) {
         drawRect(
             color = color,
-            topLeft = Offset(origin.x + inset, origin.y + halfModule),
-            size = Size(insetSize, halfModule)
+            topLeft = Offset(origin.x, origin.y + halfModule),
+            size = Size(modulePixels, halfModule)
         )
     }
 }
 
-/** Keeps finder boundaries exact so dense grids can be located without corner bias. */
+/** Draws rounded square finder outlines with Material clover centres. */
 private fun DrawScope.drawFinderEye(
     row: Int,
     column: Int,
@@ -378,24 +376,40 @@ private fun DrawScope.drawFinderEye(
 ) {
     val origin = moduleOffset(row, column, matrixOrigin, modulePixels)
     val outerSize = QR_FINDER_MODULES * modulePixels
-    drawRect(
-        color = moduleColor,
-        topLeft = origin,
-        size = Size(outerSize, outerSize)
-    )
-    val innerSize = (QR_FINDER_MODULES - 2) * modulePixels
-    drawRect(
-        color = backgroundColor,
-        topLeft = Offset(origin.x + modulePixels, origin.y + modulePixels),
-        size = Size(innerSize, innerSize)
-    )
-    val centerSize = (QR_FINDER_MODULES - 4) * modulePixels
     drawRoundRect(
         color = moduleColor,
-        topLeft = Offset(origin.x + modulePixels * 2f, origin.y + modulePixels * 2f),
-        size = Size(centerSize, centerSize),
-        cornerRadius = CornerRadius(modulePixels * QR_FINDER_CENTER_RADIUS_FRACTION)
+        topLeft = origin,
+        size = Size(outerSize, outerSize),
+        cornerRadius = CornerRadius(QR_FINDER_OUTER_RADIUS_MODULES * modulePixels)
     )
+    val innerSize = (QR_FINDER_MODULES - 2) * modulePixels
+    drawRoundRect(
+        color = backgroundColor,
+        topLeft = Offset(origin.x + modulePixels, origin.y + modulePixels),
+        size = Size(innerSize, innerSize),
+        cornerRadius = CornerRadius(QR_FINDER_INNER_RADIUS_MODULES * modulePixels)
+    )
+    val centerSize = (QR_FINDER_MODULES - 4) * modulePixels
+    val centerOrigin = Offset(origin.x + modulePixels * 2f, origin.y + modulePixels * 2f)
+    val centerPath = Path()
+    MaterialShapes.Clover4Leaf.cubics.forEachIndexed { index, cubic ->
+        if (index == 0) {
+            centerPath.moveTo(
+                centerOrigin.x + cubic.anchor0X * centerSize,
+                centerOrigin.y + cubic.anchor0Y * centerSize
+            )
+        }
+        centerPath.cubicTo(
+            centerOrigin.x + cubic.control0X * centerSize,
+            centerOrigin.y + cubic.control0Y * centerSize,
+            centerOrigin.x + cubic.control1X * centerSize,
+            centerOrigin.y + cubic.control1Y * centerSize,
+            centerOrigin.x + cubic.anchor1X * centerSize,
+            centerOrigin.y + cubic.anchor1Y * centerSize
+        )
+    }
+    centerPath.close()
+    drawPath(path = centerPath, color = moduleColor)
 }
 
 /** Returns the pixel origin for one module coordinate. */

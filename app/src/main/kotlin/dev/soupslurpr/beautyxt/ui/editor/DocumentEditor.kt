@@ -70,11 +70,7 @@ internal fun DocumentEditor(
     val activeDraft = session.activeDraft
     val context = LocalContext.current
     val readyQrShare = session.qrShareStatus as? QrShareStatus.Ready
-    val qrImageColors =
-        scanSafeQrCodeColors(
-            primaryContainer = MaterialTheme.colorScheme.primaryContainer,
-            onPrimaryContainer = MaterialTheme.colorScheme.onPrimaryContainer
-        )
+    val qrImageColors = scanSafeQrCodeColors(MaterialTheme.colorScheme)
     val qrImageExport = session.qrImageExport
     val qrImageDestination =
         rememberLauncherForActivityResult(
