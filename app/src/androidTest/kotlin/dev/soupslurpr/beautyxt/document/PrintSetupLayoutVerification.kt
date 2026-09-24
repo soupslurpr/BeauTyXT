@@ -6,6 +6,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Instrumentation
 import android.app.UiAutomation
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Bundle
@@ -43,7 +44,16 @@ internal fun Instrumentation.verifyCompactPrintSetup() {
         flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
     }
     try {
+        // Leave the launcher's fixed orientation before locking the review window.
+        startActivitySync(
+            Intent(targetContext, HomeActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        )
         check(uiAutomation.setRotation(UiAutomation.ROTATION_FREEZE_90))
+        awaitPrintLayoutCondition {
+            targetContext.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        }
+        waitForIdleSync()
         // Run this phase in a fresh instrumentation process for each system font setting.
         // A local Compose density override does not reach the sheet's separate window.
         val fontScale = Settings.System.getFloat(
@@ -70,6 +80,9 @@ private fun Instrumentation.verifyCompactPrintSetupAtScale(fontScale: Float) {
     ) as HomeActivity
     val density = activity.resources.displayMetrics.density
     try {
+        check(activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            "print fixture did not retain landscape orientation"
+        }
         check(activity.resources.configuration.fontScale == fontScale) {
             "print fixture did not receive Android's font scale $fontScale"
         }
@@ -89,7 +102,11 @@ private fun Instrumentation.verifyCompactPrintSetupAtScale(fontScale: Float) {
         // A new modal can expose semantics while its entering animation still moves the viewport.
         SystemClock.sleep(500L)
         waitForAccessibilityIdle()
-        for ((label, value) in listOf("Top" to "0.75", "Text size" to "14")) {
+        for ((section, label, value) in listOf(
+            Triple("Margins", "Top", "0.75"),
+            Triple("Text", "Text size", "14")
+        )) {
+            revealScrollableAction(section).performRequiredClick()
             val field = revealScrollableNode("print $label at scale $fontScale") { root ->
                 root.findPrintField(label)
             }

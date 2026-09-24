@@ -1,15 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="print_setup">Print setup</string>
+    <string name="print_margin_summary">%1$s %2$s on all sides</string>
+    <string name="print_custom_margins">Custom margins</string>
+    <string name="print_check_margins">Check margin values</string>
+    <string name="print_text_summary">%1$s · %2$s pt</string>
+    <string name="print_text_summary_clipped">%1$s · %2$s pt · Long lines clipped</string>
+    <string name="print_details_both">File name and page numbers</string>
+    <string name="print_details_none">No header or page numbers</string>
+    <string name="print_section_expanded">Expanded</string>
+    <string name="print_section_collapsed">Collapsed</string>
     <string name="print_layout_failure">These print settings could not be used.</string>
     <string name="print_write_failure">This document could not be printed.</string>
     <string name="print_paragraph_failure">A paragraph is too long to preserve its text direction when printing. Add line breaks to that paragraph, then try again.</string>
     <string name="print_markdown_block_failure">A section is too long to format for printing. Choose Source text in the print options, or split that section into smaller blocks.</string>
-    <string name="print_service_disclosure">These choices apply only to this print. The print service you choose receives the pages and their selectable text.</string>
+    <string name="print_service_disclosure">For this print only. Your print service receives the pages and selectable text.</string>
     <string name="print_content">Content</string>
     <string name="print_source_text">Source text</string>
     <string name="print_formatted_markdown">Formatted Markdown</string>
-    <string name="print_formatted_description">Prints formatted Markdown using the selected page settings.</string>
+    <string name="print_formatted_description">Uses the document\'s Markdown formatting.</string>
     <string name="print_source_description">Prints the text as written, including any Markdown syntax.</string>
     <string name="print_formatted_limit">Formatted Markdown is available for documents up to 16 MiB.</string>
     <string name="print_margins">Margins</string>

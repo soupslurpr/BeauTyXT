@@ -1,6 +1,7 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -25,27 +28,40 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.retain.retain
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.printing.PrintContentMode
@@ -57,9 +73,9 @@ import dev.soupslurpr.beautyxt.printing.convertPrintMarginUnit
 import dev.soupslurpr.beautyxt.printing.maximumPrintMarginText
 import dev.soupslurpr.beautyxt.printing.validatePrintSetup
 
-private val PrintSetupHorizontalPadding = 24.dp
+private val PrintSetupHorizontalPadding = 16.dp
 private val PrintSetupBottomPadding = 24.dp
-private val PrintSetupSectionSpacing = 24.dp
+private val PrintSetupSectionSpacing = 16.dp
 private val PrintSetupItemSpacing = 12.dp
 private val PrintSetupControlSpacing = 8.dp
 private val PrintSetupPinnedActionsMinimumHeight = 480.dp
@@ -183,7 +199,24 @@ internal fun PrintSetupSheet(session: EditorSession) {
                     PrintSetupItem(content = contentControls)
                 }
                 Spacer(Modifier.height(PrintSetupSectionSpacing))
-                PrintSetupSection(title = stringResource(R.string.print_margins)) {
+                PrintSetupSection(
+                    title = stringResource(R.string.print_margins),
+                    summary = if (validation.invalidMarginFields.isNotEmpty()) {
+                        stringResource(R.string.print_check_margins)
+                    } else if (
+                        setOf(draft.topMargin, draft.bottomMargin, draft.leftMargin, draft.rightMargin)
+                            .size == 1
+                    ) {
+                        stringResource(
+                            R.string.print_margin_summary,
+                            draft.topMargin,
+                            draft.marginUnit.abbreviation
+                        )
+                    } else {
+                        stringResource(R.string.print_custom_margins)
+                    },
+                    hasError = validation.invalidMarginFields.isNotEmpty()
+                ) {
                     val marginUnitControls: @Composable () -> Unit = {
                         PrintChoiceGroup(
                             choices =
@@ -257,7 +290,23 @@ internal fun PrintSetupSheet(session: EditorSession) {
                     }
                 }
                 Spacer(Modifier.height(PrintSetupSectionSpacing))
-                PrintSetupSection(title = stringResource(R.string.print_text)) {
+                PrintSetupSection(
+                    title = stringResource(R.string.print_text),
+                    summary = if (validation.isFontSizeInvalid) {
+                        stringResource(R.string.print_text_size_error)
+                    } else {
+                        stringResource(
+                            if (draft.contentMode == PrintContentMode.Source && !draft.wrapLongLines) {
+                                R.string.print_text_summary_clipped
+                            } else {
+                                R.string.print_text_summary
+                            },
+                            draft.fontFamily.label,
+                            draft.fontSize
+                        )
+                    },
+                    hasError = validation.isFontSizeInvalid
+                ) {
                     val fontControls: @Composable () -> Unit = {
                         PrintChoiceGroup(
                             choices =
@@ -320,7 +369,17 @@ internal fun PrintSetupSheet(session: EditorSession) {
                     }
                 }
                 Spacer(Modifier.height(PrintSetupSectionSpacing))
-                PrintSetupSection(title = stringResource(R.string.print_page_details)) {
+                PrintSetupSection(
+                    title = stringResource(R.string.print_page_details),
+                    summary = stringResource(
+                        when {
+                            draft.showFileName && draft.showPageNumbers -> R.string.print_details_both
+                            draft.showFileName -> R.string.print_file_name_header
+                            draft.showPageNumbers -> R.string.print_page_numbers
+                            else -> R.string.print_details_none
+                        }
+                    )
+                ) {
                     Column(
                         verticalArrangement = Arrangement.spacedBy(PrintSetupControlSpacing)
                     ) {
@@ -380,15 +439,82 @@ internal fun PrintSetupSheet(session: EditorSession) {
 
 /** Groups one labeled set of transient print controls. */
 @Composable
-private fun PrintSetupSection(title: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(PrintSetupItemSpacing)) {
-        Text(
-            text = title,
-            modifier = Modifier.semantics { heading() },
-            color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.titleSmall
-        )
-        content()
+private fun PrintSetupSection(
+    title: String,
+    summary: String? = null,
+    hasError: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    var expanded by retain { mutableStateOf(summary == null) }
+    val showControls = expanded
+    val focusManager = LocalFocusManager.current
+    val expansionState = stringResource(
+        if (showControls) R.string.print_section_expanded else R.string.print_section_collapsed
+    )
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = MaterialTheme.colorScheme.onSurface
+    ) {
+        Column {
+            if (summary == null) {
+                Text(
+                    text = title,
+                    modifier = Modifier.padding(16.dp).semantics { heading() },
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.titleSmall
+                )
+            } else {
+                Surface(
+                    onClick = {
+                        focusManager.clearFocus()
+                        expanded = !expanded
+                    },
+                    color = Color.Transparent,
+                    modifier = Modifier.fillMaxWidth().semantics {
+                        heading()
+                        role = Role.Button
+                        stateDescription = expansionState
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.heightIn(min = 72.dp).padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(title, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                summary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (hasError) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        }
+                        Icon(
+                            painterResource(
+                                if (showControls) R.drawable.ic_keyboard_arrow_up
+                                else R.drawable.ic_keyboard_arrow_down
+                            ),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
+            if (showControls) {
+                Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                    content()
+                }
+            }
+        }
     }
 }
 
@@ -422,7 +548,7 @@ private fun PrintSetupToggleItem(
     )
 }
 
-/** Displays one group of mutually exclusive print choices. */
+/** Stacks mutually exclusive choices when their labels cannot fit beside one another. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PrintChoiceGroup(choices: List<PrintChoice>) {
@@ -430,28 +556,78 @@ private fun PrintChoiceGroup(choices: List<PrintChoice>) {
     require(choices.count { choice -> choice.selected } == 1) {
         "print choice group must have exactly one selected option"
     }
-    SingleChoiceSegmentedButtonRow(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .height(IntrinsicSize.Min)
-    ) {
-        choices.forEachIndexed { choiceIndex, choice ->
-            SegmentedButton(
-                selected = choice.selected,
-                onClick = choice.onClick,
-                shape =
-                    SegmentedButtonDefaults.itemShape(
-                        index = choiceIndex,
-                        count = choices.size
-                    ),
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                enabled = choice.enabled,
-                label = { Text(choice.label) }
-            )
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelLarge
+    val widestLabel = choices.maxOf { choice ->
+        textMeasurer.measure(
+            text = choice.label,
+            style = labelStyle,
+            maxLines = 1,
+            softWrap = false
+        ).size.width
+    }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val labelSpace = with(density) { (maxWidth / choices.size - 40.dp).toPx() }
+        if (widestLabel <= labelSpace) {
+            SingleChoiceSegmentedButtonRow(
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
+            ) {
+                choices.forEachIndexed { choiceIndex, choice ->
+                    SegmentedButton(
+                        selected = choice.selected,
+                        onClick = choice.onClick,
+                        shape = SegmentedButtonDefaults.itemShape(choiceIndex, choices.size),
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        enabled = choice.enabled,
+                        label = { Text(choice.label) }
+                    )
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier.selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                choices.forEach { choice ->
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = if (choice.selected) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            Color.Transparent
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().selectable(
+                                selected = choice.selected,
+                                enabled = choice.enabled,
+                                role = Role.RadioButton,
+                                onClick = choice.onClick
+                            ).heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            RadioButton(
+                                selected = choice.selected,
+                                onClick = null,
+                                enabled = choice.enabled,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                choice.label,
+                                modifier = Modifier.weight(1f),
+                                style = labelStyle,
+                                color = if (choice.enabled) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
