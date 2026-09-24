@@ -14,9 +14,10 @@
     <string name="incoming_view_file_description">Android granted temporary read access to this %1$s file. It will open read-only.</string>
     <string name="incoming_edit_file_description">Android asked BeauTyXT to edit this %1$s file. Changes save automatically when its provider supports verified writes; otherwise it opens read-only.</string>
     <string name="incoming_review_text">Review shared text</string>
+    <string name="incoming_review_qr">Review QR text</string>
     <string name="incoming_review_nfc">Review NFC text</string>
-    <string name="incoming_text_description">This %1$s content stays only in memory until you explicitly save it.</string>
-    <string name="incoming_nfc_description">This %1$s content was received from NFC and stays only in memory until you explicitly save it.</string>
+    <string name="incoming_preview">Preview</string>
+    <string name="incoming_text_description">This text stays only in memory until you save it.</string>
     <string name="incoming_format_plain_text">plain text</string>
     <plurals name="incoming_unicode_characters">
         <item quantity="one">%1$d Unicode character</item>

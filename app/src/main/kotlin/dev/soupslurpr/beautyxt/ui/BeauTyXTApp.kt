@@ -53,6 +53,7 @@ import dev.soupslurpr.beautyxt.markdown.client.IsolatedMarkdownRenderer
 import dev.soupslurpr.beautyxt.printing.DocumentPrintAdapter
 import dev.soupslurpr.beautyxt.sharing.IncomingDocumentShare
 import dev.soupslurpr.beautyxt.sharing.IncomingSourcePurpose
+import dev.soupslurpr.beautyxt.sharing.IncomingTextOrigin
 import dev.soupslurpr.beautyxt.sharing.createDocumentShareChooser
 import dev.soupslurpr.beautyxt.sharing.incomingSharedTextTitle
 import dev.soupslurpr.beautyxt.transfer.client.IsolatedTransferProcessor
@@ -426,7 +427,11 @@ internal fun BeauTyXTApp(
         }
         isQrScannerVisible = false
         session.offerIncomingShare(
-            IncomingDocumentShare.Text(text = transfer.text, format = transfer.format)
+            IncomingDocumentShare.Text(
+                text = transfer.text,
+                format = transfer.format,
+                origin = IncomingTextOrigin.Qr
+            )
         )
     }
 
@@ -440,7 +445,8 @@ internal fun BeauTyXTApp(
             IncomingDocumentShare.Text(
                 text = transfer.text,
                 format = transfer.format,
-                nfcMetadata = transfer.nfcMetadata
+                nfcMetadata = transfer.nfcMetadata,
+                origin = IncomingTextOrigin.Nfc
             )
         )
     }

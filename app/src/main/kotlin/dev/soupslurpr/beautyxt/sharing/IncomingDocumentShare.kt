@@ -26,13 +26,21 @@ internal enum class IncomingSourcePurpose {
     Edit
 }
 
+/** Identifies the app flow that supplied one in-memory text offer. */
+internal enum class IncomingTextOrigin {
+    Share,
+    Qr,
+    Nfc
+}
+
 /** Contains one bounded incoming offer that remains unopened until confirmation. */
 internal sealed interface IncomingDocumentShare {
-    /** Contains one bounded text extra already delivered by Android. */
+    /** Contains bounded text received from Android sharing, QR, or NFC. */
     data class Text(
         val text: String,
         val format: DocumentFormat,
-        val nfcMetadata: ReceivedNfcMetadata? = null
+        val nfcMetadata: ReceivedNfcMetadata? = null,
+        val origin: IncomingTextOrigin = IncomingTextOrigin.Share
     ) : IncomingDocumentShare
 
     /** Retains one temporary provider URI without opening its descriptor. */

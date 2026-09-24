@@ -18,12 +18,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.document.DocumentFormat
 import dev.soupslurpr.beautyxt.sharing.IncomingDocumentShare
 import dev.soupslurpr.beautyxt.sharing.IncomingSourcePurpose
+import dev.soupslurpr.beautyxt.sharing.IncomingTextOrigin
 
 private val IncomingShareSpacing = 12.dp
 private val IncomingSharePreviewPadding = 16.dp
@@ -162,11 +165,13 @@ internal fun IncomingShareDialog(
                 onDismissRequest = onDismiss,
                 title = {
                     Text(
-                        if (share.nfcMetadata == null) {
-                            stringResource(R.string.incoming_review_text)
-                        } else {
-                            stringResource(R.string.incoming_review_nfc)
-                        }
+                        stringResource(
+                            when (share.origin) {
+                                IncomingTextOrigin.Share -> R.string.incoming_review_text
+                                IncomingTextOrigin.Qr -> R.string.incoming_review_qr
+                                IncomingTextOrigin.Nfc -> R.string.incoming_review_nfc
+                            }
+                        )
                     )
                 },
                 text = {
@@ -174,37 +179,56 @@ internal fun IncomingShareDialog(
                         modifier = Modifier.verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(IncomingShareSpacing)
                     ) {
-                        Text(
-                            stringResource(
-                                if (share.nfcMetadata == null) {
-                                    R.string.incoming_text_description
-                                } else {
-                                    R.string.incoming_nfc_description
-                                },
-                                share.format.displayName
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = stringResource(
+                                    when (share.format) {
+                                        DocumentFormat.PlainText -> R.string.format_plain_text
+                                        DocumentFormat.Markdown -> R.string.format_markdown
+                                    }
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.titleSmall
                             )
-                        )
+                            Text(
+                                text = remember(share.text) {
+                                    incomingShareCharacterCount(share.text)
+                                }.asString(),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
                             shape = MaterialTheme.shapes.medium
                         ) {
-                            SelectionContainer {
+                            Column(
+                                modifier = Modifier.padding(IncomingSharePreviewPadding),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
                                 Text(
-                                    text = incomingSharePreview(share.text),
-                                    modifier = Modifier.padding(IncomingSharePreviewPadding),
-                                    maxLines = INCOMING_SHARE_PREVIEW_LINES,
-                                    overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.bodyMedium
+                                    text = stringResource(R.string.incoming_preview),
+                                    modifier = Modifier.semantics { heading() },
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelMedium
                                 )
+                                SelectionContainer {
+                                    Text(
+                                        text = remember(share.text) {
+                                            incomingSharePreview(share.text)
+                                        },
+                                        maxLines = INCOMING_SHARE_PREVIEW_LINES,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
                             }
                         }
                         Text(
-                            text = remember(share.text) {
-                                incomingShareCharacterCount(share.text)
-                            }.asString(),
+                            text = stringResource(R.string.incoming_text_description),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelMedium
+                            style = MaterialTheme.typography.bodySmall
                         )
                         share.nfcMetadata?.let { metadata ->
                             NfcTransferDetails(metadata = metadata)
