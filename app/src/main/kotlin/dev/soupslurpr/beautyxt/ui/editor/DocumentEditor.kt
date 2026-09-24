@@ -139,7 +139,7 @@ internal fun DocumentEditor(
             windowHeightPixels = windowSize.height
         )
     val useImeFocusLayout =
-        activeDraft != null && useLandscapeImeLayout
+        activeDraft != null && !session.isFindVisible && useLandscapeImeLayout
     val useInlineFindStatus = session.isFindVisible && useLandscapeImeLayout
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current

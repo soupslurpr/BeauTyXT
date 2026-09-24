@@ -120,7 +120,9 @@ internal fun Instrumentation.verifyCompactEditorControls() {
             )
         }
         awaitCompactFindMatch(session, 0L)
-        for (description in listOf("Close Find", "Match case", "Previous match", "Next match")) {
+        for (description in listOf(
+            "Close Find", "Clear search", "Match case", "Previous match", "Next match"
+        )) {
             requireControlBounds(
                 requireActionableContentDescription(description),
                 minimumTouchPixels,
@@ -144,6 +146,21 @@ internal fun Instrumentation.verifyCompactEditorControls() {
             clickCompactActionAfterReflow("Next match")
             awaitCompactFindMatch(session, if (index == 0) 11L else 0L)
         }
+        requireActionableContentDescription("Match case").performRequiredClick()
+        awaitCompactFindMatch(session, 0L)
+        requireActionableContentDescription("Clear search").performRequiredClick()
+        val clearedQuery = waitForFindQuery("", "after clearing the query")
+        runOnMainSync {
+            check(session.isFindVisible && session.isFindCaseSensitive) {
+                "clearing Find closed it or reset the case preference"
+            }
+            check(session.findStatus == FindStatus.Idle && session.findMatch == null) {
+                "clearing Find retained the old result"
+            }
+            check(!session.canNavigateFind) { "empty Find still allows match navigation" }
+        }
+        clearedQuery.setVerificationText("beta")
+        awaitCompactFindMatch(session, 6L)
         requireActionableContentDescription("Close Find").performRequiredClick()
         waitForEditorText(COMPACT_EDITOR_TEXT)
         waitForAccessibilityNode("direct Redo restored in the full-width toolbar") { node ->

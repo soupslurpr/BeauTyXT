@@ -24,6 +24,7 @@
     <string name="editor_cancel_save">Cancel save</string>
     <string name="find_in_document">Find in document</string>
     <string name="find_close">Close Find</string>
+    <string name="find_clear_query">Clear search</string>
     <string name="find_previous">Previous match</string>
     <string name="find_next">Next match</string>
     <string name="find_match_case">Match case</string>

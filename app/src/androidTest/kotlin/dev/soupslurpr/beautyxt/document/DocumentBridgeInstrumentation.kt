@@ -475,6 +475,8 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 verifyPhase("editor toolbar", ::verifyEditorToolbarInteractions)
                 verifyPhase("compact editor controls", ::verifyCompactEditorControls)
                 verifyPhase("Find highlights") { verifyFindHighlights() }
+                verifyPhase("Find retry") { verifyFindRetry() }
+                verifyOptInPhase("Find retry visuals") { verifyFindRetry(capturePreviews = true) }
                 verifyOptInPhase("Find highlight visuals") {
                     verifyFindHighlights(capturePreviews = true)
                 }

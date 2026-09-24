@@ -55,6 +55,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -157,7 +158,7 @@ private fun FindChromeContent(
         navigationIcon = {
             FindIconButton(onClick = onClose) {
                 Icon(
-                    painterResource(R.drawable.ic_close),
+                    painterResource(R.drawable.ic_arrow_back),
                     contentDescription = stringResource(R.string.find_close)
                 )
             }
@@ -184,14 +185,33 @@ private fun FindChromeContent(
                             overflow = TextOverflow.Ellipsis
                         )
                     },
-                    trailingIcon = if (compact) {
+                    trailingIcon = if (compact && session.findFieldValue.text.isEmpty()) {
                         null
                     } else {
                         {
-                            FindCaseToggle(
-                                checked = session.isFindCaseSensitive,
-                                onCheckedChange = session::updateFindCaseSensitivity
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (session.findFieldValue.text.isNotEmpty()) {
+                                    FindIconButton(
+                                        onClick = {
+                                            session.updateFindFieldValue(TextFieldValue())
+                                            focusRequester.requestFocus()
+                                            softwareKeyboardController?.show()
+                                        }
+                                    ) {
+                                        Icon(
+                                            painterResource(R.drawable.ic_close),
+                                            contentDescription =
+                                                stringResource(R.string.find_clear_query)
+                                        )
+                                    }
+                                }
+                                if (!compact) {
+                                    FindCaseToggle(
+                                        checked = session.isFindCaseSensitive,
+                                        onCheckedChange = session::updateFindCaseSensitivity
+                                    )
+                                }
+                            }
                         }
                     },
                     singleLine = true,
@@ -211,7 +231,12 @@ private fun FindChromeContent(
                 )
                 if (useInlineStatus) {
                     Spacer(Modifier.width(EditorCompactSpacing))
-                    FindInlineStatus(status, matchCase = session.isFindCaseSensitive)
+                    FindInlineStatus(
+                        status,
+                        matchCase = session.isFindCaseSensitive,
+                        canRetry = session.canNavigateFind,
+                        onRetry = { session.retryFind() }
+                    )
                 }
             }
         },
@@ -231,12 +256,7 @@ private fun FindChromeContent(
         return
     }
     Surface(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .semantics(mergeDescendants = true) {
-                    liveRegion = LiveRegionMode.Polite
-                },
+        modifier = Modifier.fillMaxWidth(),
         color = appBarWithSearchColors.appBarContainerColor,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     ) {
@@ -262,7 +282,9 @@ private fun FindChromeContent(
                         status,
                         matchCase = session.isFindCaseSensitive
                     ).asString(),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).semantics {
+                        liveRegion = LiveRegionMode.Polite
+                    },
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall
@@ -360,14 +382,14 @@ private fun FindCaseLabel(checked: Boolean) {
 
 /** Displays one live Find result beside the landscape query field. */
 @Composable
-private fun FindInlineStatus(status: FindStatus, matchCase: Boolean = false) {
+private fun FindInlineStatus(
+    status: FindStatus,
+    matchCase: Boolean,
+    canRetry: Boolean,
+    onRetry: () -> Unit
+) {
     Row(
-        modifier =
-            Modifier
-                .widthIn(max = FindInlineStatusMaxWidth)
-                .semantics(mergeDescendants = true) {
-                    liveRegion = LiveRegionMode.Polite
-                },
+        modifier = Modifier.widthIn(max = FindInlineStatusMaxWidth),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (status == FindStatus.Searching) {
@@ -379,9 +401,17 @@ private fun FindInlineStatus(status: FindStatus, matchCase: Boolean = false) {
         }
         Text(
             text = findStatusMessage(status, matchCase = matchCase).asString(),
-            maxLines = 1,
+            modifier = Modifier.weight(1f, fill = false).semantics {
+                liveRegion = LiveRegionMode.Polite
+            },
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             style = MaterialTheme.typography.labelMedium
         )
+        if (status is FindStatus.Failed) {
+            TextButton(onClick = onRetry, enabled = canRetry) {
+                Text(stringResource(R.string.action_retry))
+            }
+        }
     }
 }
