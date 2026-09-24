@@ -215,13 +215,13 @@ internal fun QrShareDialog(
             contentScrollState.animateScrollTo(contentScrollState.maxValue)
         }
     }
+    // Fit system bars at the window level so its initial size matches its content.
     BasicAlertDialog(
         onDismissRequest = {
             if (!imageSaveActive) {
                 onDismiss()
             }
-        },
-        properties = DialogProperties(decorFitsSystemWindows = false)
+        }
     ) {
         Surface(
             modifier = Modifier.safeDrawingPadding().imePadding(),
