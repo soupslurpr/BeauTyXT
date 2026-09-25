@@ -70,6 +70,11 @@ internal class IsolatedTransferServiceBinding(context: Context) :
         connectionFailure.get()?.let(completion::completeExceptionally)
     }
 
+    /** Detaches only the finished job before another frame can attach its callback. */
+    fun detachOperation(completion: CompletableDeferred<TransferTerminalStatus>) {
+        operationCompletion.compareAndSet(completion, null)
+    }
+
     /** Requests best-effort cancellation without waiting for acknowledgement. */
     fun cancelTransfer(jobId: Long) {
         try {

@@ -10,6 +10,7 @@ import dev.soupslurpr.beautyxt.document.EditorDocumentSnapshot
 import dev.soupslurpr.beautyxt.ipc.SealedInput
 import dev.soupslurpr.beautyxt.ipc.TransferredFileDescriptor
 import dev.soupslurpr.beautyxt.transfer.ITransferCallback
+import dev.soupslurpr.beautyxt.transfer.ITransferService
 import dev.soupslurpr.beautyxt.transfer.TransferProtocol
 import dev.soupslurpr.beautyxt.transfer.isValidNfcTagLabel
 import dev.soupslurpr.beautyxt.transfer.packNfcTagLabel
@@ -20,9 +21,12 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
@@ -76,22 +80,68 @@ internal class IsolatedTransferProcessor(context: Context) :
 
     /** Decodes one exact grayscale frame into validated transfer text. */
     override suspend fun decodeQr(frame: QrLuminanceFrame): ReceivedTransferText =
-        withContext(Dispatchers.IO) {
-            val request =
-                TransferJobRequest(
-                    operation = TransferProtocol.OPERATION_DECODE_QR,
-                    expectedInputBytes = frame.bytes.size.toLong(),
-                    argumentZero = frame.width.toLong(),
-                    argumentOne = frame.height.toLong(),
-                    timeoutMillis = TRANSFER_TIMEOUT_MILLIS
-                )
-            val input =
-                AnonymousTransferInput.fromBytes(
-                    bytes = frame.bytes,
-                    maxBytes = TransferProtocol.MAX_QR_FRAME_PIXELS
-                )
-            decodeReceivedText(runTransfer(input = input, request = request))
+        withQrDecoder { decoder -> decoder.decodeQr(frame) }
+
+    /** Reuses one private worker only within a single foreground camera session. */
+    override suspend fun <T> withQrDecoder(operation: suspend (QrFrameDecoder) -> T): T =
+        withTransferService { binding, service ->
+            val active = AtomicBoolean(true)
+            val healthy = AtomicBoolean(true)
+            val requests = Mutex()
+            val decoder = QrFrameDecoder { frame ->
+                requests.withLock {
+                    if (!active.get() || !healthy.get()) {
+                        throw TransferException(TransferFailure.ServiceUnavailable)
+                    }
+                    try {
+                        val received = withContext(Dispatchers.IO) {
+                            decodePreparedQr(frame, binding, service)
+                        }
+                        if (!active.get()) {
+                            throw TransferException(TransferFailure.ServiceUnavailable)
+                        }
+                        received
+                    } catch (failure: Exception) {
+                        if (failure !is TransferException || !failure.failure.canContinueQrScan) {
+                            healthy.set(false)
+                        }
+                        throw failure
+                    }
+                }
+            }
+            try {
+                operation(decoder)
+            } finally {
+                active.set(false)
+            }
         }
+
+    /** Gives each frame fresh bounded descriptors and a distinct callback identity. */
+    private suspend fun decodePreparedQr(
+        frame: QrLuminanceFrame,
+        binding: IsolatedTransferServiceBinding,
+        service: ITransferService
+    ): ReceivedTransferText {
+        currentCoroutineContext().ensureActive()
+        val request =
+            TransferJobRequest(
+                operation = TransferProtocol.OPERATION_DECODE_QR,
+                expectedInputBytes = frame.bytes.size.toLong(),
+                argumentZero = frame.width.toLong(),
+                argumentOne = frame.height.toLong(),
+                timeoutMillis = TRANSFER_TIMEOUT_MILLIS
+            )
+        AnonymousTransferInput.fromBytes(
+            bytes = frame.bytes,
+            maxBytes = TransferProtocol.MAX_QR_FRAME_PIXELS
+        ).use { input ->
+            AnonymousTransferOutput.create().use { output ->
+                return decodeReceivedText(
+                    runPreparedTransfer(input, output, request, binding, service)
+                )
+            }
+        }
+    }
 
     /** Encodes one exact editor revision into an NFC transfer envelope. */
     override suspend fun encodeNfc(
@@ -176,7 +226,33 @@ internal class IsolatedTransferProcessor(context: Context) :
     ): CompletedTransfer = input.use {
         currentCoroutineContext().ensureActive()
         AnonymousTransferOutput.create().use { output ->
-            runPreparedTransfer(input, output, request)
+            withTransferService { binding, service ->
+                runPreparedTransfer(input, output, request, binding, service)
+            }
+        }
+    }
+
+    /** Keeps caller context and closes the binding after completion or cancellation. */
+    private suspend fun <T> withTransferService(
+        operation: suspend (IsolatedTransferServiceBinding, ITransferService) -> T
+    ): T {
+        val binding = IsolatedTransferServiceBinding(applicationContext)
+        try {
+            val service =
+                withContext(Dispatchers.IO) {
+                    binding.bind()
+                    try {
+                        withTimeout(SERVICE_BIND_TIMEOUT_MILLIS) {
+                            binding.awaitService()
+                        }
+                    } catch (failure: TimeoutCancellationException) {
+                        currentCoroutineContext().ensureActive()
+                        throw TransferException(TransferFailure.ServiceUnavailable, failure)
+                    }
+                }
+            return operation(binding, service)
+        } finally {
+            withContext(NonCancellable + Dispatchers.IO) { binding.close() }
         }
     }
 
@@ -184,7 +260,9 @@ internal class IsolatedTransferProcessor(context: Context) :
     private suspend fun runPreparedTransfer(
         input: SealedInput,
         output: AnonymousTransferOutput,
-        request: TransferJobRequest
+        request: TransferJobRequest,
+        binding: IsolatedTransferServiceBinding,
+        service: ITransferService
     ): CompletedTransfer {
         val jobId = nextJobId()
         var inputDescriptor: ParcelFileDescriptor? = null
@@ -194,18 +272,7 @@ internal class IsolatedTransferProcessor(context: Context) :
         var completion: CompletableDeferred<TransferTerminalStatus>? = null
         var accepted = false
         var completed = false
-        val binding = IsolatedTransferServiceBinding(applicationContext)
         try {
-            binding.bind()
-            val service =
-                try {
-                    withTimeout(SERVICE_BIND_TIMEOUT_MILLIS) {
-                        binding.awaitService()
-                    }
-                } catch (failure: TimeoutCancellationException) {
-                    currentCoroutineContext().ensureActive()
-                    throw TransferException(TransferFailure.ServiceUnavailable, failure)
-                }
             inputDescriptor = input.takeReader()
             outputDescriptor = output.takeWriter()
             transferredInput =
@@ -285,6 +352,7 @@ internal class IsolatedTransferProcessor(context: Context) :
             throw TransferException(TransferFailure.ProcessingFailed, failure)
         } finally {
             completion?.cancel()
+            completion?.let(binding::detachOperation)
             transferredInput?.closeWithError(REJECTED_INPUT_ERROR)
             transferredOutput?.closeWithError(REJECTED_OUTPUT_ERROR)
             closeDescriptorQuietly(inputDescriptor)
@@ -292,7 +360,6 @@ internal class IsolatedTransferProcessor(context: Context) :
             if (accepted && !completed) {
                 binding.cancelTransfer(jobId)
             }
-            binding.close()
         }
     }
 

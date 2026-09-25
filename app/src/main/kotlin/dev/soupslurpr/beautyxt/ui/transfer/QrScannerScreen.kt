@@ -43,7 +43,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,14 +65,17 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Observer
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.transfer.TransferProtocol
+import dev.soupslurpr.beautyxt.transfer.client.QrFrameDecoder
 import dev.soupslurpr.beautyxt.transfer.client.QrLuminanceFrame
 import dev.soupslurpr.beautyxt.transfer.client.QrTransferProcessor
 import dev.soupslurpr.beautyxt.transfer.client.ReceivedTransferText
 import dev.soupslurpr.beautyxt.transfer.client.TransferException
 import dev.soupslurpr.beautyxt.transfer.client.TransferFailure
+import dev.soupslurpr.beautyxt.transfer.client.canContinueQrScan
 import dev.soupslurpr.beautyxt.ui.PredictiveBackMotionHandler
 import dev.soupslurpr.beautyxt.ui.UiText
 import dev.soupslurpr.beautyxt.ui.asString
@@ -85,10 +87,14 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 private val ScannerPermissionMaxWidth = 520.dp
@@ -99,6 +105,7 @@ private val ScannerGuideSize = 264.dp
 private val ScannerGuideStroke = 3.dp
 private val ScannerLoadingSize = 48.dp
 private val TargetAnalysisResolution = Size(1280, 960)
+private const val FAILED_SCAN_RETRY_MILLIS = 250L
 private val CAMERA_UNAVAILABLE_MESSAGE = UiText.Resource(
     R.string.scanner_camera_unavailable_message
 )
@@ -140,6 +147,10 @@ internal fun QrScannerScreen(
     ) {
         QrCameraPreview(
             processor = processor,
+            onCameraStarting = {
+                scannerMessage = null
+                isCameraStarting = true
+            },
             onCameraReady = { isCameraStarting = false },
             onFailure = { message ->
                 isCameraStarting = false
@@ -310,6 +321,7 @@ private fun QrCameraPermissionScreen(
 @Composable
 private fun QrCameraPreview(
     processor: QrTransferProcessor,
+    onCameraStarting: () -> Unit,
     onCameraReady: () -> Unit,
     onFailure: (UiText) -> Unit,
     onReceived: (ReceivedTransferText) -> Unit,
@@ -317,6 +329,7 @@ private fun QrCameraPreview(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val currentOnCameraStarting by rememberUpdatedState(onCameraStarting)
     val currentOnCameraReady by rememberUpdatedState(onCameraReady)
     val currentOnFailure by rememberUpdatedState(onFailure)
     val currentOnReceived by rememberUpdatedState(onReceived)
@@ -327,17 +340,14 @@ private fun QrCameraPreview(
                 scaleType = PreviewView.ScaleType.FILL_CENTER
             }
         }
-    val analysisExecutor: ExecutorService =
-        remember { Executors.newSingleThreadExecutor() }
-    val analyzer =
-        remember(processor) {
-            QrFrameAnalyzer(
-                processor = processor,
-                onFailure = { message -> currentOnFailure(message) },
-                onReceived = { transfer -> currentOnReceived(transfer) }
-            )
-        }
-    DisposableEffect(context, lifecycleOwner, previewView, analyzer, analysisExecutor) {
+    LifecycleStartEffect(previewView, processor, lifecycleOwner = lifecycleOwner) {
+        currentOnCameraStarting()
+        val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+        val analyzer = QrFrameAnalyzer(
+            processor = processor,
+            onFailure = { message -> currentOnFailure(message) },
+            onReceived = { transfer -> currentOnReceived(transfer) }
+        )
         val providerFuture = ProcessCameraProvider.getInstance(context)
         val mainExecutor = ContextCompat.getMainExecutor(context)
         var disposed = false
@@ -403,7 +413,7 @@ private fun QrCameraPreview(
             },
             mainExecutor
         )
-        onDispose {
+        onStopOrDispose {
             disposed = true
             previewView.previewStreamState.removeObserver(streamObserver)
             analyzer.close()
@@ -423,19 +433,70 @@ private fun QrCameraPreview(
 internal class QrFrameAnalyzer(
     private val processor: QrTransferProcessor,
     private val onFailure: (UiText) -> Unit,
-    private val onReceived: (ReceivedTransferText) -> Unit
+    private val onReceived: (ReceivedTransferText) -> Unit,
+    dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
 ) : ImageAnalysis.Analyzer,
     AutoCloseable {
     private val closed = AtomicBoolean(false)
-    private val analyzing = AtomicBoolean(false)
+    private val awaitingFrame = AtomicBoolean(false)
     private val completed = AtomicBoolean(false)
     private val frameLock = Any()
     private var reusableFrame: ByteArray? = null
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
+    private val frames = Channel<QrLuminanceFrame>(
+        capacity = 1,
+        onUndeliveredElement = { frame -> recycleFrame(frame.bytes) }
+    )
+
+    init {
+        scope.launch {
+            while (isActive && !closed.get() && !completed.get()) {
+                try {
+                    val received = processor.withQrDecoder(::awaitTransfer)
+                    if (!closed.get() && completed.compareAndSet(false, true)) {
+                        onReceived(received)
+                    }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (failure: TransferException) {
+                    if (!closed.get()) {
+                        qrScanFailureMessage(failure.failure)?.let(onFailure)
+                    }
+                } catch (_: Exception) {
+                    if (!closed.get()) onFailure(QR_READ_FAILURE_MESSAGE)
+                } catch (_: LinkageError) {
+                    if (!closed.get()) onFailure(QR_SERVICE_MESSAGE)
+                } finally {
+                    awaitingFrame.set(false)
+                }
+                if (!completed.get()) delay(FAILED_SCAN_RETRY_MILLIS)
+            }
+        }
+    }
+
+    /** Takes fresh frames only after startup or the preceding decode has finished. */
+    private suspend fun awaitTransfer(decoder: QrFrameDecoder): ReceivedTransferText {
+        while (true) {
+            awaitingFrame.set(true)
+            val frame = try {
+                frames.receive()
+            } finally {
+                awaitingFrame.set(false)
+            }
+            try {
+                return decoder.decodeQr(frame)
+            } catch (failure: TransferException) {
+                if (!failure.failure.canContinueQrScan) throw failure
+                if (!closed.get()) qrScanFailureMessage(failure.failure)?.let(onFailure)
+            } finally {
+                recycleFrame(frame.bytes)
+            }
+        }
+    }
 
     /** Copies one eligible luminance plane before releasing its camera buffer. */
     override fun analyze(image: ImageProxy) {
-        if (closed.get() || completed.get() || !analyzing.compareAndSet(false, true)) {
+        if (closed.get() || completed.get() || !awaitingFrame.compareAndSet(true, false)) {
             image.close()
             return
         }
@@ -448,36 +509,14 @@ internal class QrFrameAnalyzer(
                 image.close()
             }
         if (frame == null) {
-            analyzing.set(false)
+            awaitingFrame.set(true)
             if (!closed.get()) {
                 scope.launch { onFailure(CAMERA_FRAME_MESSAGE) }
             }
             return
         }
-        scope.launch {
-            try {
-                val received = processor.decodeQr(frame)
-                if (!closed.get() && completed.compareAndSet(false, true)) {
-                    onReceived(received)
-                }
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (failure: TransferException) {
-                if (!closed.get()) {
-                    qrScanFailureMessage(failure.failure)?.let(onFailure)
-                }
-            } catch (_: Exception) {
-                if (!closed.get()) {
-                    onFailure(QR_READ_FAILURE_MESSAGE)
-                }
-            } catch (_: LinkageError) {
-                if (!closed.get()) {
-                    onFailure(QR_SERVICE_MESSAGE)
-                }
-            } finally {
-                recycleFrame(frame.bytes)
-                analyzing.set(false)
-            }
+        if (frames.trySend(frame).isFailure) {
+            recycleFrame(frame.bytes)
         }
     }
 
@@ -487,6 +526,7 @@ internal class QrFrameAnalyzer(
             return
         }
         scope.cancel()
+        frames.cancel()
         synchronized(frameLock) {
             reusableFrame = null
         }

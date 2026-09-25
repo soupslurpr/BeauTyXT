@@ -127,9 +127,14 @@ Every implemented service is non-exported, uses `isolatedProcess`, explicitly
 disables shared isolated processes, and exposes a narrow Binder interface.
 Every binding uses `bindIsolatedService` with a new opaque random instance name;
 the manifest's process names identify roles, not shared worker instances.
-Import, export, Markdown, and transfer operations own fresh bindings. Math and
-diagram clients may reuse their own healthy instance within one document's
-preview or print preparation, never across document clients. Closing one
+Import, export, Markdown, and individual transfer operations own fresh
+bindings. A foreground QR scanner prepares one private transfer worker and
+reuses it for sequential camera frames within that scan. Success, cancellation,
+or leaving the foreground releases it; reopening or resuming scanning gets a
+new worker. Worker/protocol failures also replace the instance. QR encoding
+and NFC operations never borrow a scanner's worker. Math and diagram clients
+may reuse their own healthy instance within one document's preview or print
+preparation, never across document clients. Closing one
 binding cannot cancel or occupy a different document's worker. Multiple open
 documents can therefore use the same role concurrently, at the cost of separate
 process startup and memory. Unbinding releases the operation's worker;
@@ -550,9 +555,11 @@ descriptors and has no network or storage authority.
 
 QR sharing accepts at most 1,536 UTF-8 bytes and returns a packed module grid
 for direct Compose drawing. Foreground scanning requires camera consent, copies
-only one bounded luminance frame at a time, and never saves frames. The
-isolated worker rejects missing, ambiguous, malformed, oversized, or damaged
-codes.
+only one bounded luminance frame at a time, and never saves frames. Frames are
+copied only when the scanner's prepared worker can receive them, so camera
+buffers do not wait through process startup or queue behind prior decodes.
+Each request has distinct descriptors and a callback identity. The isolated
+worker rejects missing, ambiguous, malformed, oversized, or damaged codes.
 
 Saving a QR image encodes the 1,024-pixel bitmap as lossless WebP by default,
 with PNG offered for compatibility. Both preserve identical pixels; WebP's

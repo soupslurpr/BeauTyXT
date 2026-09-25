@@ -21,6 +21,10 @@ import kotlinx.coroutines.runBlocking
 private const val CAMERA_WIDTH = 1280
 private const val CAMERA_HEIGHT = 960
 
+/** Supplies a repeatable production-image frame for scanner session checks. */
+internal fun qrDecoderSessionFrame(qr: Bitmap): QrLuminanceFrame =
+    cameraFrame(qr, 480f, CameraScene("session", background = 120))
+
 /** Exercises actual Android QR rendering and isolated decoding under camera-like transforms. */
 internal fun verifyQrCameraScanning(
     context: Context,

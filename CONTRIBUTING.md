@@ -117,6 +117,13 @@ It covers short, Unicode, and maximum-size transfers at different sizes,
 positions, angles, lighting, and polarities. It does not access the camera;
 physical autofocus, glare, and display moire need separate camera checks.
 
+The `QR decoder session` phase verifies repeated requests, separate scan
+sessions, NFC transfers during a scan, and cancellation through the real
+isolated worker. Its synthetic-frame timings do not measure camera latency.
+The opt-in `QR scanner worker lifecycle` phase requires camera permission and
+a camera scene without a QR code; it verifies worker release in the background
+and a fresh worker on resume.
+
 With AGP 9.4.1, the connected-test task's `--serial` filter throws an upstream
 immutable-list exception. `ANDROID_SERIAL=SERIAL` avoids that filter, but on the
 API 37 emulator the runner then passes an invalid Android user ID (`-2`) and

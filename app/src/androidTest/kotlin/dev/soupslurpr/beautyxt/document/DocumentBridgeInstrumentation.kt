@@ -426,6 +426,8 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 verifyPhase("QR camera scanning") {
                     verifyQrCameraScanning(targetContext) { Log.i(TAG, it) }
                 }
+                verifyPhase("QR decoder session", ::verifyQrDecoderSession)
+                verifyOptInPhase("QR scanner worker lifecycle", ::verifyQrScannerWorkerLifecycle)
                 verifyOptInPhase("QR image benchmark") {
                     verifyQrImageEncodings(
                         targetContext,
