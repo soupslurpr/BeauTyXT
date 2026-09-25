@@ -2,13 +2,13 @@
 activityCompose = "1.13.0"
 androidGradlePlugin = "9.4.1"
 cameraX = "1.6.2"
-composeBom = "2026.09.00"
-coreKtx = "1.19.0"
+composeBom = "2026.09.01"
+coreKtx = "1.19.1"
 coroutines = "1.11.0"
 junit4 = "4.13.2"
 kotlin = "2.4.20"
 lifecycle = "2.11.0"
-material3 = "1.5.0-alpha28"
+material3 = "1.5.0-alpha29"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }

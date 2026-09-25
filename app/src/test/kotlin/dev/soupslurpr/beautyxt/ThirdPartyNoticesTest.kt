@@ -31,7 +31,7 @@ class ThirdPartyNoticesTest {
         val notices = noticesFile.readText()
 
         listOf(
-            "androidx.compose.material3:material3:1.5.0-alpha28",
+            "androidx.compose.material3:material3:1.5.0-alpha29",
             "androidx.camera:camera-core:1.6.2",
             "org.jetbrains.kotlin:kotlin-stdlib:2.4.20",
             "pulldown-cmark 0.13.4",
