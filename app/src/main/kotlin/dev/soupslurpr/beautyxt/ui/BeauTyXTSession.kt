@@ -84,6 +84,7 @@ internal constructor(
     private var activeSaveDestinationJob: Job? = null
     private var activeSourceReloadEditor: EditorSession? = null
     private var activeSourceReloadJob: Job? = null
+    private var editorClosingAfterExit: EditorSession? = null
 
     var editor by mutableStateOf<EditorSession?>(null)
         private set
@@ -437,26 +438,31 @@ internal constructor(
         return true
     }
 
-    /** Closes the current editor after its bounded operation reaches a safe point. */
-    fun closeEditor() {
-        val currentEditor = editor ?: return
+    /** Closes a safe editor, optionally keeping its content alive for the entry's exit. */
+    fun closeEditor(afterExit: Boolean = false): Boolean {
+        val currentEditor = editor ?: return false
         if (
             !currentEditor.canCloseSafely ||
             activeSaveDestination?.editor === currentEditor
         ) {
-            return
+            return false
         }
-        editor = null
-        currentEditor.close()
+        if (afterExit) {
+            editorClosingAfterExit = currentEditor
+        } else {
+            editor = null
+            currentEditor.close()
+        }
+        return true
     }
 
     /** Requests immediate synchronization of the current non-composing draft. */
     fun flushPendingEdit() {
-        if (closeStarted.get()) {
+        if (closeStarted.get() || editorClosingAfterExit != null) {
             return
         }
         sessionScope.launch {
-            if (!closeStarted.get()) {
+            if (!closeStarted.get() && editorClosingAfterExit == null) {
                 editor?.flushPendingEdit()
             }
         }
@@ -464,7 +470,7 @@ internal constructor(
 
     /** Checkpoints visible composing text when the application leaves the foreground. */
     fun checkpointPendingEdit() {
-        if (!closeStarted.get()) {
+        if (!closeStarted.get() && editorClosingAfterExit == null) {
             editor?.checkpointPendingEdit()
         }
     }
@@ -497,7 +503,14 @@ internal constructor(
         openJob?.cancel()
         saveDestinationJob?.cancel()
         sourceReloadJob?.cancel()
-        currentEditor?.closeAfterCheckpoint()
+        if (currentEditor === editorClosingAfterExit) {
+            // This editor already passed its close guard. In particular, discarding
+            // must not turn into a fresh checkpoint or source save during retirement.
+            currentEditor?.close()
+        } else {
+            currentEditor?.closeAfterCheckpoint()
+        }
+        editorClosingAfterExit = null
         sessionScope.cancel()
     }
 

@@ -97,7 +97,6 @@
     <string name="recovery_message">BeauTyXT keeps open document sessions only in memory. The app restarted, so this session could not be recovered. If you saved this document, reopen its file to check the contents.</string>
     <string name="recovery_home">Return home</string>
     <string name="recovery_return">Return</string>
-    <string name="operation_document_session_failure">The document session could not be opened</string>
     <string name="operation_unsupported_document">Choose a UTF-8 plain text or Markdown file</string>
     <string name="cleanup_failed">Couldn\'t prepare BeauTyXT</string>
     <string name="cleanup_retry_message">BeauTyXT could not finish removing old app data. Retry to continue.</string>

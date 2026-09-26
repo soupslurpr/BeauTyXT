@@ -14,16 +14,6 @@ import dev.soupslurpr.beautyxt.sharing.parseIncomingDocumentShare
 import dev.soupslurpr.beautyxt.ui.openDocumentMimeTypes
 import java.util.UUID
 
-private const val ACTION_NEW_DOCUMENT =
-    "dev.soupslurpr.beautyxt.action.NEW_DOCUMENT"
-private const val ACTION_SCAN_QR =
-    "dev.soupslurpr.beautyxt.action.SCAN_QR"
-private const val ACTION_READ_NFC =
-    "dev.soupslurpr.beautyxt.action.READ_NFC"
-private const val ACTION_SELECT_DOCUMENT =
-    "dev.soupslurpr.beautyxt.action.SELECT_DOCUMENT"
-private const val ACTION_OPEN_SELECTED_DOCUMENT =
-    "dev.soupslurpr.beautyxt.action.OPEN_SELECTED_DOCUMENT"
 private const val SESSION_SCHEME = "beautyxt"
 private const val SESSION_AUTHORITY = "session"
 private const val TEMPORARY_URI_GRANT_FLAGS =
@@ -55,106 +45,22 @@ internal enum class InitialDocumentAction {
 
 /** Describes what Android reveals after one document session finishes. */
 enum class DocumentSessionReturnDestination {
-    /** Returns to BeauTyXT's Home activity. */
+    /** Returns to BeauTyXT's Home screen. */
     Home,
 
     /** Returns to the external caller that opened the document task. */
     Caller
 }
 
-/** Returns the initial document action encoded by one activity intent. */
-internal fun initialDocumentAction(intent: Intent): InitialDocumentAction = when (intent.action) {
-    ACTION_NEW_DOCUMENT -> InitialDocumentAction.NewDocument
-    ACTION_SELECT_DOCUMENT -> InitialDocumentAction.SelectDocument
-    ACTION_OPEN_SELECTED_DOCUMENT -> InitialDocumentAction.OpeningSelectedDocument
-    ACTION_SCAN_QR -> InitialDocumentAction.ScanQr
-    ACTION_READ_NFC -> InitialDocumentAction.ReadNfc
-    else -> InitialDocumentAction.Incoming
-}
-
-/** Extracts one external or internally selected document offer. */
+/** Extracts an external document offer while preserving its exact capabilities. */
 internal fun documentSessionShare(intent: Intent): IncomingDocumentShare? =
-    if (intent.action != ACTION_OPEN_SELECTED_DOCUMENT) {
-        parseIncomingDocumentShare(intent)
-    } else {
-        null
-    }
-
-/** Returns whether one explicit intent belongs to the non-exported Home document host. */
-internal fun isHomeDocumentIntent(intent: Intent): Boolean = intent.action == ACTION_NEW_DOCUMENT ||
-    intent.action == ACTION_SELECT_DOCUMENT ||
-    intent.action == ACTION_OPEN_SELECTED_DOCUMENT ||
-    intent.action == ACTION_SCAN_QR ||
-    intent.action == ACTION_READ_NFC
-
-/** Returns whether one Home document intent owns the provider-selection screen. */
-internal fun isDocumentSelectionIntent(intent: Intent): Boolean =
-    intent.action == ACTION_SELECT_DOCUMENT
-
-/** Returns whether one Home document intent carries a selected provider source. */
-internal fun isSelectedDocumentIntent(intent: Intent): Boolean =
-    intent.action == ACTION_OPEN_SELECTED_DOCUMENT
+    parseIncomingDocumentShare(intent)
 
 /** Returns whether one exported document intent carries supported external content. */
 internal fun isExternalDocumentIntent(intent: Intent): Boolean =
     intent.action == Intent.ACTION_VIEW ||
         intent.action == Intent.ACTION_EDIT ||
         intent.action == Intent.ACTION_SEND
-
-/** Returns whether process death must replace one document session with an empty notice. */
-internal fun isUnrestorableAfterProcessDeath(intent: Intent): Boolean =
-    !isDocumentSelectionIntent(intent)
-
-/** Creates one uniquely identified transient document task. */
-internal fun createNewDocumentSessionIntent(context: Context): Intent =
-    createTransientDocumentSessionIntent(
-        context = context,
-        action = ACTION_NEW_DOCUMENT,
-        kind = "new"
-    )
-
-/** Creates the non-exported child that owns one provider-selection attempt. */
-internal fun createDocumentSelectionIntent(context: Context): Intent =
-    Intent(ACTION_SELECT_DOCUMENT, null, context, HomeDocumentActivity::class.java)
-
-/** Creates one uniquely identified QR receive task. */
-internal fun createQrDocumentSessionIntent(context: Context): Intent =
-    createTransientDocumentSessionIntent(
-        context = context,
-        action = ACTION_SCAN_QR,
-        kind = "qr"
-    )
-
-/** Creates one uniquely identified NFC receive task. */
-internal fun createNfcDocumentSessionIntent(context: Context): Intent =
-    createTransientDocumentSessionIntent(
-        context = context,
-        action = ACTION_READ_NFC,
-        kind = "nfc"
-    )
-
-/** Creates one canonical source-backed document task from a picker result. */
-internal fun createSelectedDocumentSessionIntent(
-    context: Context,
-    uri: Uri,
-    mimeType: String?,
-    resultFlags: Int
-): Intent {
-    require(uri.scheme == "content" && !uri.authority.isNullOrBlank()) {
-        "selected document must use an authoritative content URI"
-    }
-    val grantFlags = resultFlags and TEMPORARY_URI_GRANT_FLAGS
-    return Intent(
-        ACTION_OPEN_SELECTED_DOCUMENT,
-        uri,
-        context,
-        HomeDocumentActivity::class.java
-    ).apply {
-        setDataAndType(uri, mimeType)
-        clipData = ClipData.newRawUri("Selected document", uri)
-        addFlags(grantFlags)
-    }
-}
 
 /** Normalizes one external share into a uniquely identified document task. */
 internal fun createSharedDocumentSessionIntent(context: Context, source: Intent): Intent {
@@ -193,14 +99,7 @@ internal fun createSharedDocumentSessionIntent(context: Context, source: Intent)
     }
 }
 
-/** Creates one internal task intent whose opaque URI prevents accidental task reuse. */
-private fun createTransientDocumentSessionIntent(
-    context: Context,
-    action: String,
-    kind: String
-): Intent = Intent(action, newSessionUri(kind), context, HomeDocumentActivity::class.java)
-
-/** Creates the provider picker owned by one short-lived Home document child. */
+/** Creates the provider picker owned by one Home document navigation entry. */
 internal fun createOpenDocumentPickerIntent(): Intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
     .addCategory(Intent.CATEGORY_OPENABLE)
     .setType("*/*")

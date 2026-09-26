@@ -125,10 +125,15 @@ internal fun NfcReadScreen(
     processor: NfcTransferProcessor,
     onReceived: (ReceivedTransferText) -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    navigationClosesScreen: Boolean = false
 ) {
     val predictiveBackState = rememberPredictiveBackMotionState()
-    PredictiveBackMotionHandler(state = predictiveBackState, onBack = onClose)
+    PredictiveBackMotionHandler(
+        state = predictiveBackState,
+        enabled = !navigationClosesScreen,
+        onBack = onClose
+    )
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     var isNfcEnabled by remember(adapter) { mutableStateOf(adapter.isEnabled) }
@@ -190,7 +195,11 @@ internal fun NfcReadScreen(
             stringResource(R.string.nfc_read_disclosure),
         onOpenNfcSettings = if (isNfcEnabled) null else ({ context.openNfcSettings() }),
         onClose = onClose,
-        modifier = modifier.predictiveBackMotion(predictiveBackState)
+        modifier = if (navigationClosesScreen) {
+            modifier
+        } else {
+            modifier.predictiveBackMotion(predictiveBackState)
+        }
     )
 }
 

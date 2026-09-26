@@ -42,6 +42,8 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
+import dev.soupslurpr.beautyxt.ui.BindDocumentNavigationBack
+import dev.soupslurpr.beautyxt.ui.LocalDocumentNavigationBack
 import dev.soupslurpr.beautyxt.ui.PredictiveBackMotionHandler
 import dev.soupslurpr.beautyxt.ui.predictiveBackMotion
 import dev.soupslurpr.beautyxt.ui.rememberPredictiveBackMotionState
@@ -353,8 +355,14 @@ internal fun DocumentEditor(
             session.hasPendingEditWindowAction -> false
             else -> true
         }
+    BindDocumentNavigationBack(requestBack)
+    val hasNavigationHost = LocalDocumentNavigationBack.current != null
+    val navigationCanClose = hasNavigationHost && backClosesDocument &&
+        session.canCloseSafely && !session.hasUnsavedChanges && !isImeVisible &&
+        imeBottomInsetPixels == 0 && imeTargetBottomInsetPixels == 0
     PredictiveBackMotionHandler(
         state = predictiveBackState,
+        enabled = !navigationCanClose,
         interceptBackAtStart = {
             imeBackReservation.tryClaim(
                 isImeVisible = isImeVisible,
@@ -409,7 +417,7 @@ internal fun DocumentEditor(
                 .fillMaxSize()
                 .then(
                     if (
-                        usesEditorPredictiveBackMotion(
+                        !hasNavigationHost && usesEditorPredictiveBackMotion(
                             closesDocumentTask = closesDocumentTask,
                             backClosesDocument = backClosesDocument
                         )

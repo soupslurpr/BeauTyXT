@@ -496,6 +496,9 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 }
                 verifyPhase("edit scroll resize", ::verifyEditScrollRestorationAfterResize)
                 verifyPhase("initial reading back", ::verifyInitialReadingBack)
+                verifyPhase("Home document navigation", ::verifyHomeDocumentNavigation)
+                verifyOptInPhase("Home navigation gestures", ::verifyHomeNavigationGestures)
+                verifyPhase("external document entry points", ::verifyExternalDocumentEntryPoints)
                 verifyPhase("external document task closure", ::verifyExternalDocumentTaskClosure)
                 verifyPhase("multiple document task closure", ::verifyMultipleDocumentTaskClosure)
                 verifyPhase("document closing presentation", ::verifyDocumentClosingPresentation)

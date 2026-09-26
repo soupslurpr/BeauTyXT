@@ -94,6 +94,7 @@ internal fun BeauTyXTApp(
     onIncomingShareConsumed: (IncomingDocumentShare) -> Unit = {},
     onDocumentSessionClosed: () -> Unit = {}
 ) {
+    val keepsContentUntilExit = LocalDocumentNavigationBack.current != null
     val context = LocalContext.current
     val resources = LocalResources.current
     val applicationContext = context.applicationContext
@@ -325,21 +326,29 @@ internal fun BeauTyXTApp(
         }
     }
 
-    /** Keeps an intentionally closed session neutral while Android finishes the activity. */
+    /** Leaves the entry's content in place until its host completes navigation. */
     fun closeDocumentSession() {
+        if (isDocumentSessionClosing) return
         isDocumentSessionClosing = true
         onDocumentSessionClosed()
     }
 
     /** Closes the editor while preserving any incoming content still under review. */
     fun closeCurrentEditor() {
+        if (keepsContentUntilExit && session.incomingShare == null) {
+            if (session.closeEditor(afterExit = true)) {
+                session.editor?.dismissDiscardConfirmation()
+                closeDocumentSession()
+            }
+            return
+        }
         session.closeEditor()
         if (session.editor == null && session.incomingShare == null) {
             closeDocumentSession()
         }
     }
 
-    /** Dismisses one incoming offer and closes an otherwise empty document task. */
+    /** Dismisses one incoming offer and closes an otherwise empty document session. */
     fun dismissIncomingShare() {
         session.dismissIncomingShare()
         if (session.editor == null) {
@@ -347,18 +356,20 @@ internal fun BeauTyXTApp(
         }
     }
 
-    /** Closes QR scanning and finishes an otherwise empty document task. */
+    /** Closes QR scanning and finishes an otherwise empty document session. */
     fun closeQrScanner() {
-        isQrScannerVisible = false
-        if (session.editor == null && session.incomingShare == null) {
+        val closesSession = session.editor == null && session.incomingShare == null
+        if (!keepsContentUntilExit || !closesSession) isQrScannerVisible = false
+        if (closesSession) {
             closeDocumentSession()
         }
     }
 
-    /** Closes NFC reading and finishes an otherwise empty document task. */
+    /** Closes NFC reading and finishes an otherwise empty document session. */
     fun closeNfcReader() {
-        isNfcReaderVisible = false
-        if (session.editor == null && session.incomingShare == null) {
+        val closesSession = session.editor == null && session.incomingShare == null
+        if (!keepsContentUntilExit || !closesSession) isNfcReaderVisible = false
+        if (closesSession) {
             closeDocumentSession()
         }
     }
@@ -422,7 +433,7 @@ internal fun BeauTyXTApp(
 
     /** Offers one verified QR transfer through the existing explicit review flow. */
     fun receiveQrTransfer(transfer: ReceivedTransferText) {
-        if (!isQrScannerVisible) {
+        if (!isQrScannerVisible || isDocumentSessionClosing) {
             return
         }
         isQrScannerVisible = false
@@ -437,7 +448,7 @@ internal fun BeauTyXTApp(
 
     /** Offers one verified NFC transfer through the existing explicit review flow. */
     fun receiveNfcTransfer(transfer: ReceivedTransferText) {
-        if (!isNfcReaderVisible) {
+        if (!isNfcReaderVisible || isDocumentSessionClosing) {
             return
         }
         isNfcReaderVisible = false
@@ -469,9 +480,10 @@ internal fun BeauTyXTApp(
             )
     Box(modifier = modifier.fillMaxSize()) {
         if (editor == null) {
+            BindDocumentNavigationBack(::closeDocumentSession)
             DocumentSessionBackground(
                 openStatus = openStatus,
-                isClosing = isDocumentSessionClosing,
+                isClosing = isDocumentSessionClosing && !keepsContentUntilExit,
                 recoveryDestination =
                     if (initialDocumentAction == InitialDocumentAction.Unrestorable) {
                         returnDestination
@@ -506,7 +518,7 @@ internal fun BeauTyXTApp(
             DocumentEditor(
                 session = editor,
                 onClose = ::closeCurrentEditor,
-                closesDocumentTask = true,
+                closesDocumentTask = LocalDocumentNavigationBack.current == null,
                 onCancelSave = {
                     if (!session.cancelSaveDestinationResult(editor)) {
                         editor.cancelSave()
@@ -530,6 +542,7 @@ internal fun BeauTyXTApp(
                     onRequestCameraPermission = ::requestCameraPermission,
                     onReceived = ::receiveQrTransfer,
                     onClose = ::closeQrScanner,
+                    navigationClosesScreen = keepsContentUntilExit && editor == null,
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -539,6 +552,7 @@ internal fun BeauTyXTApp(
                     processor = transferProcessor,
                     onReceived = ::receiveNfcTransfer,
                     onClose = ::closeNfcReader,
+                    navigationClosesScreen = keepsContentUntilExit && editor == null,
                     modifier = Modifier.fillMaxSize()
                 )
 

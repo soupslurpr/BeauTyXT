@@ -81,16 +81,16 @@ export destinations, including paused and failing streams. They run in their
 own test-only APK with a separate UID and Kotlin runtime. Putting them in the
 instrumentation APK would leave their standalone process without Kotlin's
 runtime: Android's build plugin omits dependencies already packaged in the app
-under test. Only the provider protocol constants are shared with the tests.
+under test. Only the fixture protocol constants are shared with the tests.
 
 `androidTestUtil` installs this helper for Gradle's connected-device tests.
 For manual `adb shell am instrument` runs, build `:test-providers:assembleDebug`
 and install `test-providers/build/outputs/apk/debug/test-providers-debug.apk`
 with `adb -s SERIAL install -r -t`, alongside the debug and instrumentation
 APKs. Always select the intended emulator or explicitly authorized device.
-The helper has no release variant or launcher activity. A signature permission
-and caller-package validation restrict it to the debug test target; neither
-the helper nor its access permission ships in staging or production.
+The helper has no release variant or launcher activity. Access requires a
+signature permission, and its providers also validate the caller package.
+Neither the helper nor its access permission ships in staging or production.
 
 The verified direct-run workflow is:
 
@@ -134,6 +134,19 @@ missing, malformed, failed, and skipped-only reports cannot pass. Its regression
 checks run with `:app:verifyDeviceTestResultsGuard` and as part of `:app:check`.
 This does not fix the upstream launch error: until that is resolved, use the
 direct command above to run the tests.
+
+The `Home document navigation` phase checks picker cancellation, guarded Back,
+and fresh editor state after closing a navigation entry. The opt-in
+`Home navigation gestures` phase requires Android gesture navigation and injects
+touch events at both screen edges. It checks actual page positions during the
+preview and after release, cancellation, and subsequent toolbar Back. The
+`multiple document task closure` phase keeps an unsaved Home draft and two
+external documents open, checks canonical URI task reuse, and closes the files
+in either order. The
+`external document entry points` phase uses the helper APK as a separate-UID
+caller. It owns the test files and supplies temporary URI grants through real
+VIEW, EDIT, and SEND intents, then verifies Back returns to the caller and
+removes the closed document from Recents.
 
 The `isolated service death` phase uses a debug-only native Binder transaction
 to terminate the import worker: `am crash` requests a VM crash and cannot test

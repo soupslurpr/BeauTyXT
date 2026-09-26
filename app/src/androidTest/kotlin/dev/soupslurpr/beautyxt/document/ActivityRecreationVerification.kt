@@ -34,12 +34,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.LifecycleOwner
 import dev.soupslurpr.beautyxt.HomeActivity
-import dev.soupslurpr.beautyxt.HomeDocumentActivity
 import dev.soupslurpr.beautyxt.LegacyCleanup
 import dev.soupslurpr.beautyxt.R
-import dev.soupslurpr.beautyxt.ThirdPartyNoticesActivity
-import dev.soupslurpr.beautyxt.createQrDocumentSessionIntent
-import dev.soupslurpr.beautyxt.createSelectedDocumentSessionIntent
 import dev.soupslurpr.beautyxt.createSharedDocumentSessionIntent
 import dev.soupslurpr.beautyxt.document.DocumentFormat
 import dev.soupslurpr.beautyxt.markdown.client.IsolatedMarkdownRenderer
@@ -202,16 +198,19 @@ private fun Instrumentation.captureStartupPreview(state: String) {
     }
 }
 
-/** Verifies licenses remain readable and scroll entirely below their navigation controls. */
+/** Verifies in-app license navigation, scroll insets, and Home's retained back stack. */
 internal fun Instrumentation.verifyNoticeScrollInsets() {
     val activity = startActivitySync(
-        Intent(targetContext, ThirdPartyNoticesActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        Intent(targetContext, HomeActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
     )
     try {
+        requireActionableText("About").performRequiredClick()
+        requireActionableText("Open-source licenses").performRequiredClick()
         waitForAccessibilityNode("loaded license text") { node ->
             node.text?.startsWith("BeauTyXT third-party notices") == true
         }
+        waitForAccessibilityIdle()
         repeat(2) {
             val body = waitForAccessibilityNode("license scroll viewport") { it.isScrollable }
             val back = waitForAccessibilityNode("license navigation") { node ->
@@ -229,7 +228,15 @@ internal fun Instrumentation.verifyNoticeScrollInsets() {
         }
         requireActionableContentDescription("Back").performRequiredClick()
         waitForAccessibilityIdle()
-        check(activity.isFinishing) { "license navigation did not finish its screen" }
+        waitForAccessibilityNode("About after licenses") { node ->
+            node.text?.toString() == "About BeauTyXT"
+        }
+        check(!activity.isFinishing && activity.hasWindowFocus()) {
+            "informational navigation left HomeActivity"
+        }
+        requireActionableContentDescription("Back").performRequiredClick()
+        requireActionableText(TEST_NEW_DOCUMENT_LABEL)
+        check(!activity.isFinishing) { "returning Home finished its activity" }
     } finally {
         runOnMainSync(activity::finish)
         waitForAccessibilityIdle()
@@ -333,12 +340,8 @@ internal fun Instrumentation.verifyComposingHistoryInteractions() {
             }
         )
         waitForAccessibilityIdle()
-        val documentMonitor = addMonitor(HomeDocumentActivity::class.java.name, null, false)
         requireActionableText(TEST_NEW_DOCUMENT_LABEL).performRequiredClick()
-        val activity = checkNotNull(
-            waitForMonitorWithTimeout(documentMonitor, TEST_ACTIVITY_TIMEOUT_MILLIS)
-        ) { "new document did not open for the composing-history test" }
-        removeMonitor(documentMonitor)
+        val activity = checkNotNull(currentActivity)
         currentActivity = activity
         waitForImeVisibility(activity, visible = true)
 
@@ -940,12 +943,8 @@ internal fun Instrumentation.verifyEditorToolbarInteractions() {
             }
         )
         waitForAccessibilityIdle()
-        val documentMonitor = addMonitor(HomeDocumentActivity::class.java.name, null, false)
         requireActionableText(TEST_NEW_DOCUMENT_LABEL).performRequiredClick()
-        val activity = checkNotNull(
-            waitForMonitorWithTimeout(documentMonitor, TEST_ACTIVITY_TIMEOUT_MILLIS)
-        ) { "new document did not open for the toolbar test" }
-        removeMonitor(documentMonitor)
+        val activity = checkNotNull(currentActivity)
         currentActivity = activity
         val editField = waitForEditField()
         editField.performRequiredClick()
@@ -1082,13 +1081,8 @@ internal fun Instrumentation.verifyRapidBackGuardsUnsavedDraft() {
         currentActivity = homeActivity
         waitForAccessibilityIdle()
 
-        val documentMonitor = addMonitor(HomeDocumentActivity::class.java.name, null, false)
         requireActionableText(TEST_NEW_DOCUMENT_LABEL).performRequiredClick()
-        val activity =
-            checkNotNull(waitForMonitorWithTimeout(documentMonitor, TEST_ACTIVITY_TIMEOUT_MILLIS)) {
-                "new document did not open HomeDocumentActivity"
-            }
-        removeMonitor(documentMonitor)
+        val activity = checkNotNull(currentActivity)
         currentActivity = activity
         waitForAccessibilityNode("rapid-back editor title") { node ->
             node.text?.toString() == TEST_NEW_DOCUMENT_LABEL
@@ -1224,24 +1218,8 @@ internal fun Instrumentation.verifyBackgroundSourceCheckpoint() {
         currentActivity = homeActivity
         waitForAccessibilityIdle()
 
-        val documentMonitor = addMonitor(HomeDocumentActivity::class.java.name, null, false)
-        runOnMainSync {
-            homeActivity.startActivity(
-                createSelectedDocumentSessionIntent(
-                    context = homeActivity,
-                    uri = document,
-                    mimeType = "text/plain",
-                    resultFlags =
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-            )
-        }
-        val activity =
-            checkNotNull(waitForMonitorWithTimeout(documentMonitor, TEST_ACTIVITY_TIMEOUT_MILLIS)) {
-                "selected source did not open HomeDocumentActivity"
-            }
-        removeMonitor(documentMonitor)
+        selectHomeSource(document)
+        val activity = homeActivity
         currentActivity = activity
         lifecycle.track(activity)
         waitForAccessibilityNode("background-autosave editor title") { node ->
@@ -1461,13 +1439,8 @@ internal fun Instrumentation.verifyEditorActivityRecreation() {
         waitForAccessibilityIdle()
 
         requireActionableText(TEST_OPEN_DOCUMENT_LABEL)
-        val documentMonitor = addMonitor(HomeDocumentActivity::class.java.name, null, false)
         requireActionableText(TEST_NEW_DOCUMENT_LABEL).performRequiredClick()
-        val activity =
-            checkNotNull(waitForMonitorWithTimeout(documentMonitor, TEST_ACTIVITY_TIMEOUT_MILLIS)) {
-                "new document did not open HomeDocumentActivity"
-            }
-        removeMonitor(documentMonitor)
+        val activity = checkNotNull(currentActivity)
         currentActivity = activity
         lifecycle.track(activity)
         waitForAccessibilityNode("new-document editor title") { node ->
@@ -1581,8 +1554,10 @@ internal fun Instrumentation.verifyScannerCameraOwnership() {
             )
         }
         scanner = startActivitySync(
-            createQrDocumentSessionIntent(targetContext).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            Intent(targetContext, HomeActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
         )
+        requireActionableText(TEST_SCAN_QR_LABEL).performRequiredClick()
         waitForAccessibilityNode("camera binding completed") { node ->
             node.findNode { child -> child.text?.toString() == TEST_SCANNER_TITLE } != null &&
                 node.findNode { child ->
@@ -1622,15 +1597,8 @@ internal fun Instrumentation.verifyScannerActivityRecreation() {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             }
         )
-        val monitor = addMonitor(HomeDocumentActivity::class.java.name, null, false)
-        val activity = try {
-            requireActionableText(TEST_SCAN_QR_LABEL).performRequiredClick()
-            checkNotNull(waitForMonitorWithTimeout(monitor, TEST_ACTIVITY_TIMEOUT_MILLIS)) {
-                "scanner Activity did not open"
-            }
-        } finally {
-            removeMonitor(monitor)
-        }
+        requireActionableText(TEST_SCAN_QR_LABEL).performRequiredClick()
+        val activity = checkNotNull(currentActivity)
         currentActivity = activity
         lifecycle.track(activity)
         waitForScanner()
@@ -1761,24 +1729,8 @@ internal fun Instrumentation.verifySourceIdentityRecreationPrivacy() {
         currentActivity = homeActivity
         waitForAccessibilityIdle()
 
-        val documentMonitor = addMonitor(HomeDocumentActivity::class.java.name, null, false)
-        runOnMainSync {
-            homeActivity.startActivity(
-                createSelectedDocumentSessionIntent(
-                    context = homeActivity,
-                    uri = document,
-                    mimeType = "text/plain",
-                    resultFlags =
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-            )
-        }
-        val activity =
-            checkNotNull(waitForMonitorWithTimeout(documentMonitor, TEST_ACTIVITY_TIMEOUT_MILLIS)) {
-                "source-identity document did not open HomeDocumentActivity"
-            }
-        removeMonitor(documentMonitor)
+        selectHomeSource(document)
+        val activity = homeActivity
         currentActivity = activity
         lifecycle.track(activity)
         waitForAccessibilityNode("source-identity editor title") { node ->
@@ -1888,7 +1840,7 @@ private class RecreationLifecycleCallbacks : Application.ActivityLifecycleCallba
         if (
             recreationStarted.get() &&
             activity !== trackedActivity.get() &&
-            activity is HomeDocumentActivity &&
+            activity is HomeActivity &&
             activity.resources.configuration.orientation != initialOrientation &&
             recreatedActivity.compareAndSet(null, activity)
         ) {
@@ -2144,7 +2096,7 @@ private fun Instrumentation.waitForActivityWindowFocus(activity: Activity) {
 }
 
 /** Waits until the selected Activity reports the expected IME visibility. */
-private fun Instrumentation.waitForImeVisibility(activity: Activity, visible: Boolean) {
+internal fun Instrumentation.waitForImeVisibility(activity: Activity, visible: Boolean) {
     val deadline = SystemClock.uptimeMillis() + TEST_ACTIVITY_TIMEOUT_MILLIS
     val observedVisibility = AtomicBoolean()
     while (SystemClock.uptimeMillis() < deadline) {

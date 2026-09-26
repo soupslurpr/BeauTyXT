@@ -893,6 +893,7 @@ class BeauTyXTSessionTest {
 
         assertSame(editor, session.editor)
         assertEquals(0, document.closeCallCount)
+        assertFalse(session.closeEditor(afterExit = true))
         assertTrue(session.cancelSaveDestination(DocumentFormat.PlainText))
 
         session.closeEditor()
@@ -964,6 +965,63 @@ class BeauTyXTSessionTest {
         session.onRetired()
 
         assertNull(session.editor)
+        assertEquals(1, document.closeCallCount)
+    }
+
+    /** Keeps a closing page readable until its exit completes and releases it once. */
+    @Test
+    fun keepsAClosingEditorAliveUntilEntryRetirement() {
+        val document = TestEditorDocument("still visible")
+        val source = TestDocumentSource(RETAINED_SOURCE_URI)
+        val editor = createEditor(document, "Selected document", source)
+        val session = BeauTyXTSession(
+            sessionDispatcher = ImmediateSessionTestDispatcher,
+            createEmptyEditor = { editor }
+        )
+        session.startNewDocument()
+        editor.openInitialEditor()
+
+        assertTrue(session.closeEditor(afterExit = true))
+        assertSame(editor, session.editor)
+        assertEquals("still visible", requireNotNull(editor.activeDraft).textFieldState.text.toString())
+        assertEquals(0, document.closeCallCount)
+        assertEquals(0, source.closeCallCount)
+
+        session.onExitedComposition()
+        session.onRetired()
+        session.onRetired()
+
+        assertNull(session.editor)
+        assertEquals(1, document.closeCallCount)
+        assertEquals(1, source.closeCallCount)
+    }
+
+    /** An animated discard must not retry a conflicted source on composition exit. */
+    @Test
+    fun retiringAnAnimatedDiscardDoesNotSaveTheDiscardedRevision() {
+        val document = TestEditorDocument("source")
+        val source = TestDocumentSource(
+            saveFailure = DocumentExportException(DocumentExportFailure.SOURCE_CONFLICT)
+        )
+        val editor = createConflictedEditor(document, source)
+        val session = BeauTyXTSession(
+            sessionDispatcher = ImmediateSessionTestDispatcher,
+            createEmptyEditor = { editor }
+        )
+        session.startNewDocument()
+        val saveCount = source.saveCallCount
+
+        assertTrue(session.closeEditor(afterExit = true))
+        session.checkpointPendingEdit()
+        session.onExitedComposition()
+        assertSame(editor, session.editor)
+        assertEquals(saveCount, source.saveCallCount)
+        assertEquals(0, document.closeCallCount)
+
+        session.onRetired()
+
+        assertEquals(saveCount, source.saveCallCount)
+        assertEquals(1, source.closeCallCount)
         assertEquals(1, document.closeCallCount)
     }
 
