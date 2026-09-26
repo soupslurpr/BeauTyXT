@@ -3,6 +3,9 @@ package dev.soupslurpr.beautyxt.ui.editor
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -27,12 +30,21 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.retain.retain
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -71,6 +83,11 @@ internal fun DocumentEditor(
     val state = session.state
     val activeDraft = session.activeDraft
     val context = LocalContext.current
+    var shortcutsVisible by remember(session) { mutableStateOf(false) }
+    if (shortcutsVisible) AlertDialog(onDismissRequest = { shortcutsVisible = false },
+        title = { Text(stringResource(R.string.document_keyboard_shortcuts)) },
+        text = { Text(stringResource(R.string.document_keyboard_shortcuts_body), Modifier.verticalScroll(rememberScrollState())) },
+        confirmButton = { TextButton({ shortcutsVisible = false }) { Text(stringResource(R.string.action_close)) } })
     val readyQrShare = session.qrShareStatus as? QrShareStatus.Ready
     val qrImageColors = scanSafeQrCodeColors(MaterialTheme.colorScheme)
     val qrImageExport = session.qrImageExport
@@ -117,12 +134,18 @@ internal fun DocumentEditor(
 
     val density = LocalDensity.current
     val windowSize = LocalWindowInfo.current.containerSize
+    val wideTools = with(density) { windowSize.width.toDp() } >= 840.dp
     val isImeVisible = WindowInsets.isImeVisible
     val imeBottomInsetPixels = WindowInsets.ime.getBottom(density)
     val imeTargetBottomInsetPixels = WindowInsets.imeAnimationTarget.getBottom(density)
     val imeBackReservation = remember { ImeBackReservation() }
     var isOverflowExpanded by remember { mutableStateOf(false) }
     var activeSheet by retain(session) { mutableStateOf<DocumentToolSheet?>(null) }
+    var contentsOpenedAtFindReveal by retain(session) { mutableLongStateOf(0L) }
+    val requestContents = {
+        contentsOpenedAtFindReveal = session.findRevealRequest
+        activeSheet = DocumentToolSheet.Contents
+    }
     val readyPreview = session.markdownPreviewStatus as? MarkdownPreviewStatus.Ready
     val outlineEnabled = readyPreview != null && readyPreview.scrollRestoration == null &&
         session.canShowTextEditor && !session.isSaveBusy && !session.isShareBusy &&
@@ -145,6 +168,25 @@ internal fun DocumentEditor(
     val useInlineFindStatus = session.isFindVisible && useLandscapeImeLayout
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    val documentFocus = remember(session) { DocumentFocus() }
+    var restoreFocusAfterFind by remember(session) { mutableStateOf(false) }
+    LaunchedEffect(session, session.isFindVisible) {
+        val restore = restoreFocusAfterFind && !session.isFindVisible
+        restoreFocusAfterFind = session.isFindVisible
+        if (restore) documentFocus.request { !session.isFindVisible }
+    }
+    LaunchedEffect(session, session.findRevealRequest, session.findFocusRequest) {
+        if (session.consumeFindReveal()) {
+            focusManager.clearFocus(force = true)
+            softwareKeyboardController?.hide()
+            // A later tool choice wins over a match's deferred focus/scroll effect.
+            if (activeSheet == DocumentToolSheet.Contents && contentsOpenedAtFindReveal < session.findRevealRequest) activeSheet = null
+            if (with(density) { windowSize.width.toDp() } < 840.dp) {
+                session.collapseFindResultsForNavigation()
+            }
+            documentFocus.request { session.findInputFocus == FindInputFocus.Document }
+        }
+    }
     val requestSend = {
         if (sendEnabled) {
             session.flushPendingEdit()
@@ -275,6 +317,8 @@ internal fun DocumentEditor(
 
             session.isFindVisible -> closeFind()
 
+            session.documentSelection != null -> session.clearDocumentSelection()
+
             session.returnsToSourceOnBack -> requestTextEditor()
 
             session.isSourceReloading -> Unit
@@ -344,6 +388,7 @@ internal fun DocumentEditor(
             session.saveStatus is SaveStatus.ChoosingFormat -> false
             readyQrShare != null -> false
             session.isFindVisible -> false
+            session.documentSelection != null -> false
             session.returnsToSourceOnBack -> false
             session.isSourceReloading -> false
             session.isClosePending -> false
@@ -364,7 +409,7 @@ internal fun DocumentEditor(
         state = predictiveBackState,
         enabled = !navigationCanClose,
         interceptBackAtStart = {
-            imeBackReservation.tryClaim(
+            session.documentSelection == null && imeBackReservation.tryClaim(
                 isImeVisible = isImeVisible,
                 imeBottomInsetPixels = imeBottomInsetPixels,
                 imeTargetBottomInsetPixels = imeTargetBottomInsetPixels
@@ -415,6 +460,25 @@ internal fun DocumentEditor(
         modifier =
             modifier
                 .fillMaxSize()
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) false else when {
+                        event.isCtrlPressed && event.isAltPressed && event.key == Key.DirectionLeft -> {
+                            session.returnToDocumentLocation(false); true
+                        }
+                        event.isCtrlPressed && event.isAltPressed && event.key == Key.DirectionRight -> {
+                            session.returnToDocumentLocation(true); true
+                        }
+                        event.isCtrlPressed && event.key == Key.F -> { session.showFind(showKeyboard = false); true }
+                        event.isCtrlPressed && event.key == Key.H -> { session.showFind(showKeyboard = false); session.showReplace(); true }
+                        event.isCtrlPressed && event.key == Key.G -> { requestGoToLine(); true }
+                        event.key == Key.F3 -> {
+                            if (event.isShiftPressed) session.findPrevious() else session.findNext(); true
+                        }
+                        event.key == Key.Escape && session.isFindVisible -> { closeFind(); true }
+                        event.key == Key.Escape && session.documentSelection != null -> { session.clearDocumentSelection(); true }
+                        else -> false
+                    }
+                }
                 .then(
                     if (
                         !hasNavigationHost && usesEditorPredictiveBackMotion(
@@ -459,11 +523,12 @@ internal fun DocumentEditor(
                             session = session,
                             actions = EditorNavigationActions(
                                 onFind = requestFind,
-                                onContents = { activeSheet = DocumentToolSheet.Contents },
+                                onContents = requestContents,
                                 onGoToLine = requestGoToLine,
                                 onFileInfo = requestFileInfo,
                                 onScanQr = onScanQr,
-                                onReadNfc = onReadNfc
+                                onReadNfc = onReadNfc,
+                                onKeyboardShortcuts = { shortcutsVisible = true }
                             ),
                             scanQrEnabled = scanQrEnabled && session.canStartQrScan,
                             readNfcEnabled = readNfcEnabled && session.canStartNfcRead,
@@ -480,14 +545,43 @@ internal fun DocumentEditor(
                     }
                 }
             }
-            EditorBody(
-                session = session,
-                activeDraft = activeDraft,
-                onSaveAsNewFile = requestSave,
-                onRestartExplicitSave = restartExplicitSave,
-                modifier = Modifier.weight(1f)
-            )
-            if (!useImeFocusLayout && !session.isFindVisible && state.metrics != null) {
+            EditorLocationControls(session)
+            BoxWithConstraints(Modifier.weight(1f)) {
+                val wideFind = maxWidth >= 840.dp
+                val contentsPane = activeSheet == DocumentToolSheet.Contents && readyPreview != null
+                if (wideFind && (contentsPane || session.isFindVisible && session.isFindResultsExpanded)) {
+                        Row(Modifier.fillMaxSize()) {
+                            EditorBody(session, activeDraft, requestSave, restartExplicitSave, Modifier.weight(1f), documentFocus)
+                            Column(Modifier.width(380.dp)) {
+                                FlowRow {
+                                    TextButton(onClick = requestContents, enabled = readyPreview != null) {
+                                        Text(stringResource(R.string.outline_title))
+                                    }
+                                    TextButton(onClick = {
+                                        activeSheet = null
+                                        if (!session.isFindVisible) session.showFind(showKeyboard = false)
+                                        session.updateFindResultsExpanded(true)
+                                    }) { Text(stringResource(R.string.find_results)) }
+                                    TextButton(onClick = { activeSheet = null; session.updateFindResultsExpanded(false) }) {
+                                        Text(stringResource(R.string.action_close))
+                                    }
+                                }
+                                if (contentsPane) DocumentOutlineContent(session.title, readyPreview.layout.outline,
+                                    session.markdownPreviewListState, { session.navigateToHeading(readyPreview.revision, it) }, Modifier.weight(1f))
+                                else EditorFindResults(session, wide = true, Modifier.weight(1f))
+                            }
+                        }
+                } else if (session.isFindVisible && session.isFindResultsExpanded) {
+                    if (!session.isReplaceVisible && maxHeight >= 500.dp) {
+                        Column(Modifier.fillMaxSize()) {
+                            EditorBody(session, activeDraft, requestSave, restartExplicitSave, Modifier.weight(0.4f), documentFocus)
+                            EditorFindResults(session, wide = false, Modifier.weight(0.6f))
+                        }
+                    } else EditorFindResults(session, wide = false, Modifier.fillMaxSize())
+                } else EditorBody(session, activeDraft, requestSave, restartExplicitSave, Modifier.fillMaxSize(), documentFocus)
+            }
+            if (session.documentSelection != null) DocumentSelectionActions(session)
+            else if (!useImeFocusLayout && !session.isFindVisible && state.metrics != null) {
                 EditorActionBar(
                     session = session,
                     onPreview = requestPreview,
@@ -545,7 +639,7 @@ internal fun DocumentEditor(
             onDismiss = { activeSheet = null }
         )
     }
-    if (activeSheet == DocumentToolSheet.Contents && readyPreview != null) {
+    if (!wideTools && activeSheet == DocumentToolSheet.Contents && readyPreview != null) {
         DocumentOutlineSheet(
             title = session.title,
             entries = readyPreview.layout.outline,
@@ -560,6 +654,7 @@ internal fun DocumentEditor(
     if (session.isPrintSetupVisible) {
         PrintSetupSheet(session)
     }
+    ExcerptExportSheet(session.excerptExport, writeNfcEnabled)
     session.sourceConflictResolution?.let { resolution ->
         SourceConflictConfirmationDialog(
             resolution = resolution,

@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.illustration.IllustrationColors
 import dev.soupslurpr.beautyxt.illustration.IllustrationDrawing
 import dev.soupslurpr.beautyxt.illustration.IllustrationKind
@@ -60,7 +61,9 @@ internal fun markdownIllustrationContent(
     spans: List<MarkdownInlineSpan>,
     style: TextStyle,
     fontFamily: FontFamily?,
-    fontWeight: FontWeight?
+    fontWeight: FontWeight?,
+    sourceSpans: List<MarkdownInlineSpan> = spans,
+    renderedOffsetBase: Int = 0
 ): Map<String, InlineTextContent> {
     if (spans.none { it.illustration is IllustrationResult.Rendered }) return emptyMap()
     val typeface = LocalFontFamilyResolver.current.resolve(
@@ -80,15 +83,31 @@ internal fun markdownIllustrationContent(
     val linkColor = scheme.primary.toArgb()
     val diagramSurface = scheme.surfaceContainerLow.toArgb()
     val diagramWidth = LocalMarkdownDiagramWidth.current
-    return remember(spans, typeface, fontSize, colors, linkColor, diagramSurface, diagramWidth) {
+    val block = LocalMarkdownPreviewBlockIndex.current
+    val highlights = LocalIllustrationFindHighlights.current.filter { it.target.block == block }
+    val selection = LocalDocumentSelectionLayout.current?.session?.documentSelection
+    val activeHighlight = scheme.primary.copy(alpha = .32f)
+    val otherHighlight = scheme.tertiary.copy(alpha = .18f)
+    return remember(spans, sourceSpans, renderedOffsetBase, typeface, fontSize, colors, linkColor, diagramSurface, diagramWidth, highlights, selection) {
         val metrics = Paint().apply {
             this.typeface = typeface
             textSize = fontSize
         }.fontMetricsInt
         buildMap {
-            spans.forEach { span ->
-                val rendered = span.illustration as? IllustrationResult.Rendered ?: return@forEach
+            spans.forEachIndexed { spanIndex, span ->
+                val rendered = span.illustration as? IllustrationResult.Rendered ?: return@forEachIndexed
+                val source = sourceSpans[spanIndex]
+                val marked = highlights.filter { it.target.start == source.start + renderedOffsetBase &&
+                    it.target.end == source.end + renderedOffsetBase }
                 val drawing = rendered.drawing
+                val start = source.start + renderedOffsetBase
+                val end = source.end + renderedOffsetBase
+                val wholeSelected = block != null && selection is DocumentSelection.Reading &&
+                    selection.start <= ReadingPoint(block, start) && selection.end >= ReadingPoint(block, end)
+                val selectedBoxes = if (selection is DocumentSelection.Label && selection.block == block && selection.spanStart == start)
+                    drawing.textRuns.getOrNull(selection.run)?.boxes.orEmpty().filter {
+                        it.start < selection.range.max && it.end > selection.range.min
+                    } else emptyList()
                 val diagram = rendered.kind == IllustrationKind.Diagram
                 // Edge-label cutouts must match the code card, not the page behind it.
                 val spanColors = colors.copy(
@@ -120,6 +139,30 @@ internal fun markdownIllustrationContent(
                                 geometry.scale,
                                 spanColors
                             )
+                            if (wholeSelected) drawRect(activeHighlight,
+                                androidx.compose.ui.geometry.Offset(0f, geometry.top),
+                                androidx.compose.ui.geometry.Size(drawing.width * geometry.scale, drawing.height * geometry.scale),
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+                            selectedBoxes.forEach { box ->
+                                drawRect(activeHighlight,
+                                    androidx.compose.ui.geometry.Offset(box.left * geometry.scale, geometry.top + box.top * geometry.scale),
+                                    androidx.compose.ui.geometry.Size((box.right - box.left) * geometry.scale, (box.bottom - box.top) * geometry.scale))
+                            }
+                            marked.sortedBy { it.current }.forEach { match ->
+                                val color = if (match.current) activeHighlight else otherHighlight
+                                if (match.target.run == null) {
+                                    drawRect(color, androidx.compose.ui.geometry.Offset(0f, geometry.top),
+                                        androidx.compose.ui.geometry.Size(drawing.width * geometry.scale, drawing.height * geometry.scale),
+                                        style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+                                } else match.target.boxes.forEach { box ->
+                                    val left = box.left.coerceIn(0f, drawing.width) * geometry.scale
+                                    val right = box.right.coerceIn(0f, drawing.width) * geometry.scale
+                                    val top = geometry.top + box.top.coerceIn(0f, drawing.height) * geometry.scale
+                                    val bottom = geometry.top + box.bottom.coerceIn(0f, drawing.height) * geometry.scale
+                                    drawRect(color, androidx.compose.ui.geometry.Offset(left, top),
+                                        androidx.compose.ui.geometry.Size(right - left, bottom - top))
+                                }
+                            }
                         }
                     }
                 )

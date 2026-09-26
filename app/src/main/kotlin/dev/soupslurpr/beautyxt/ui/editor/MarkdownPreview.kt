@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
@@ -64,6 +65,9 @@ import dev.soupslurpr.beautyxt.markdown.sourceUtf16OffsetForRendered
 import dev.soupslurpr.beautyxt.ui.asString
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -100,7 +104,8 @@ internal data class MarkdownPreviewTextMeasurement(
     val sourceSpans: List<MarkdownInlineSpan>,
     val footnotePresentation: MarkdownInlinePresentation?,
     val layoutResult: TextLayoutResult,
-    val topInWindowPixels: Int
+    val topInWindowPixels: Int,
+    val bringIntoViewRequester: BringIntoViewRequester
 ) {
     /** Maps one displayed layout caret into the renderer's block text. */
     fun renderedUtf16OffsetForPresentation(presentationUtf16Offset: Int): Int {
@@ -257,8 +262,12 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                 status.layout.illustrationCache,
                 session.markdownPreviewListState,
                 navigationState,
-                previewItems
+                previewItems,
+                searching = session.isFindVisible && session.findFieldValue.text.isNotEmpty()
             )
+            LaunchedEffect(status.revision, illustrationResults.results) {
+                session.onReadingIllustrationsChanged(status.revision)
+            }
             val restorationItemIndex =
                 remember(previewItems, restorationPosition) {
                     restorationPosition?.let { position ->
@@ -295,10 +304,14 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                 try {
                     session.markdownPreviewListState.scrollToItem(itemIndex)
                     withFrameNanos { _ -> }
+                    val matchSegment = session.findResults.getOrNull(session.findResultIndex)
+                        ?.takeIf { session.isFindVisible && it.navigationOffset == restoration.sourceUtf16Offset }
+                        ?.segments?.firstOrNull()
                     val measurement =
                         withTimeoutOrNull(MARKDOWN_PREVIEW_RESTORATION_TIMEOUT_MILLIS) {
                             snapshotFlow {
-                                navigationState.measurementForSource(restoration.sourceUtf16Offset)
+                                matchSegment?.let { navigationState.measurementFor(it.block, it.blockStart) }
+                                    ?: navigationState.measurementForSource(restoration.sourceUtf16Offset)
                                     ?: navigationState.measurementFor(
                                         blockIndex = position.blockIndex,
                                         renderedUtf16Offset = position.renderedUtf16Offset
@@ -309,19 +322,20 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                     val isDocumentStart =
                         restoration.sourceUtf16Offset == 0L &&
                             restoration.viewportTopOffsetPixels >= 0
+                    val presentationOffset = measurement?.let {
+                        val part = matchSegment?.takeIf { part -> part.block == it.key.blockIndex }
+                        val rendered = part?.blockStart ?: it.block.renderedUtf16OffsetForSource(restoration.sourceUtf16Offset)
+                        (it.presentationUtf16OffsetForRendered(rendered) + (part?.markerStart ?: 0))
+                            .coerceIn(0, it.layoutResult.layoutInput.text.length)
+                    }
                     if (
                         !isDocumentStart &&
                         measurement != null &&
+                        presentationOffset != null &&
                         navigationState.hasRootPosition &&
                         !session.markdownPreviewListState.isScrollInProgress &&
                         measurement.layoutResult.size.height > 0
                     ) {
-                        val presentationOffset =
-                            measurement.presentationUtf16OffsetForRendered(
-                                measurement.block.renderedUtf16OffsetForSource(
-                                    restoration.sourceUtf16Offset
-                                )
-                            )
                         val line =
                             measurement.layoutResult.getLineForOffset(presentationOffset)
                         val currentLineTop =
@@ -340,6 +354,28 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                             Math.subtractExact(currentLineTop, targetLineTop).toFloat()
                         )
                     }
+                    if (measurement != null && presentationOffset != null &&
+                        !session.markdownPreviewListState.isScrollInProgress) {
+                        // Reveal the first displayed line of this match inside every nested
+                        // scroller, including wide code and table cells. Run only for a new
+                        // navigation request, so typing or recomposition never moves the page.
+                        val layout = measurement.layoutResult
+                        val line = layout.getLineForOffset(presentationOffset)
+                        val end = matchSegment?.takeIf { it.block == measurement.key.blockIndex }?.let {
+                            measurement.presentationUtf16OffsetForRendered(it.blockEnd) + it.markerEnd
+                        }?.coerceIn(presentationOffset, layout.getLineEnd(line)) ?: presentationOffset
+                        val rectangle = if (end > presentationOffset) layout.getPathForRange(presentationOffset, end).getBounds()
+                            else layout.getCursorRect(presentationOffset)
+                        withFrameNanos { }
+                        withTimeoutOrNull(MARKDOWN_PREVIEW_RESTORATION_TIMEOUT_MILLIS) {
+                            measurement.bringIntoViewRequester.bringIntoView(rectangle)
+                        }
+                    }
+                } catch (cancelled: CancellationException) {
+                    // A newer gesture or focus reveal can interrupt the nested scroller.
+                    // Consume that interrupted request, but let a replaced composition
+                    // continue the same pending restoration in its new layout.
+                    currentCoroutineContext().ensureActive()
                 } finally {
                     restorationComplete = true
                 }
@@ -394,11 +430,7 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                                         linkDialogState =
                                             MarkdownLinkDialogState.MissingHeading(action.fragment)
                                     } else {
-                                        coroutineScope.launch {
-                                            session.markdownPreviewListState.animateScrollToItem(
-                                                itemIndex
-                                            )
-                                        }
+                                        session.navigateToReadingBlock(status.revision, previewItems[itemIndex].firstBlockIndex)
                                     }
                                 }
 
@@ -424,23 +456,23 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                                 linkDialogState =
                                     MarkdownLinkDialogState.MissingFootnote(interaction.label)
                             } else {
-                                coroutineScope.launch {
-                                    session.markdownPreviewListState.animateScrollToItem(itemIndex)
-                                }
+                                session.navigateToReadingBlock(status.revision, previewItems[itemIndex].firstBlockIndex)
                             }
                         }
 
                         is MarkdownInlineInteraction.FootnoteDefinition -> {
                             val itemIndex = footnoteTargets.references[interaction.label]
                             if (itemIndex != null && itemIndex != sourceItemIndex) {
-                                coroutineScope.launch {
-                                    session.markdownPreviewListState.animateScrollToItem(itemIndex)
-                                }
+                                session.navigateToReadingBlock(status.revision, previewItems[itemIndex].firstBlockIndex)
                             }
                         }
                     }
                 }
             CompositionLocalProvider(
+                LocalReadingFindHighlights provides readingFindHighlights(session),
+                LocalIllustrationFindHighlights provides session.findResults.mapIndexedNotNull { index, result ->
+                    result.illustration?.let { IllustrationFindHighlight(it, index == session.findResultIndex) }
+                },
                 LocalMarkdownFootnoteNumbers provides footnoteTargets.numbers,
                 LocalMarkdownPreviewNavigationState provides navigationState,
                 LocalMarkdownCodeCopies provides status.layout.codeCopies

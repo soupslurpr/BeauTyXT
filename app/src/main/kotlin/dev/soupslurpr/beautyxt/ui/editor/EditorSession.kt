@@ -3,6 +3,7 @@ package dev.soupslurpr.beautyxt.ui.editor
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -10,14 +11,20 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.document.DocumentFormat
+import dev.soupslurpr.beautyxt.document.DocumentPatch
+import dev.soupslurpr.beautyxt.document.DocumentSearch
+import dev.soupslurpr.beautyxt.document.SearchOptions
+import dev.soupslurpr.beautyxt.document.SearchCursor
+import dev.soupslurpr.beautyxt.document.SearchCompletion
+import dev.soupslurpr.beautyxt.document.MAX_SEARCH_RESULTS
+import dev.soupslurpr.beautyxt.document.MAX_REPLACEMENT_HISTORY_UNITS
+import dev.soupslurpr.beautyxt.document.inversePatches
 import dev.soupslurpr.beautyxt.document.DocumentRemovalAction
 import dev.soupslurpr.beautyxt.document.DocumentRemovalCapabilities
 import dev.soupslurpr.beautyxt.document.EditorDocument
 import dev.soupslurpr.beautyxt.document.EditorDocumentSnapshot
 import dev.soupslurpr.beautyxt.document.FindDirection
 import dev.soupslurpr.beautyxt.document.FindMatch
-import dev.soupslurpr.beautyxt.document.FindRequest
-import dev.soupslurpr.beautyxt.document.MAX_FIND_CANDIDATE_UTF16_UNITS
 import dev.soupslurpr.beautyxt.document.MAX_FIND_QUERY_UTF16_UNITS
 import dev.soupslurpr.beautyxt.document.Utf16Range
 import dev.soupslurpr.beautyxt.document.hasWellFormedUtf16
@@ -57,6 +64,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -69,7 +77,6 @@ import kotlinx.coroutines.yield
 
 private const val FIRST_SAVE_GENERATION = 1L
 private const val FIRST_EDIT_WINDOW_ACTION_TOKEN = 1L
-private const val FIRST_FIND_REQUEST_GENERATION = 1L
 private const val FIRST_MARKDOWN_PREVIEW_GENERATION = 1L
 private const val FIRST_SHARE_GENERATION = 1L
 private const val FIRST_PRINT_GENERATION = 1L
@@ -266,24 +273,6 @@ private data class PendingSourceReplacementEditTarget(
     init {
         require(saveGeneration > 0L) { "source replacement generation must be positive" }
     }
-}
-
-/** Stores one directional candidate range and whether reaching it wrapped. */
-private data class FindCandidatePhase(val range: Utf16Range, val wrappedAt: FindWrap?)
-
-/** Describes one terminal traversal across a single Find candidate phase. */
-private sealed interface FindPhaseResult {
-    /** Contains one exact match returned by a bounded batch. */
-    data class Matched(val match: FindMatch) : FindPhaseResult
-
-    /** Indicates that this candidate phase contains no match. */
-    data object Exhausted : FindPhaseResult
-
-    /** Indicates that the current editor state no longer accepts the request. */
-    data object Unavailable : FindPhaseResult
-
-    /** Contains one sanitized bounded-search failure. */
-    data class Failed(val message: UiText) : FindPhaseResult
 }
 
 /** Identifies one exact system destination-picker launch. */
@@ -516,7 +505,8 @@ internal sealed interface NfcWriteStatus {
         val envelope: NfcTransferEnvelope,
         val textBytes: Long,
         val format: DocumentFormat,
-        val tagLabel: String?
+        val tagLabel: String?,
+        val armedOnOpen: Boolean = false
     ) : NfcWriteStatus {
         init {
             require(generation > 0L) { "NFC write generation must be positive" }
@@ -602,7 +592,8 @@ internal constructor(
     private val sharedTextReader: suspend (EditorDocumentSnapshot, Long) -> String =
         ::readSharedTextSnapshot,
     private val qrTransferProcessor: QrTransferProcessor? = null,
-    private val nfcTransferProcessor: NfcTransferProcessor? = null
+    private val nfcTransferProcessor: NfcTransferProcessor? = null,
+    private val findNanoTime: () -> Long = System::nanoTime
 ) : AutoCloseable {
     init {
         require(
@@ -614,10 +605,20 @@ internal constructor(
 
     private val closeStarted = AtomicBoolean(false)
     private var shouldOpenInitialPreview = initialPresentation == EditorPresentation.MarkdownPreview
+    private var reopenFindAfterInitialLoad = false
     private var previewReturnsToSource by mutableStateOf(true)
     private val operationScope =
         CoroutineScope(SupervisorJob() + operationDispatcher)
     val qrImageExport = QrImageExportController(operationScope, ::matchesDocumentSourceUri)
+    val excerptExport = ExcerptExportController(operationScope, ::captureSelectionExcerpt,
+        { state.metrics?.revision.takeUnless { state.hasActiveDraftChanges || closeStarted.get() } },
+        ::matchesDocumentSourceUri, markdownRenderer, qrTransferProcessor, nfcTransferProcessor,
+        showQr = { grid, bytes, format ->
+            qrShareStatus = QrShareStatus.Ready(nextQrShareGeneration++, grid, bytes, format)
+        },
+        writeNfc = { envelope, bytes, format, label ->
+            nfcWriteStatus = NfcWriteStatus.Ready(nextNfcWriteGeneration++, envelope, bytes, format, label, armedOnOpen = true)
+        })
     private var nextSaveGeneration = FIRST_SAVE_GENERATION
     private var activeSaveGeneration: Long? = null
     private var activeSaveJob: Job? = null
@@ -628,13 +629,13 @@ internal constructor(
     private var pendingMarkdownPreviewReturnTarget: MarkdownPreviewReturnTarget? = null
     private val history = EditorHistory()
     private var historyVersion by mutableLongStateOf(0L)
-    private var nextFindRequestGeneration = FIRST_FIND_REQUEST_GENERATION
-    private var activeFindRequestGeneration: Long? = null
     private var findJob: Job? = null
     private var nextMarkdownPreviewGeneration = FIRST_MARKDOWN_PREVIEW_GENERATION
     private var activeMarkdownPreviewGeneration: Long? = null
     private var markdownPreviewJob: Job? = null
     private var markdownPreviewReturnTarget: MarkdownPreviewReturnTarget? = null
+    private var pendingReadingLocation: DocumentLocation? = null
+    private var pendingReadingSelection: DocumentSelection.Source? = null
     private var sourceViewportNavigationPending by mutableStateOf(false)
     private var nextShareGeneration = FIRST_SHARE_GENERATION
     private var sharePreparationJob: Job? = null
@@ -692,6 +693,13 @@ internal constructor(
 
     var findFieldValue by mutableStateOf(TextFieldValue())
         private set
+    var findFocusRequest by mutableLongStateOf(0L)
+        private set
+    var findRequestsKeyboard by mutableStateOf(true)
+        private set
+    var findInputFocus by mutableStateOf(FindInputFocus.Query)
+        private set
+    private var findFocusIntentVersion = 0L
 
     var isFindCaseSensitive by mutableStateOf(false)
         private set
@@ -701,6 +709,306 @@ internal constructor(
 
     var findMatch by mutableStateOf<FindMatch?>(null)
         private set
+
+    var findResults by mutableStateOf<List<DocumentSearchResult>>(emptyList())
+        private set
+    var findResultIndex by mutableIntStateOf(-1)
+        private set
+    var findRevealRequest by mutableLongStateOf(0L)
+        private set
+    private var handledFindRevealRequest = 0L
+    private var findRevealFocusIntent = 0L
+    private var findResultsOpenedAtReveal = 0L
+    var isFindComplete by mutableStateOf(false)
+        private set
+    private data class FindContinuation(val unit: Int, val cursor: SearchCursor, val replaceResults: Boolean)
+    private var findContinuation by mutableStateOf<FindContinuation?>(null)
+    var hasEarlierFindResults by mutableStateOf(false)
+        private set
+    val canContinueFind get() = findContinuation != null && findStatus != FindStatus.Searching
+    var findCoverageMessage by mutableStateOf<UiText?>(null)
+        private set
+    var isFindRegex by mutableStateOf(false)
+        private set
+    var isFindWholeWord by mutableStateOf(false)
+        private set
+    var includeIllustrationSource by mutableStateOf(false)
+        private set
+    var documentSelection by mutableStateOf<DocumentSelection?>(null)
+        private set
+    var selectionMessage by mutableStateOf<UiText?>(null)
+        private set
+    private var sourceFieldSelection: DocumentSelection.Source? = null
+    private var observedIllustrationRevision = -1L
+    private var observedIllustrationVersion = -1L
+
+    private var selectionReadingCache: Triple<dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument, Long, dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument>? = null
+
+    fun readingDocumentForSelection(): dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument? {
+        val ready = (markdownPreviewStatus as? MarkdownPreviewStatus.Ready)
+            ?.takeIf { it.revision == state.metrics?.revision } ?: return null
+        val version = ready.layout.illustrationCache.version
+        selectionReadingCache?.takeIf { it.first === ready.document && it.second == version }?.let { return it.third }
+        val cache = ready.layout.illustrationCache.snapshot()
+        return ready.document.copy(blocks = ready.document.blocks.indices.map { index ->
+            ready.layout.illustrations.decorate(index) { request -> cache[request]
+                ?: dev.soupslurpr.beautyxt.illustration.IllustrationResult.Pending(request.kind) }
+        }).also { selectionReadingCache = Triple(ready.document, version, it) }
+    }
+
+    fun selectReading(anchor: ReadingPoint, focus: ReadingPoint): Boolean {
+        val revision = state.metrics?.revision ?: return false
+        val document = readingDocumentForSelection() ?: return false
+        if (anchor.block !in document.blocks.indices || focus.block !in document.blocks.indices) return false
+        val forward = anchor <= focus
+        val first = atomicReadingPoint(document, anchor, ending = !forward)
+        val last = atomicReadingPoint(document, focus, ending = forward)
+        if (first == last) return false
+        documentSelection = DocumentSelection.Reading(revision, first, last)
+        selectionMessage = null
+        return true
+    }
+
+    fun selectSource(anchor: Long, focus: Long): Boolean {
+        val metrics = state.metrics ?: return false
+        if (state.hasActiveDraftChanges || anchor !in 0..metrics.utf16Length || focus !in 0..metrics.utf16Length || anchor == focus) return false
+        documentSelection = DocumentSelection.Source(metrics.revision, anchor, focus)
+        selectionMessage = null
+        return true
+    }
+
+    fun selectDiagramLabel(block: Int, start: Int, run: Int): Boolean {
+        val document = readingDocumentForSelection() ?: return false
+        val span = document.blocks.getOrNull(block)?.spans?.firstOrNull { it.start == start } ?: return false
+        val drawing = (span.illustration as? dev.soupslurpr.beautyxt.illustration.IllustrationResult.Rendered)
+            ?.takeIf { it.kind == dev.soupslurpr.beautyxt.illustration.IllustrationKind.Diagram }?.drawing ?: return false
+        val label = drawing.textRuns.getOrNull(run) ?: return false
+        documentSelection = DocumentSelection.Label(state.metrics!!.revision, block, start, run, label.text)
+        selectionMessage = null
+        return true
+    }
+
+    fun updateLabelSelection(range: androidx.compose.ui.text.TextRange) {
+        val label = documentSelection as? DocumentSelection.Label ?: return
+        if (range.min >= 0 && range.max <= label.text.length && !range.collapsed)
+            documentSelection = label.copy(range = range)
+    }
+
+    fun clearDocumentSelection() {
+        val fieldSelection = sourceFieldSelection
+        if (fieldSelection != null && documentSelection == fieldSelection) {
+            activeDraft?.let { draft ->
+                if (!draft.textFieldState.selection.collapsed) draft.textFieldState.edit {
+                    selection = androidx.compose.ui.text.TextRange(selection.end)
+                }
+            }
+        }
+        sourceFieldSelection = null
+        documentSelection = null
+        selectionMessage = null
+    }
+
+    val canEditDocumentSelection: Boolean get() = documentSelection is DocumentSelection.Source &&
+        documentSelection?.revision == state.metrics?.revision && !isViewOnly &&
+        presentation == EditorPresentation.Text && !state.hasActiveDraftChanges &&
+        state.status == EditorDocumentStatus.Ready && !isSaveBusy && !isSourceReloading
+
+    /** Edits a global source selection as one validated, undoable document action. */
+    fun replaceSelectedSource(inserted: String, copyRemoved: ((String) -> Unit)? = null): Boolean {
+        if (!canEditDocumentSelection) return false
+        val selected = documentSelection as? DocumentSelection.Source ?: return false
+        val normalized = inserted.replace("\r\n", "\n").replace('\r', '\n')
+        if (selected.range.end - selected.range.start + normalized.length > MAX_REPLACEMENT_HISTORY_UNITS) {
+            selectionMessage = UiText.Resource(R.string.replace_undo_limit)
+            return false
+        }
+        var patches: List<DocumentPatch> = emptyList()
+        var outcome: DocumentReplacementResult = DocumentReplacementResult.Unavailable
+        val caret = selected.range.start + normalized.length
+        val after = Utf16Range(caret, caret)
+        launchOperation(operation = { state ->
+            try {
+                val removed = state.readSourceRange(selected.revision, selected.range)
+                if (selected != documentSelection || !canEditDocumentSelection) return@launchOperation
+                patches = listOf(DocumentPatch(selected.range, removed, normalized))
+                if (!history.canRetain(patches)) {
+                    selectionMessage = UiText.Resource(R.string.replace_undo_limit)
+                    return@launchOperation
+                }
+                if (copyRemoved != null) {
+                    if (removed.toByteArray().size > 128 * 1024) {
+                        selectionMessage = UiText.Resource(R.string.selection_output_failed)
+                        return@launchOperation
+                    }
+                    copyRemoved(removed)
+                }
+                outcome = state.replaceDocumentBatch(selected.revision, patches, after)
+            } catch (cancel: CancellationException) { throw cancel }
+            catch (_: Exception) { selectionMessage = UiText.Resource(R.string.operation_apply_change_failed) }
+        }, requestDraftFocus = false, onCompletion = {
+            when (val result = outcome) {
+                is DocumentReplacementResult.Applied -> {
+                    val patch = patches.single()
+                    recordCommittedEdit(CommittedEditDelta(selected.revision, result.revision, patch.range.start,
+                        patch.removed, patch.inserted, selected.range, after, patches))
+                    clearDocumentSelection()
+                    invalidateMarkdownPreview()
+                    recordSourceSaveRequest()
+                }
+                DocumentReplacementResult.RejectedBySizeLimit -> selectionMessage = UiText.Resource(R.string.operation_save_document_too_large)
+                else -> if (selectionMessage == null) selectionMessage = UiText.Resource(R.string.operation_apply_change_failed)
+            }
+        })
+        return true
+    }
+
+    /** Provider reload carries editable inputs only; all content-bound state belongs to the new session. */
+    fun inheritFindInputs(previous: EditorSession) {
+        findFieldValue = previous.findFieldValue
+        replacementFieldValue = previous.replacementFieldValue
+        isFindCaseSensitive = previous.isFindCaseSensitive
+        isFindWholeWord = previous.isFindWholeWord
+        isFindRegex = previous.isFindRegex
+        includeIllustrationSource = previous.includeIllustrationSource
+        if (previous.isFindVisible) {
+            reopenFindAfterInitialLoad = !showFind(showKeyboard = false)
+        }
+    }
+
+    fun selectWholeDocument(): Boolean {
+        val metrics = state.metrics ?: return false
+        return if (presentation == EditorPresentation.MarkdownPreview) {
+            val blocks = readingDocumentForSelection()?.blocks ?: return false
+            val last = blocks.indexOfLast { !it.illustrationContinuation && it.text.isNotEmpty() }
+            if (last < 0) false else selectReading(ReadingPoint(0, -readingListPrefix(blocks[0]).length), ReadingPoint(last, blocks[last].text.length))
+        } else selectSource(0, metrics.utf16Length)
+    }
+
+    fun extendSelectionParagraph(forward: Boolean): Boolean {
+        val selection = documentSelection as? DocumentSelection.Reading ?: return false
+        val blocks = readingDocumentForSelection()?.blocks ?: return false
+        return selectReading(selection.anchor, readingAdjacentParagraphBoundary(blocks, selection.focus, forward))
+    }
+
+    fun captureCurrentSourceSelection(): Boolean {
+        val draft = activeDraft ?: return false
+        val range = draft.textFieldState.selection
+        return selectSource(draft.edit.snapshot.range.start + range.start, draft.edit.snapshot.range.start + range.end)
+    }
+
+    suspend fun selectedPlainText(maximumBytes: Int): String {
+        val selected = documentSelection ?: throw IllegalStateException("No selection")
+        check(selected.revision == state.metrics?.revision && !state.hasActiveDraftChanges)
+        return when (selected) {
+            is DocumentSelection.Source -> {
+                if (selected.range.end - selected.range.start > maximumBytes) throw SelectionLimitException()
+                val text = state.readSourceRange(selected.revision, selected.range)
+                ExcerptText(maximumBytes).apply { append(text) }.toString()
+            }
+            is DocumentSelection.Reading -> selectedReadingText(checkNotNull(readingDocumentForSelection()), selected, maximumBytes)
+            is DocumentSelection.Label -> ExcerptText(maximumBytes).apply {
+                append(selected.text.substring(selected.range.min, selected.range.max))
+            }.toString()
+        }.also { check(selected.revision == state.metrics?.revision) }
+    }
+
+    fun copyDocumentSelection(deliver: suspend (String) -> Unit) {
+        operationScope.launch {
+            try { deliver(selectedPlainText(128 * 1024)); selectionMessage = null }
+            catch (cancellation: CancellationException) { throw cancellation }
+            catch (_: Exception) { selectionMessage = UiText.Resource(R.string.selection_output_failed) }
+        }
+    }
+
+    private suspend fun captureSelectionExcerpt(): ExcerptCapture? {
+        val selected = documentSelection ?: return null
+        if (selected.revision != state.metrics?.revision || state.hasActiveDraftChanges) return null
+        var context = readingDocumentForSelection()
+        var owned: CapturedDocumentRevision? = null
+        try {
+            when (selected) {
+                is DocumentSelection.Source -> {
+                    owned = state.captureSelectedRevision(selected.revision, selected.range) ?: return null
+                    if (context == null && documentFormat == DocumentFormat.Markdown && markdownRenderer != null &&
+                        (state.metrics?.serializedByteLength ?: Long.MAX_VALUE) <= MAX_EXCERPT_MARKDOWN_BYTES) {
+                        try {
+                            state.captureDocumentRevision()?.use { full ->
+                                if (full.metrics.revision == selected.revision) context = markdownRenderer.renderPreview(full.snapshot, full.metrics.serializedByteLength)
+                            }
+                        } catch (cancel: CancellationException) { throw cancel }
+                        catch (_: Exception) { /* Exact source remains exportable without a formatted interpretation. */ }
+                    }
+                }
+                is DocumentSelection.Reading, is DocumentSelection.Label -> {
+                    withContext(Dispatchers.Default) {
+                        val text = if (selected is DocumentSelection.Reading)
+                            selectedReadingText(checkNotNull(context), selected, MAX_EXCERPT_MARKDOWN_BYTES)
+                        else (selected as DocumentSelection.Label).text.substring(selected.range.min, selected.range.max)
+                        owned = captureGeneratedExcerpt(text)
+                    }
+                }
+            }
+            check(selected.revision == state.metrics?.revision && !state.hasActiveDraftChanges)
+            val reading = when (selected) {
+                is DocumentSelection.Reading -> selected
+                is DocumentSelection.Source -> context?.let { readingSelectionForSource(it, selected) }
+                else -> null
+            }
+            return ExcerptCapture(selected.revision, checkNotNull(owned), selected is DocumentSelection.Source,
+                if (selected is DocumentSelection.Source) documentFormat else DocumentFormat.PlainText,
+                context, reading, (selected as? DocumentSelection.Label)?.let { it.text.substring(it.range.min, it.range.max) })
+                .also { owned = null }
+        } finally { owned?.close() }
+    }
+
+    fun findSelectedText() {
+        operationScope.launch {
+            try {
+                val text = selectedPlainText(MAX_FIND_QUERY_UTF16_UNITS * 4)
+                if (text.length > MAX_FIND_QUERY_UTF16_UNITS) throw SelectionLimitException()
+                findRequestsKeyboard = false
+                findInputFocus = FindInputFocus.Query
+                findFocusIntentVersion++
+                findFocusRequest++
+                if (!isFindVisible && !openFind(documentSelection?.exactSource(readingDocumentForSelection())?.start ?: currentDocumentLocation().offset)) return@launch
+                isFindRegex = false
+                isFindWholeWord = false
+                capturedFindScope = null
+                capturedReadingFindScope = null
+                isFindScopePaused = false
+                findFieldValue = TextFieldValue(text)
+                refreshAdvancedFind()
+            } catch (cancellation: CancellationException) { throw cancellation }
+            catch (_: Exception) { selectionMessage = UiText.Resource(R.string.selection_find_failed) }
+        }
+    }
+    var isReplaceVisible by mutableStateOf(false)
+        private set
+    var replacementFieldValue by mutableStateOf(TextFieldValue())
+        private set
+    var capturedFindScope by mutableStateOf<Utf16Range?>(null)
+        private set
+    var capturedReadingFindScope by mutableStateOf<DocumentSelection?>(null)
+        private set
+    val isFindSelectionScope get() = capturedFindScope != null || capturedReadingFindScope != null || isFindScopePaused
+    var isFindScopePaused by mutableStateOf(false)
+        private set
+    var excludedFindResults by mutableStateOf<Set<Int>>(emptySet())
+        private set
+    var isFindResultsExpanded by mutableStateOf(false)
+        private set
+    var findActionMessage by mutableStateOf<UiText?>(null)
+        private set
+    private var compiledFind: DocumentSearch? = null
+    private var advancedFindGeneration = 0L
+    private var reviewedFindRevision: Long? = null
+    private var pendingFindDirection: FindDirection? = null
+    private val locations = DocumentLocations()
+    private var locationVersion by mutableLongStateOf(0L)
+    var locationMessage by mutableStateOf<UiText?>(null)
+        private set
+    val hasPreviousLocation: Boolean get() { locationVersion; return locations.hasPrevious }
+    val hasNextLocation: Boolean get() { locationVersion; return locations.hasNext }
 
     var presentation by mutableStateOf(EditorPresentation.Text)
         private set
@@ -1152,8 +1460,6 @@ internal constructor(
             !closeStarted.get() &&
                 !isSourceReloading &&
                 !isClosePending &&
-                !isFindVisible &&
-                presentation == EditorPresentation.Text &&
                 !isGoToLineDialogVisible &&
                 !isDiscardConfirmationVisible &&
                 !isSaveBusy &&
@@ -1173,7 +1479,6 @@ internal constructor(
                 !isSourceReloading &&
                 !isClosePending &&
                 presentation == EditorPresentation.Text &&
-                !isFindVisible &&
                 !isGoToLineDialogVisible &&
                 !isDiscardConfirmationVisible &&
                 !isSaveBusy &&
@@ -1270,6 +1575,7 @@ internal constructor(
         if (shouldOpenInitialPreview && openMarkdownPreview(returnToSource = false)) {
             shouldOpenInitialPreview = false
         }
+        if (reopenFindAfterInitialLoad && showFind(showKeyboard = false)) reopenFindAfterInitialLoad = false
     }
 
     /** Starts loading the next bounded viewport page. */
@@ -1410,10 +1716,25 @@ internal constructor(
         ) {
             return false
         }
+        locations.record(currentDocumentLocation(), DocumentLocation(revision, presentation, entry.sourceOffset))
+        locationVersion++
         markdownPreviewStatus = ready.copy(
             scrollRestoration = SemanticViewportAnchor(revision, entry.sourceOffset, 0)
         )
         observeMarkdownPreviewViewportAnchor(revision, entry.sourceOffset)
+        return true
+    }
+
+    /** References and footnotes create independent return locations. */
+    fun navigateToReadingBlock(revision: Long, blockIndex: Int): Boolean {
+        val ready = markdownPreviewStatus as? MarkdownPreviewStatus.Ready ?: return false
+        val block = ready.document.blocks.getOrNull(blockIndex) ?: return false
+        if (ready.revision != revision || state.metrics?.revision != revision ||
+            presentation != EditorPresentation.MarkdownPreview) return false
+        locations.record(currentDocumentLocation(), DocumentLocation(revision, presentation, block.source.start))
+        locationVersion++
+        markdownPreviewStatus = ready.copy(scrollRestoration = SemanticViewportAnchor(revision, block.source.start, 0))
+        observeMarkdownPreviewViewportAnchor(revision, block.source.start)
         return true
     }
 
@@ -1440,7 +1761,13 @@ internal constructor(
     }
 
     /** Opens retained Find now or after synchronizing one active edit field. */
-    fun showFind(): Boolean {
+    fun showFind(showKeyboard: Boolean = true): Boolean {
+        findInputFocus = FindInputFocus.Query
+        findFocusIntentVersion++
+        findRequestsKeyboard = showKeyboard
+        findFocusRequest++
+        findFieldValue = findFieldValue.copy(selection = androidx.compose.ui.text.TextRange(0, findFieldValue.text.length))
+        if (isFindVisible) return true
         if (!canShowFind) {
             return false
         }
@@ -1448,7 +1775,7 @@ internal constructor(
         if (draft != null) {
             return requestEditWindowAction(draft = draft, action = EditWindowAction.OpenFind)
         }
-        return openFind(resolveVisibleViewportAnchor().sourceUtf16Offset)
+        return openFind(currentDocumentLocation().offset)
     }
 
     /** Opens Markdown preview now or after synchronizing one active edit field. */
@@ -1657,8 +1984,23 @@ internal constructor(
             return
         }
         val returnTarget = markdownPreviewReturnTarget
+        pendingReadingLocation = null
+        val selectionInSource = when (val selected = documentSelection) {
+            is DocumentSelection.Source -> selected
+            is DocumentSelection.Reading -> selected.exactSource(readingDocumentForSelection())?.let {
+                if (selected.anchor <= selected.focus) DocumentSelection.Source(selected.revision, it.start, it.end)
+                else DocumentSelection.Source(selected.revision, it.end, it.start)
+            }
+            else -> pendingReadingSelection
+        }?.takeIf { it.revision == state.metrics?.revision }
+        clearDocumentSelection()
+        documentSelection = selectionInSource
+        pendingReadingSelection = null
+        val selectionFitsEditor = selectionInSource == null ||
+            selectionInSource.range.end - selectionInSource.range.start <= EDIT_DRAFT_MAX_UTF16_UNITS
         if (isViewOnly) {
-            val anchor = returnTarget?.viewportAnchor
+            val anchor = selectionInSource?.let { SemanticViewportAnchor(it.revision, it.range.start, 0) }
+                ?: returnTarget?.viewportAnchor
                 ?.takeIf { it.revision == state.metrics?.revision }
                 ?: resolveVisibleViewportAnchor()
             sourceViewportNavigationPending = true
@@ -1674,7 +2016,7 @@ internal constructor(
                         UiText.Resource(R.string.operation_source_position_failed)
                     )
                 }
-            }, onCompletion = { sourceViewportNavigationPending = false })
+            }, onCompletion = { sourceViewportNavigationPending = false; refreshAdvancedFind() })
             return
         }
         markdownPreviewReturnTarget = null
@@ -1683,7 +2025,7 @@ internal constructor(
         if (!isViewOnly) {
             launchOperation(
                 operation = { state ->
-                    val target =
+                    val previousTarget =
                         if (
                             returnTarget != null &&
                             returnTarget.viewportAnchor.revision == state.metrics?.revision
@@ -1700,6 +2042,10 @@ internal constructor(
                                 selection = Utf16Range(start = 0L, end = 0L)
                             )
                         }
+                    val target = selectionInSource?.let {
+                        MarkdownPreviewReturnTarget(SemanticViewportAnchor(it.revision, it.range.start, 0),
+                            if (selectionFitsEditor) it.range else Utf16Range(it.range.start, it.range.start))
+                    } ?: previousTarget
                     state.activateDocumentAt(target.selection)
                     val activeEdit = state.activeEdit
                     pendingEditWindowScrollRestoration =
@@ -1715,7 +2061,21 @@ internal constructor(
                             null
                         }
                 },
-                requestDraftFocus = true
+                requestDraftFocus = !isFindVisible && selectionFitsEditor,
+                onCompletion = {
+                    if (selectionFitsEditor && selectionInSource != null && documentSelection == selectionInSource) {
+                        activeDraft?.let { draft ->
+                            val window = draft.edit.snapshot
+                            if (window.metrics.revision == selectionInSource.revision &&
+                                selectionInSource.range.start >= window.range.start && selectionInSource.range.end <= window.range.end) {
+                                draft.textFieldState.edit { selection = androidx.compose.ui.text.TextRange(
+                                    (selectionInSource.anchor - window.range.start).toInt(),
+                                    (selectionInSource.focus - window.range.start).toInt()) }
+                            }
+                        }
+                    }
+                    refreshAdvancedFind()
+                }
             )
         }
     }
@@ -1797,108 +2157,175 @@ internal constructor(
         return true
     }
 
-    /** Closes Find and forgets every retained query and match value. */
+    /** Dismisses transient results and scope, retaining live-session inputs. */
     fun closeFind() {
-        if (!isFindVisible) {
-            return
-        }
-        val currentMetrics = state.metrics
-        val editorOffset =
-            findMatch
-                ?.takeIf { match -> match.start.revision == currentMetrics?.revision }
-                ?.range
-                ?.start
-                ?: findOriginUtf16Offset
+        if (!isFindVisible) return
+        findInputFocus = FindInputFocus.Document
         invalidateFindRequest()
         isFindVisible = false
-        findFieldValue = TextFieldValue()
-        isFindCaseSensitive = false
+        isReplaceVisible = false
+        capturedFindScope = null
+        capturedReadingFindScope = null
+        isFindScopePaused = false
+        findResults = emptyList()
+        findResultIndex = -1
+        excludedFindResults = emptySet()
+        isFindResultsExpanded = false
+        isFindComplete = false
+        findCoverageMessage = null
+        findActionMessage = null
         findStatus = FindStatus.Idle
         findMatch = null
-        findOriginRevision = 0L
-        findOriginUtf16Offset = 0L
-        lastFindDirection = FindDirection.Forward
-        val draft = activeDraft
-        if (draft != null) {
-            draft.requestEditorFocusRestoration()
-        } else if (
-            !isViewOnly &&
-            presentation == EditorPresentation.Text &&
-            state.activeEdit == null &&
-            state.status == EditorDocumentStatus.Ready &&
-            currentMetrics != null
-        ) {
-            val boundedOffset = editorOffset.coerceIn(0L, currentMetrics.utf16Length)
-            launchOperation(
-                operation = { state ->
-                    state.activateDocumentAt(
-                        Utf16Range(start = boundedOffset, end = boundedOffset)
-                    )
-                }
-            )
-        }
+        pendingFindDirection = null
+        locations.endFindExcursion()
     }
 
-    /** Updates the retained single-line substring query and schedules a fresh search. */
+    /** Refreshes matches without moving the passage or changing editable selection. */
     fun updateFindFieldValue(candidate: TextFieldValue): Boolean {
-        if (
-            !isFindVisible ||
-            candidate.text.length > MAX_FIND_QUERY_UTF16_UNITS ||
-            '\r' in candidate.text ||
-            '\n' in candidate.text ||
-            !candidate.text.hasWellFormedUtf16()
-        ) {
-            return false
-        }
-        val previous = findFieldValue
+        if (!isFindVisible || candidate.text.length > MAX_FIND_QUERY_UTF16_UNITS ||
+            '\r' in candidate.text || !candidate.text.hasWellFormedUtf16()) return false
+        val changed = candidate.text != findFieldValue.text
         findFieldValue = candidate
-        if (candidate.text == previous.text) {
-            return true
-        }
-        invalidateFindRequest()
-        findStatus = FindStatus.Idle
-        findMatch = null
-        if (candidate.text.isNotEmpty()) {
-            launchFind(direction = FindDirection.Forward, delayed = true)
-        }
+        if (changed) { findActionMessage = null; refreshAdvancedFind(delayed = true) }
         return true
     }
 
-    /** Updates case sensitivity and reruns the current committed query immediately. */
     fun updateFindCaseSensitivity(matchCase: Boolean): Boolean {
-        if (!isFindVisible) {
-            return false
-        }
-        if (isFindCaseSensitive == matchCase) {
-            return true
-        }
-        invalidateFindRequest()
-        isFindCaseSensitive = matchCase
-        findStatus = FindStatus.Idle
-        findMatch = null
-        if (findFieldValue.text.isNotEmpty()) {
-            launchFind(direction = FindDirection.Forward, delayed = false)
+        if (!isFindVisible) return false
+        if (isFindCaseSensitive != matchCase) {
+            isFindCaseSensitive = matchCase
+            refreshAdvancedFind()
         }
         return true
     }
 
-    /** Searches immediately for the next literal substring match. */
-    fun findNext(): Boolean = launchFind(direction = FindDirection.Forward, delayed = false)
+    fun updateFindRegex(enabled: Boolean) {
+        if (isFindRegex != enabled) { isFindRegex = enabled; refreshAdvancedFind() }
+    }
 
-    /** Searches immediately for the previous literal substring match. */
-    fun findPrevious(): Boolean = launchFind(direction = FindDirection.Backward, delayed = false)
+    fun updateFindWholeWord(enabled: Boolean) {
+        if (isFindWholeWord != enabled) { isFindWholeWord = enabled; refreshAdvancedFind() }
+    }
 
-    /** Retries the latest failed Find direction without changing its query. */
-    fun retryFind(): Boolean {
-        if (findStatus !is FindStatus.Failed) {
+    fun updateIncludeIllustrationSource(enabled: Boolean) {
+        if (includeIllustrationSource != enabled) { includeIllustrationSource = enabled; refreshAdvancedFind() }
+    }
+
+    fun updateReplacementFieldValue(value: TextFieldValue) {
+        if (value.text.length > MAX_REPLACEMENT_HISTORY_UNITS || '\r' in value.text ||
+            !value.text.hasWellFormedUtf16()) return
+        val changed = value.text != replacementFieldValue.text
+        replacementFieldValue = value
+        if (changed) refreshAdvancedFind(retainExclusions = true)
+    }
+
+    fun showReplace() {
+        if (isViewOnly) return
+        isReplaceVisible = true
+        updateFindResultsExpanded(true)
+        if (presentation == EditorPresentation.MarkdownPreview) {
+            if (capturedReadingFindScope != null && capturedFindScope == null) isFindScopePaused = true
+            showTextEditor()
+        } else refreshAdvancedFind()
+    }
+
+    fun hideReplace() {
+        isReplaceVisible = false
+        if (findInputFocus == FindInputFocus.Replacement) focusFindQueryWithoutKeyboard()
+        refreshAdvancedFind()
+    }
+    fun updateFindResultsExpanded(expanded: Boolean) {
+        if (expanded) findResultsOpenedAtReveal = findRevealRequest
+        else if (findInputFocus == FindInputFocus.Replacement || findInputFocus == FindInputFocus.Results) focusFindQueryWithoutKeyboard()
+        isFindResultsExpanded = expanded
+    }
+
+    fun recordFindInputFocus(target: FindInputFocus) {
+        if (!isFindVisible || target == FindInputFocus.Replacement && !isReplaceVisible ||
+            target == FindInputFocus.Results && !isFindResultsExpanded || findInputFocus == target) return
+        findInputFocus = target
+        findFocusIntentVersion++
+    }
+
+    private fun focusFindQueryWithoutKeyboard() {
+        findInputFocus = FindInputFocus.Query
+        findFocusIntentVersion++
+        findRequestsKeyboard = false
+        findFocusRequest++
+    }
+
+    /** A recreated layout must not repeat a previous match's focus or dismissal effects. */
+    fun consumeFindReveal(): Boolean {
+        if (handledFindRevealRequest == findRevealRequest) return false
+        handledFindRevealRequest = findRevealRequest
+        if (findFocusIntentVersion != findRevealFocusIntent) return false
+        findInputFocus = FindInputFocus.Document
+        return true
+    }
+
+    fun collapseFindResultsForNavigation() {
+        if (findResultsOpenedAtReveal < findRevealRequest) isFindResultsExpanded = false
+    }
+    fun toggleFindResultIncluded(index: Int) {
+        if (index in findResults.indices) excludedFindResults =
+            if (index in excludedFindResults) excludedFindResults - index else excludedFindResults + index
+    }
+
+    fun useDocumentFindScope() {
+        capturedFindScope = null
+        capturedReadingFindScope = null
+        isFindScopePaused = false
+        refreshAdvancedFind()
+    }
+
+    fun captureSelectionFindScope(): Boolean {
+        documentSelection?.let { selected ->
+            if (presentation == EditorPresentation.MarkdownPreview && selected !is DocumentSelection.Source) {
+                capturedReadingFindScope = selected
+                capturedFindScope = selected.exactSource(readingDocumentForSelection())
+                isFindScopePaused = false
+                refreshAdvancedFind()
+                return true
+            }
+            val range = selected.exactSource(readingDocumentForSelection())
+            if (range != null && range.start < range.end) {
+                capturedReadingFindScope = null
+                capturedFindScope = range
+                isFindScopePaused = false
+                refreshAdvancedFind()
+                return true
+            }
+            isFindScopePaused = true
+            refreshAdvancedFind()
             return false
         }
-        return launchFind(direction = lastFindDirection, delayed = false)
+        val draft = activeDraft
+        val selection = draft?.textFieldState?.selection
+        if (draft == null || selection == null || selection.collapsed || draft.hasChanges) {
+            findActionMessage = UiText.Resource(R.string.find_select_scope_first)
+            return false
+        }
+        capturedFindScope = Utf16Range(draft.edit.snapshot.range.start + selection.min,
+            draft.edit.snapshot.range.start + selection.max)
+        capturedReadingFindScope = null
+        isFindScopePaused = false
+        refreshAdvancedFind()
+        return true
+    }
+
+    fun findNext(): Boolean = navigateFindResults(FindDirection.Forward)
+    fun findPrevious(): Boolean = navigateFindResults(FindDirection.Backward)
+    fun retryFind(): Boolean = refreshAdvancedFind()
+
+    fun continueFind(): Boolean {
+        if (!canContinueFind) return false
+        return refreshAdvancedFind(continuation = findContinuation)
     }
 
     /** Starts reloading after a stale native revision invalidates cached ranges. */
     fun reloadStaleViewport() {
         clearSessionHistory(revision = null)
+        clearDocumentExperienceReferences()
         launchOperation(EditorDocumentState::reloadStaleViewport)
     }
 
@@ -2344,13 +2771,13 @@ internal constructor(
         var result: DocumentReplacementResult = DocumentReplacementResult.Unavailable
         launchOperation(
             operation = { state ->
-                result =
-                    state.replaceDocumentRange(
-                        generation = draft.edit.generation,
-                        request = request
-                    )
+                result = if (entry.patches.size > 1) {
+                    state.replaceDocumentBatch(currentRevision,
+                        if (action == EditWindowAction.Undo) inversePatches(entry.patches) else entry.patches,
+                        if (action == EditWindowAction.Undo) entry.selectionBefore else entry.selectionAfter)
+                } else state.replaceDocumentRange(generation = draft.edit.generation, request = request)
             },
-            requestDraftFocus = draft.isEditorFocused,
+            requestDraftFocus = draft.isEditorFocused && !isFindVisible,
             onCompletion = {
                 when (val completed = result) {
                     is DocumentReplacementResult.Applied -> {
@@ -2381,6 +2808,8 @@ internal constructor(
         entry: CommittedEditDelta,
         revision: Long
     ) {
+        onDocumentPatchesApplied(checkNotNull(history.headRevision), revision,
+            if (action == EditWindowAction.Undo) inversePatches(entry.patches) else entry.patches)
         when (action) {
             EditWindowAction.Undo -> history.completeUndo(entry, revision)
             EditWindowAction.Redo -> history.completeRedo(entry, revision)
@@ -2390,9 +2819,34 @@ internal constructor(
     }
 
     /** Records one verified edit and publishes the journal's new availability. */
-    private fun recordCommittedEdit(delta: CommittedEditDelta) {
+    private fun recordCommittedEdit(delta: CommittedEditDelta, scopedReplacement: Boolean = false) {
+        onDocumentPatchesApplied(delta.revisionBefore, delta.revisionAfter, delta.patches, scopedReplacement)
         history.record(delta)
         historyVersion = Math.incrementExact(historyVersion)
+    }
+
+    private fun onDocumentPatchesApplied(before: Long, after: Long, patches: List<DocumentPatch>,
+        scopedReplacement: Boolean = false) {
+        findActionMessage = null
+        documentSelection = (documentSelection as? DocumentSelection.Source)?.let { selected ->
+            rebaseCapturedRange(selected.range, patches, scopedReplacement = false)?.let { range ->
+                DocumentSelection.Source(after, range.start, range.end)
+            }
+        }
+        if (capturedReadingFindScope != null) {
+            capturedReadingFindScope = null
+            if (capturedFindScope == null) isFindScopePaused = true
+        }
+        locations.rebase(before, after, patches)
+        locationVersion++
+        capturedFindScope?.let { scope ->
+            val rebased = rebaseCapturedRange(scope, patches, scopedReplacement)
+            if (rebased == null) {
+                isFindScopePaused = true
+                findActionMessage = UiText.Resource(R.string.find_scope_lost)
+            } else capturedFindScope = rebased
+        }
+        if (isFindVisible) refreshAdvancedFind()
     }
 
     /** Releases session history and publishes its new revision boundary. */
@@ -2682,10 +3136,14 @@ internal constructor(
 
     /** Replaces one clean bounded field with an exact logical-line destination. */
     private fun moveActiveEditToLine(draft: ActiveEditDraft, logicalLine: Long, actionToken: Long) {
+        val origin = currentDocumentLocation()
         launchOperation(
             operation = { state ->
                 if (state.navigateActiveEditToLine(logicalLine)) {
                     val activeEdit = checkNotNull(state.activeEdit)
+                    locations.record(origin, DocumentLocation(activeEdit.snapshot.metrics.revision,
+                        presentation, activeEdit.snapshot.selection.start))
+                    locationVersion++
                     pendingEditWindowScrollRestoration =
                         EditWindowScrollRestoration(
                             anchor =
@@ -2767,6 +3225,7 @@ internal constructor(
             return
         }
         clearSessionHistory(revision = null)
+        clearDocumentExperienceReferences()
         launchOperation(
             operation = { state -> state.discardActiveEdit(draft.edit.generation) }
         )
@@ -3305,6 +3764,15 @@ internal constructor(
         }
         draft.recordFieldObservation(value)
         updateActiveDraftStatus(draft)
+        if (draft.isEditorFocused && !draft.hasChanges && !value.selection.collapsed) {
+            val start = draft.edit.snapshot.range.start
+            if (selectSource(start + value.selection.start, start + value.selection.end)) {
+                sourceFieldSelection = documentSelection as? DocumentSelection.Source
+            }
+        } else if (sourceFieldSelection != null && (draft.hasChanges || value.selection.collapsed)) {
+            if (documentSelection == sourceFieldSelection) documentSelection = null
+            sourceFieldSelection = null
+        }
         latestObservedDraft = draft
         latestFieldValue = value
         val hasPendingSynchronization = editSynchronizationJob != null
@@ -3794,6 +4262,13 @@ internal constructor(
         if (!closeStarted.compareAndSet(false, true)) {
             return
         }
+        clearDocumentExperienceReferences()
+        replacementFieldValue = TextFieldValue()
+        excerptExport.close()
+        isFindRegex = false
+        isFindWholeWord = false
+        isFindCaseSensitive = false
+        includeIllustrationSource = false
         activeSaveGeneration = null
         val saveJob = activeSaveJob
         activeSaveJob = null
@@ -3842,7 +4317,6 @@ internal constructor(
         pendingFindAnchor = null
         pendingMarkdownPreviewReturnTarget = null
         clearSessionHistory(revision = null)
-        activeFindRequestGeneration = null
         findJob = null
         activeMarkdownPreviewGeneration = null
         markdownPreviewJob = null
@@ -3937,14 +4411,14 @@ internal constructor(
     /** Enters preview and reuses a model only when its revision is still exact. */
     private fun openMarkdownPreview(
         returnTarget: MarkdownPreviewReturnTarget? = null,
-        returnToSource: Boolean = true
+        returnToSource: Boolean = true,
+        locationFallback: DocumentLocation? = null
     ): Boolean {
         val currentMetrics = state.metrics ?: return false
         val currentRevision = currentMetrics.revision
         if (
             markdownRenderer == null ||
             closeStarted.get() ||
-            isFindVisible ||
             presentation != EditorPresentation.Text ||
             isGoToLineDialogVisible ||
             state.status != EditorDocumentStatus.Ready ||
@@ -3953,6 +4427,9 @@ internal constructor(
             return false
         }
         val defaultAnchor = resolveVisibleViewportAnchor()
+        pendingReadingLocation = locationFallback
+        pendingReadingSelection = documentSelection as? DocumentSelection.Source
+        clearDocumentSelection()
         readOnlySourceScrollRestoration = null
         markdownPreviewReturnTarget =
             returnTarget
@@ -3970,8 +4447,12 @@ internal constructor(
                 )
         previewReturnsToSource = returnToSource
         presentation = EditorPresentation.MarkdownPreview
+        isReplaceVisible = false
+        refreshAdvancedFind()
         val ready = markdownPreviewStatus as? MarkdownPreviewStatus.Ready
         if (ready?.revision == currentRevision) {
+            pendingReadingLocation = null
+            restoreSelectionInReading(ready)
             return true
         }
         launchMarkdownPreview()
@@ -3998,9 +4479,8 @@ internal constructor(
                     ) {
                         return@launch
                     }
-                    markdownPreviewStatus =
-                        if (rendered?.revision == revision) {
-                            MarkdownPreviewStatus.Ready(
+                    if (rendered?.revision == revision) {
+                            markdownPreviewStatus = MarkdownPreviewStatus.Ready(
                                 revision = rendered.revision,
                                 document = rendered.document,
                                 layout = rendered.layout,
@@ -4009,11 +4489,13 @@ internal constructor(
                                         ?.viewportAnchor
                                         ?.takeIf { anchor -> anchor.revision == rendered.revision }
                             )
-                        } else {
-                            MarkdownPreviewStatus.Failed(
-                                UiText.Resource(R.string.operation_preview_revision_changed)
-                            )
-                        }
+                            pendingReadingLocation = null
+                            restoreSelectionInReading(markdownPreviewStatus as MarkdownPreviewStatus.Ready)
+                    } else {
+                        publishMarkdownPreviewFailure(generation, UiText.Resource(R.string.operation_preview_revision_changed))
+                        return@launch
+                    }
+                    if (isFindVisible) refreshAdvancedFind()
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (failure: MarkdownRenderException) {
@@ -4045,15 +4527,29 @@ internal constructor(
             !closeStarted.get()
         ) {
             markdownPreviewStatus = MarkdownPreviewStatus.Failed(message)
+            pendingReadingLocation?.let { target ->
+                pendingReadingLocation = null
+                restoreDocumentLocationInSource(target, readingFallback = true)
+            }
         }
+    }
+
+    private fun restoreSelectionInReading(ready: MarkdownPreviewStatus.Ready) {
+        documentSelection = pendingReadingSelection?.takeIf { it.revision == ready.revision }?.let {
+            readingSelectionForSource(ready.document, it)
+        }
+        pendingReadingSelection = null
     }
 
     /** Cancels and forgets any revision-bound Markdown preview model. */
     private fun invalidateMarkdownPreview() {
+        observedIllustrationRevision = -1L
+        observedIllustrationVersion = -1L
         activeMarkdownPreviewGeneration = null
         markdownPreviewJob?.cancel()
         markdownPreviewJob = null
         markdownPreviewStatus = MarkdownPreviewStatus.Idle
+        selectionReadingCache = null
     }
 
     /** Opens an empty retained Find field at one synchronized document offset. */
@@ -4072,13 +4568,13 @@ internal constructor(
         invalidateFindRequest()
         findOriginRevision = currentMetrics.revision
         findOriginUtf16Offset = anchorUtf16Offset
-        findFieldValue = TextFieldValue()
         findStatus = FindStatus.Idle
         findMatch = null
         // Opening Find transfers input intent even if a window transition prevents
         // the editor's focus-loss callback from clearing its restoration request.
         activeDraft?.updateEditorFocusIntent(isFocused = false, canClear = true)
         isFindVisible = true
+        refreshAdvancedFind()
         return true
     }
 
@@ -4157,333 +4653,485 @@ internal constructor(
 
     /** Cancels one superseded Find generation without publishing its result. */
     private fun invalidateFindRequest() {
-        activeFindRequestGeneration = null
+        advancedFindGeneration++
+        findContinuation = null
+        compiledFind?.close()
+        compiledFind = null
+        reviewedFindRevision = null
         findJob?.cancel()
         findJob = null
     }
 
-    /** Starts one delayed or immediate circular literal-text traversal. */
-    private fun launchFind(direction: FindDirection, delayed: Boolean): Boolean {
-        val query = findFieldValue.text
-        val matchCase = isFindCaseSensitive
-        if (
-            !isFindVisible ||
-            query.isEmpty() ||
-            closeStarted.get() ||
-            isClosePending ||
-            isSaveBusy ||
-            !state.canQueueFind
-        ) {
-            return false
-        }
+    private fun clearDocumentExperienceReferences() {
+        selectionReadingCache = null
+        pendingReadingLocation = null
+        pendingReadingSelection = null
+        excerptExport.close()
         invalidateFindRequest()
-        val generation = nextFindRequestGeneration
-        nextFindRequestGeneration = Math.incrementExact(nextFindRequestGeneration)
-        activeFindRequestGeneration = generation
-        lastFindDirection = direction
-        findStatus = FindStatus.Searching
-        val operation =
-            operationScope.launch(start = CoroutineStart.LAZY) {
-                try {
-                    if (delayed) {
-                        findDelay()
-                    }
-                    performFind(
-                        generation = generation,
-                        query = query,
-                        matchCase = matchCase,
-                        direction = direction
-                    )
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } finally {
-                    if (activeFindRequestGeneration == generation) {
-                        activeFindRequestGeneration = null
-                        findJob = null
-                    }
-                }
-            }
-        findJob = operation
-        operation.start()
-        return true
+        clearDocumentSelection()
+        locations.clear()
+        locationVersion++
+        locationMessage = null
+        findResults = emptyList()
+        findResultIndex = -1
+        findMatch = null
+        capturedFindScope = null
+        capturedReadingFindScope = null
+        isFindScopePaused = false
+        excludedFindResults = emptySet()
+        findCoverageMessage = null
+        findActionMessage = null
+        pendingFindDirection = null
+        isFindComplete = false
     }
 
-    /** Traverses at most one circular revision and publishes only its owned generation. */
-    private suspend fun performFind(
-        generation: Long,
-        query: String,
-        matchCase: Boolean,
-        direction: FindDirection
-    ) {
-        currentCoroutineContext().ensureActive()
-        if (!ownsFindRequest(generation = generation, query = query, matchCase = matchCase)) {
-            return
-        }
-        val currentMetrics = state.metrics ?: return publishFindUnavailable(generation)
-        if (findOriginRevision != currentMetrics.revision) {
-            findOriginRevision = currentMetrics.revision
-            findOriginUtf16Offset = resolveVisibleViewportAnchor().sourceUtf16Offset
-            findMatch = null
-        } else if (findMatch?.start?.revision != currentMetrics.revision) {
-            findMatch = null
-        }
-        val anchor = findAnchor(direction = direction, query = query, currentMetrics.utf16Length)
-        val phases =
-            findCandidatePhases(
-                direction = direction,
-                anchorUtf16Offset = anchor,
-                documentUtf16Length = currentMetrics.utf16Length
-            )
-        for (phase in phases) {
-            when (
-                val phaseResult =
-                    searchFindPhase(
-                        generation = generation,
-                        query = query,
-                        matchCase = matchCase,
-                        revision = currentMetrics.revision,
-                        direction = direction,
-                        initialRange = phase.range
-                    )
-            ) {
-                FindPhaseResult.Exhausted -> Unit
-
-                FindPhaseResult.Unavailable -> {
-                    publishFindUnavailable(generation)
-                    return
-                }
-
-                is FindPhaseResult.Failed -> {
-                    publishFindFailure(generation, phaseResult.message)
-                    return
-                }
-
-                is FindPhaseResult.Matched -> {
-                    if (state.activeEdit == null) {
-                        when (val navigation = state.navigateToMatch(phaseResult.match)) {
-                            MatchViewportResult.Published -> {
-                                if (
-                                    publishFindMatch(
-                                        generation = generation,
-                                        query = query,
-                                        matchCase = matchCase,
-                                        match = phaseResult.match,
-                                        wrappedAt = phase.wrappedAt
-                                    )
-                                ) {
-                                    viewportListState.requestScrollToItem(
-                                        FIRST_VIEWPORT_ITEM_INDEX
-                                    )
-                                }
-                            }
-
-                            MatchViewportResult.Unavailable -> publishFindUnavailable(generation)
-
-                            is MatchViewportResult.Failed ->
-                                publishFindFailure(generation, navigation.message)
-                        }
-                    } else {
-                        when (
-                            val navigation =
-                                state.navigateActiveEditToMatch(phaseResult.match)
-                        ) {
-                            ActiveEditNavigationResult.Published -> {
-                                pendingEditWindowScrollRestoration =
-                                    EditWindowScrollRestoration(
-                                        anchor =
-                                            SemanticViewportAnchor(
-                                                revision =
-                                                    phaseResult.match.start.revision,
-                                                sourceUtf16Offset =
-                                                    phaseResult.match.range.start,
-                                                viewportTopOffsetPixels = 0
-                                            )
-                                    )
-                                reconcileActiveDraft()
-                                publishFindMatch(
-                                    generation = generation,
-                                    query = query,
-                                    matchCase = matchCase,
-                                    match = phaseResult.match,
-                                    wrappedAt = phase.wrappedAt
-                                )
-                            }
-
-                            ActiveEditNavigationResult.Unavailable ->
-                                publishFindUnavailable(generation)
-
-                            is ActiveEditNavigationResult.Failed ->
-                                publishFindFailure(generation, navigation.message)
-                        }
-                    }
-                    return
-                }
-            }
-        }
-        if (ownsFindRequest(generation = generation, query = query, matchCase = matchCase)) {
-            findMatch = null
-            findStatus = FindStatus.NoMatches
-        }
+    /** Searches one generation progressively; inputs alone never request navigation. */
+    fun onReadingIllustrationsChanged(revision: Long) {
+        val ready = (markdownPreviewStatus as? MarkdownPreviewStatus.Ready)?.takeIf { it.revision == revision } ?: return
+        val version = ready.layout.illustrationCache.version
+        if (observedIllustrationRevision == revision && observedIllustrationVersion == version) return
+        observedIllustrationRevision = revision
+        observedIllustrationVersion = version
+        if (state.metrics?.revision == revision && isFindVisible &&
+            presentation == EditorPresentation.MarkdownPreview) refreshAdvancedFind(retainNavigation = true)
     }
 
-    /** Publishes one exact owned Find result after its destination becomes visible. */
-    private fun publishFindMatch(
-        generation: Long,
-        query: String,
-        matchCase: Boolean,
-        match: FindMatch,
-        wrappedAt: FindWrap?
-    ): Boolean {
-        if (!ownsFindRequest(generation = generation, query = query, matchCase = matchCase)) {
+    private fun refreshAdvancedFind(delayed: Boolean = false, retainExclusions: Boolean = false,
+        retainNavigation: Boolean = false, advanceAfterReplacement: Pair<Long, Boolean>? = null,
+        continuation: FindContinuation? = null): Boolean {
+        val append = continuation != null && !continuation.replaceResults
+        val retainedResults = if (append) findResults else emptyList()
+        val previousResult = findResults.getOrNull(findResultIndex).takeIf { retainNavigation }
+        hasEarlierFindResults = continuation != null && (hasEarlierFindResults || continuation.replaceResults)
+        if (!retainNavigation) pendingFindDirection = null
+        invalidateFindRequest()
+        findResults = retainedResults
+        findResultIndex = -1
+        findMatch = null
+        isFindComplete = false
+        findCoverageMessage = null
+        if (!retainExclusions && !append) excludedFindResults = emptySet()
+        if (!isFindVisible || findFieldValue.text.isEmpty() || isFindScopePaused || closeStarted.get()) {
+            findStatus = FindStatus.Idle
             return false
         }
-        findMatch = match
-        findStatus = FindStatus.Match(match = match, wrappedAt = wrappedAt)
+        val revision = state.metrics?.revision ?: return false
+        val generation = advancedFindGeneration
+        val focusIntentAtRequest = findFocusIntentVersion
+        val domain = presentation
+        val query = findFieldValue.text
+        val options = SearchOptions(isFindRegex, isFindCaseSensitive, isFindWholeWord)
+        if (presentation == EditorPresentation.Text && capturedReadingFindScope != null && capturedFindScope == null) {
+            isFindScopePaused = true
+            findActionMessage = UiText.Resource(R.string.find_scope_lost)
+            return false
+        }
+        val scope = capturedFindScope ?: Utf16Range(0, state.metrics!!.utf16Length)
+        val replacement = replacementFieldValue.text.takeIf { isReplaceVisible && domain == EditorPresentation.Text }
+        val reading = (markdownPreviewStatus as? MarkdownPreviewStatus.Ready)?.takeIf { it.revision == revision }
+        findStatus = FindStatus.Searching
+        findOriginRevision = revision
+        fun owned() = generation == advancedFindGeneration && isFindVisible &&
+            state.metrics?.revision == revision && presentation == domain && !closeStarted.get()
+        findJob = operationScope.launch {
+            var search: DocumentSearch? = null
+            try {
+                if (delayed) findDelay()
+                search = state.compileSearch(query, options)
+                if (!owned()) return@launch
+                compiledFind = search
+                val accumulated = ArrayList(retainedResults)
+                var retained = accumulated.sumOf { it.hit.text.length.toLong() + (it.hit.replacement?.length ?: 0) }
+                var complete = true
+                var limitMessage: Int? = null
+                val started = findNanoTime()
+                fun accept(results: List<DocumentSearchResult>, unit: Int): Boolean {
+                    for (result in results) {
+                        val visible = matchingVisibleIllustration(accumulated, result)
+                        if (visible >= 0) {
+                            accumulated[visible] = accumulated[visible].copy(alsoMatchesSource = true)
+                            continue
+                        }
+                        val cost = result.hit.text.length.toLong() + (result.hit.replacement?.length ?: 0)
+                        if (accumulated.size == MAX_SEARCH_RESULTS || retained + cost > MAX_REPLACEMENT_HISTORY_UNITS) {
+                            // Resume at the first unretained match, including a zero-width hit.
+                            // Discard this bounded review only when the user asks for the next batch.
+                            if (accumulated.isNotEmpty()) {
+                                findContinuation = FindContinuation(unit, SearchCursor(result.hit.range.start), true)
+                                limitMessage = R.string.find_result_limit
+                            } else limitMessage = R.string.find_context_limit
+                            return false
+                        }
+                        if (domain == EditorPresentation.Text && capturedFindScope != null) {
+                            val contained = result.source ?: result.ownerSource
+                            if (contained == null) { complete = false; continue }
+                            if (contained.start < scope.start || contained.end > scope.end) continue
+                        }
+                        retained += cost
+                        accumulated.add(result)
+                    }
+                    return true
+                }
+                fun pauseAfterPage(completion: SearchCompletion, cursor: SearchCursor, next: SearchCursor, unit: Int): Boolean {
+                    if (completion !in listOf(SearchCompletion.PageLimit, SearchCompletion.WorkLimit) || next == cursor) {
+                        limitMessage = R.string.find_context_limit
+                        return true
+                    }
+                    if (findNanoTime() - started > 3_000_000_000L) {
+                        findContinuation = FindContinuation(unit, next, false)
+                        limitMessage = R.string.find_time_limit
+                        return true
+                    }
+                    return false
+                }
+                suspend fun publish() {
+                    currentCoroutineContext().ensureActive()
+                    if (!owned()) return
+                    findResults = accumulated.toList()
+                    if (previousResult != null) findResultIndex = findResults.indexOfFirst {
+                        it.source == previousResult.source && it.illustration == previousResult.illustration &&
+                            it.hit.range == previousResult.hit.range && it.segments == previousResult.segments &&
+                            it.representation == previousResult.representation
+                    }
+                    if (pendingFindDirection != null && findResults.isNotEmpty() && findStatus != FindStatus.Searching) {
+                        val direction = pendingFindDirection!!
+                        pendingFindDirection = null
+                        navigateFindResults(direction)
+                    }
+                    yield()
+                }
+                if (domain == EditorPresentation.Text) {
+                    var cursor = continuation?.cursor ?: SearchCursor(scope.start)
+                    while (owned()) {
+                        val page = state.searchSource(search, revision, scope, cursor, replacement)
+                        if (!owned()) return@launch
+                        complete = accept(page.hits.map { hit ->
+                            DocumentSearchResult(hit, hit.range, hit.range.start, SearchRepresentation.Source)
+                        }, 0)
+                        publish()
+                        if (!complete || page.completion == SearchCompletion.Complete) break
+                        if (pauseAfterPage(page.completion, cursor, page.next, 0)) {
+                            complete = false
+                            break
+                        }
+                        cursor = page.next
+                    }
+                } else if (reading != null) {
+                    val cached = reading.layout.illustrationCache.snapshot()
+                    val searchDocument = reading.document.copy(blocks = reading.document.blocks.indices.map { index ->
+                        reading.layout.illustrations.decorate(index) { request -> cached[request]
+                            ?: dev.soupslurpr.beautyxt.illustration.IllustrationResult.Pending(request.kind) }
+                    })
+                    val units = readingSearchUnits(searchDocument, includeIllustrationSource)
+                    val selection = capturedReadingFindScope ?: capturedFindScope?.let {
+                        readingSelectionForSource(searchDocument, DocumentSelection.Source(revision, it.start, it.end))
+                    }
+                    if (capturedFindScope != null && selection == null) {
+                        isFindScopePaused = true
+                        findActionMessage = UiText.Resource(R.string.find_scope_lost)
+                        return@launch
+                    }
+                    complete = if (selection == null) !units.hasCoverageGaps else units.coverageGaps.none { target ->
+                        readingUnitScope(ReadingSearchUnit("", emptyList(), illustration = target), selection) != null
+                    }
+                    var searchedUnit = false
+                    outer@ for ((unitIndex, unit) in units.units.withIndex()) {
+                        if (unitIndex < (continuation?.unit ?: 0)) continue
+                        val unitScope = if (selection != null) readingUnitScope(unit, selection) ?: continue
+                            else Utf16Range(0, unit.text.length.toLong())
+                        var cursor = continuation?.takeIf { it.unit == unitIndex }?.cursor ?: SearchCursor(unitScope.start)
+                        if (searchedUnit && findNanoTime() - started > 3_000_000_000L) {
+                            findContinuation = FindContinuation(unitIndex, cursor, false)
+                            limitMessage = R.string.find_time_limit
+                            complete = false
+                            break
+                        }
+                        while (owned()) {
+                            val page = state.searchText(search, unit.text, unitScope, cursor)
+                            searchedUnit = true
+                            if (!owned()) return@launch
+                            if (!accept(page.hits.map { readingSearchResult(searchDocument, unit, it) }, unitIndex)) {
+                                complete = false
+                                break@outer
+                            }
+                            publish()
+                            if (page.completion == SearchCompletion.Complete) break
+                            if (pauseAfterPage(page.completion, cursor, page.next, unitIndex)) {
+                                complete = false
+                                break@outer
+                            }
+                            cursor = page.next
+                        }
+                    }
+                } else complete = false
+                if (!owned()) return@launch
+                isFindComplete = complete && !hasEarlierFindResults
+                reviewedFindRevision = revision.takeIf { isFindComplete && replacement != null }
+                findCoverageMessage = when {
+                    isFindComplete -> null
+                    limitMessage != null -> UiText.Resource(limitMessage)
+                    complete && hasEarlierFindResults -> UiText.Resource(R.string.find_later_results_end)
+                    else -> UiText.Resource(R.string.find_incomplete)
+                }
+                findStatus = when {
+                    findMatch != null -> FindStatus.Match(findMatch!!, null)
+                    findResults.isEmpty() && isFindComplete -> FindStatus.NoMatches
+                    else -> FindStatus.Idle
+                }
+                publish()
+                advanceAfterReplacement?.takeIf { findFocusIntentVersion == focusIntentAtRequest }?.let { (offset, strict) ->
+                    val next = findResults.indexOfFirst { result ->
+                        if (strict) result.navigationOffset > offset else result.navigationOffset >= offset
+                    }
+                    if (next >= 0) selectFindResult(next)
+                    else findActionMessage = replacementAdvanceEndMessage()
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                if (owned()) {
+                    findStatus = FindStatus.Failed(UiText.Resource(
+                        if (replacement != null && search != null) R.string.find_invalid_replacement
+                        else R.string.find_invalid_query))
+                    findCoverageMessage = UiText.Resource(R.string.find_incomplete)
+                }
+            } finally {
+                search?.close()
+                if (owned()) { compiledFind = null; findJob = null }
+            }
+        }
         return true
     }
 
-    /** Exhausts one candidate phase through strictly shrinking bounded native batches. */
-    private suspend fun searchFindPhase(
-        generation: Long,
-        query: String,
-        matchCase: Boolean,
-        revision: Long,
-        direction: FindDirection,
-        initialRange: Utf16Range
-    ): FindPhaseResult {
-        var candidateRange = initialRange
-        while (candidateRange.start < candidateRange.end) {
-            currentCoroutineContext().ensureActive()
-            if (!ownsFindRequest(generation = generation, query = query, matchCase = matchCase)) {
-                return FindPhaseResult.Unavailable
-            }
-            val request =
-                FindRequest(
-                    revision = revision,
-                    query = query,
-                    matchCase = matchCase,
-                    candidateRange = candidateRange,
-                    direction = direction,
-                    maxCandidateUtf16Units = MAX_FIND_CANDIDATE_UTF16_UNITS
-                )
-            when (val result = state.findBatch(request)) {
-                FindBatchResult.Unavailable -> return FindPhaseResult.Unavailable
+    private fun navigateFindResults(direction: FindDirection): Boolean {
+        if (!isFindVisible || findFieldValue.text.isEmpty() || isFindScopePaused) return false
+        if (findStatus == FindStatus.Searching) {
+            pendingFindDirection = direction
+            return true
+        }
+        if (findResults.isEmpty()) {
+            if (findStatus == FindStatus.Searching) pendingFindDirection = direction
+            return false
+        }
+        val offset = if (findResultIndex < 0) findOriginUtf16Offset else currentDocumentLocation().offset
+        val candidate = if (findResultIndex < 0) {
+            if (direction == FindDirection.Forward) findResults.indexOfFirst { it.navigationOffset >= offset }
+            else findResults.indexOfLast { it.navigationOffset <= offset }
+        } else findResultIndex + if (direction == FindDirection.Forward) 1 else -1
+        val wraps = candidate !in findResults.indices
+        val target = if (!wraps) candidate else if (direction == FindDirection.Forward) 0 else findResults.lastIndex
+        findActionMessage = when {
+            !isFindComplete -> UiText.Resource(R.string.find_incomplete)
+            isFindComplete && findResults.size == 1 -> UiText.Resource(R.string.find_only_match)
+            wraps -> UiText.Resource(if (direction == FindDirection.Forward) R.string.find_wrapped_top else R.string.find_wrapped_bottom)
+            else -> null
+        }
+        return selectFindResult(target, if (!wraps) null else if (direction == FindDirection.Forward) FindWrap.Beginning else FindWrap.End)
+    }
 
-                is FindBatchResult.Failed -> return FindPhaseResult.Failed(result.message)
-
-                is FindBatchResult.Batch -> {
-                    val match = result.batch.match
-                    if (match != null) {
-                        return FindPhaseResult.Matched(match)
+    /** Explicit result selection is the only search operation that moves the passage. */
+    fun selectFindResult(index: Int, wrappedAt: FindWrap? = null): Boolean {
+        val result = findResults.getOrNull(index) ?: return false
+        val revision = state.metrics?.revision ?: return false
+        if (revision != findOriginRevision || state.hasActiveDraftChanges) return false
+        val origin = currentDocumentLocation()
+        val target = DocumentLocation(revision, presentation, result.navigationOffset)
+        val focusIntentAtNavigation = findFocusIntentVersion
+        findResultIndex = index
+        if (presentation == EditorPresentation.MarkdownPreview) {
+            val ready = markdownPreviewStatus as? MarkdownPreviewStatus.Ready ?: return false
+            markdownPreviewStatus = ready.copy(scrollRestoration = SemanticViewportAnchor(revision, target.offset, 0))
+            observeMarkdownPreviewViewportAnchor(revision, target.offset)
+            locations.record(origin, target, find = true)
+            locationVersion++
+            findRevealFocusIntent = focusIntentAtNavigation
+            findRevealRequest++
+        } else {
+            val generation = advancedFindGeneration
+            launchOperation(operation = { state ->
+                val position = try { state.resolvePosition(revision, result.navigationOffset) }
+                    catch (_: Exception) {
+                        findMatch = null
+                        findResults = emptyList()
+                        isFindComplete = false
+                        findStatus = FindStatus.Failed(UiText.Resource(R.string.operation_find_interrupted))
+                        return@launchOperation
                     }
-                    val remaining = result.batch.remainingCandidateRange
-                        ?: return FindPhaseResult.Exhausted
-                    candidateRange = remaining
+                val canPublish = { generation == advancedFindGeneration && isFindVisible && findResultIndex == index }
+                val matched = FindMatch(result.source ?: result.hit.range, position)
+                val moved = if (isViewOnly && matched.range.start != matched.range.end)
+                    state.navigateToMatch(matched, canPublish) == MatchViewportResult.Published
+                else if (isViewOnly) state.navigateToSourceOffset(revision, result.navigationOffset, canPublish)
+                else state.openSourceCaret(revision, result.navigationOffset) {
+                        generation == advancedFindGeneration && isFindVisible && findResultIndex == index
+                    }
+                if (moved && generation == advancedFindGeneration && state.metrics?.revision == revision) {
+                    findMatch = matched
+                    findStatus = FindStatus.Match(findMatch!!, wrappedAt)
+                    pendingEditWindowScrollRestoration = EditWindowScrollRestoration(SemanticViewportAnchor(revision, target.offset, 0))
+                    viewportListState.requestScrollToItem(0)
+                    locations.record(origin, target, find = true)
+                    locationVersion++
+                    findRevealFocusIntent = focusIntentAtNavigation
+                    findRevealRequest++
+                }
+            }, requestDraftFocus = false)
+        }
+        return true
+    }
+
+    private fun currentDocumentLocation(): DocumentLocation {
+        val revision = state.metrics?.revision ?: 0
+        val offset = if (presentation == EditorPresentation.MarkdownPreview)
+            markdownPreviewReturnTarget?.viewportAnchor?.sourceUtf16Offset ?: resolveVisibleViewportAnchor().sourceUtf16Offset
+            else resolveVisibleViewportAnchor().sourceUtf16Offset
+        val caret = activeDraft?.let { it.edit.snapshot.range.start + it.textFieldState.selection.end } ?: offset
+        return DocumentLocation(revision, presentation, offset, caret)
+    }
+
+    fun returnToDocumentLocation(forward: Boolean) {
+        if (state.hasActiveDraftChanges || state.status != EditorDocumentStatus.Ready) return
+        val (target, skipped) = locations.move(forward)
+        locationVersion++
+        locationMessage = if (skipped) UiText.Resource(R.string.location_skipped) else null
+        target ?: return
+        if (target.revision != state.metrics?.revision) return
+        clearDocumentSelection()
+        pendingReadingSelection = null
+        pendingReadingLocation = null
+        if (target.presentation == EditorPresentation.MarkdownPreview && markdownRenderer != null) {
+            if (presentation == EditorPresentation.Text) {
+                launchOperation(operation = { state ->
+                    state.activeEdit?.let { state.discardActiveEdit(it.generation) }
+                    activeDraft = null
+                    openMarkdownPreview(MarkdownPreviewReturnTarget(
+                        SemanticViewportAnchor(target.revision, target.offset, 0), Utf16Range(target.caret, target.caret)),
+                        locationFallback = target)
+                }, requestDraftFocus = false)
+            } else {
+                val ready = markdownPreviewStatus as? MarkdownPreviewStatus.Ready
+                when {
+                    ready != null -> {
+                        markdownPreviewStatus = ready.copy(scrollRestoration = SemanticViewportAnchor(target.revision, target.offset, 0))
+                        observeMarkdownPreviewViewportAnchor(target.revision, target.offset)
+                    }
+                    markdownPreviewStatus is MarkdownPreviewStatus.Failed -> restoreDocumentLocationInSource(target, readingFallback = true)
+                    else -> {
+                        pendingReadingLocation = target
+                        markdownPreviewReturnTarget = MarkdownPreviewReturnTarget(
+                            SemanticViewportAnchor(target.revision, target.offset, 0), Utf16Range(target.caret, target.caret))
+                    }
                 }
             }
-        }
-        return FindPhaseResult.Exhausted
-    }
-
-    /** Returns the first candidate offset for this query and direction. */
-    private fun findAnchor(direction: FindDirection, query: String, documentLength: Long): Long {
-        val currentMatch = findMatch
-        if (currentMatch == null) {
-            return findOriginUtf16Offset.coerceIn(0L, documentLength)
-        }
-        return when (direction) {
-            FindDirection.Forward ->
-                Math.addExact(
-                    currentMatch.range.start,
-                    (
-                        state.findMatchStartScalarUtf16Units(currentMatch)
-                            ?: Character.charCount(query.codePointAt(0))
-                        ).toLong()
-                ).coerceAtMost(documentLength)
-
-            FindDirection.Backward -> currentMatch.range.start
+        } else {
+            restoreDocumentLocationInSource(target, readingFallback = target.presentation == EditorPresentation.MarkdownPreview)
         }
     }
 
-    /** Returns the ordered nonempty phases for one circular Find traversal. */
-    private fun findCandidatePhases(
-        direction: FindDirection,
-        anchorUtf16Offset: Long,
-        documentUtf16Length: Long
-    ): List<FindCandidatePhase> {
-        require(anchorUtf16Offset in 0L..documentUtf16Length) {
-            "find anchor must belong to the document"
+    private fun restoreDocumentLocationInSource(target: DocumentLocation, readingFallback: Boolean) {
+        if (closeStarted.get() || target.revision != state.metrics?.revision) return
+        if (readingFallback) locationMessage = UiText.Resource(R.string.location_source_fallback)
+        pendingReadingLocation = null
+        markdownPreviewReturnTarget = null
+        presentation = EditorPresentation.Text
+        invalidateMarkdownPreview()
+        launchOperation(operation = { state ->
+            val moved = if (isViewOnly) state.navigateToSourceOffset(target.revision, target.offset)
+                else state.openSourceCaret(target.revision, target.caret)
+            if (moved) {
+                val anchor = SemanticViewportAnchor(target.revision, target.offset, 0)
+                if (isViewOnly) readOnlySourceScrollRestoration = anchor
+                else pendingEditWindowScrollRestoration = EditWindowScrollRestoration(anchor)
+                viewportListState.requestScrollToItem(0)
+            }
+        }, requestDraftFocus = false, onCompletion = { refreshAdvancedFind() })
+    }
+
+    /** Counts actual included changes separately from matches already equal to their replacement. */
+    val includedReplacementCount: Int get() = findResults.indices.count { index ->
+        val result = findResults[index]
+        index !in excludedFindResults && result.source != null &&
+            result.hit.replacement != null && result.hit.replacement != result.hit.text
+    }
+
+    val unchangedReplacementCount: Int get() = findResults.indices.count { index ->
+        val result = findResults[index]
+        index !in excludedFindResults && result.source != null && result.hit.replacement == result.hit.text
+    }
+
+    val canApplyFindReplacements: Boolean get() = isReplaceVisible && isFindComplete &&
+        reviewedFindRevision == state.metrics?.revision && !isFindScopePaused && !isViewOnly &&
+        presentation == EditorPresentation.Text && !state.hasActiveDraftChanges &&
+        state.status == EditorDocumentStatus.Ready && !isSaveBusy && !isSourceReloading &&
+        includedReplacementCount > 0
+
+    val canReplaceCurrent: Boolean get() = isReplaceVisible && !isFindScopePaused && !isViewOnly &&
+        presentation == EditorPresentation.Text && findOriginRevision == state.metrics?.revision &&
+        !state.hasActiveDraftChanges && state.status == EditorDocumentStatus.Ready &&
+        !isSaveBusy && !isSourceReloading && findResults.getOrNull(findResultIndex)?.let {
+            it.source != null && it.hit.replacement != null
+        } == true
+
+    private fun replacementAdvanceEndMessage() = UiText.Resource(
+        if (isFindComplete) R.string.replace_end_scope else R.string.replace_no_further_verified_match)
+
+    fun applyFindReplacements(currentOnly: Boolean = false): Boolean {
+        if (if (currentOnly) !canReplaceCurrent else !canApplyFindReplacements) return false
+        val selected = if (currentOnly) listOfNotNull(findResults.getOrNull(findResultIndex))
+            else findResults.filterIndexed { index, _ -> index !in excludedFindResults }
+        val patches = selected.mapNotNull { result ->
+            val source = result.source ?: return@mapNotNull null
+            val inserted = result.hit.replacement ?: return@mapNotNull null
+            if (inserted == result.hit.text) null else DocumentPatch(source, result.hit.text, inserted)
         }
-        return buildList(capacity = 2) {
-            when (direction) {
-                FindDirection.Forward -> {
-                    if (anchorUtf16Offset < documentUtf16Length) {
-                        add(
-                            FindCandidatePhase(
-                                range = Utf16Range(anchorUtf16Offset, documentUtf16Length),
-                                wrappedAt = null
-                            )
-                        )
-                    }
-                    if (anchorUtf16Offset > 0L) {
-                        add(
-                            FindCandidatePhase(
-                                range = Utf16Range(0L, anchorUtf16Offset),
-                                wrappedAt = FindWrap.Beginning
-                            )
-                        )
-                    }
+        if (patches.isEmpty()) {
+            if (currentOnly && selected.isNotEmpty()) {
+                val end = selected.single().hit.range.end
+                val next = findResults.indexOfFirst { it.navigationOffset >= end && it != selected.single() }
+                if (next >= 0) selectFindResult(next)
+                else findActionMessage = replacementAdvanceEndMessage()
+                return true
+            }
+            return false
+        }
+        if (!history.canRetain(patches)) {
+            findActionMessage = UiText.Resource(R.string.replace_undo_limit)
+            return false
+        }
+        val revision = if (currentOnly) findOriginRevision else reviewedFindRevision ?: return false
+        val findGenerationAtApply = advancedFindGeneration
+        val focusIntentAtApply = findFocusIntentVersion
+        val before = currentDocumentLocation().caret
+        val caret = patches.first().range.start + patches.first().inserted.length
+        val selectionAfter = Utf16Range(caret, caret)
+        var outcome: DocumentReplacementResult = DocumentReplacementResult.Unavailable
+        launchOperation(operation = { state ->
+            outcome = state.replaceDocumentBatch(revision, patches, selectionAfter)
+        }, requestDraftFocus = false, onCompletion = {
+            when (val result = outcome) {
+                is DocumentReplacementResult.Applied -> {
+                    val first = patches.first()
+                    // A committed edit survives a new query, but its automatic jump does not.
+                    val advance = currentOnly && isFindVisible && isReplaceVisible &&
+                        advancedFindGeneration == findGenerationAtApply && findFocusIntentVersion == focusIntentAtApply
+                    recordCommittedEdit(CommittedEditDelta(revision, result.revision, first.range.start,
+                        first.removed, first.inserted, Utf16Range(before, before), selectionAfter, patches), scopedReplacement = true)
+                    invalidateMarkdownPreview()
+                    recordSourceSaveRequest()
+                    findActionMessage = UiText.Quantity(R.plurals.replace_applied, patches.size, listOf(patches.size))
+                    refreshAdvancedFind(advanceAfterReplacement =
+                        (caret to (first.range.start == first.range.end)).takeIf { advance })
                 }
-
-                FindDirection.Backward -> {
-                    if (anchorUtf16Offset > 0L) {
-                        add(
-                            FindCandidatePhase(
-                                range = Utf16Range(0L, anchorUtf16Offset),
-                                wrappedAt = null
-                            )
-                        )
-                    }
-                    if (anchorUtf16Offset < documentUtf16Length) {
-                        add(
-                            FindCandidatePhase(
-                                range = Utf16Range(anchorUtf16Offset, documentUtf16Length),
-                                wrappedAt = FindWrap.End
-                            )
-                        )
-                    }
-                }
+                DocumentReplacementResult.RejectedBySizeLimit -> findActionMessage = UiText.Resource(R.string.operation_save_document_too_large)
+                else -> findActionMessage = UiText.Resource(R.string.operation_apply_change_failed)
             }
-        }
+        })
+        return true
     }
 
-    /** Returns whether one Find generation still owns publication. */
-    private fun ownsFindRequest(generation: Long, query: String, matchCase: Boolean): Boolean =
-        !closeStarted.get() &&
-            isFindVisible &&
-            activeFindRequestGeneration == generation &&
-            findFieldValue.text == query &&
-            isFindCaseSensitive == matchCase
-
-    /** Publishes one sanitized unavailable result only for its exact generation. */
-    private fun publishFindUnavailable(generation: Long) {
-        if (activeFindRequestGeneration == generation && isFindVisible) {
-            if (findMatch?.start?.revision != state.metrics?.revision) {
-                findMatch = null
-            }
-            findStatus = FindStatus.Failed(UiText.Resource(R.string.operation_find_interrupted))
-        }
-    }
-
-    /** Publishes one sanitized Find failure only for its exact generation. */
-    private fun publishFindFailure(generation: Long, message: UiText) {
-        if (activeFindRequestGeneration == generation && isFindVisible) {
-            if (findMatch?.start?.revision != state.metrics?.revision) {
-                findMatch = null
-            }
-            findStatus = FindStatus.Failed(message)
-        }
-    }
+    /** Compatibility entry for document revision observers; refresh never navigates. */
+    private fun launchFind(direction: FindDirection, delayed: Boolean): Boolean =
+        refreshAdvancedFind(delayed = delayed)
 
     /** Starts one random-line load and moves only after successful publication. */
     private fun launchLineNavigation(logicalLine: Long) {
@@ -4491,8 +5139,13 @@ internal constructor(
         if (closeStarted.get()) {
             return
         }
+        val origin = currentDocumentLocation()
         operationScope.launch(start = CoroutineStart.UNDISPATCHED) {
             if (state.navigateToLine(logicalLine) && !closeStarted.get()) {
+                state.blocks.firstOrNull()?.block?.globalUtf16Start?.let { offset ->
+                    locations.record(origin, DocumentLocation(state.metrics!!.revision, presentation, offset))
+                    locationVersion++
+                }
                 viewportListState.requestScrollToItem(FIRST_VIEWPORT_ITEM_INDEX)
             }
         }

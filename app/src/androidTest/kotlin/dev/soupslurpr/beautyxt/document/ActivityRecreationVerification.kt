@@ -1447,6 +1447,11 @@ internal fun Instrumentation.verifyEditorActivityRecreation() {
             node.text?.toString() == TEST_NEW_DOCUMENT_LABEL
         }
         val editField = waitForEditField()
+        editField.performRequiredClick()
+        waitForAccessibilityNode("focused new-document input") { node ->
+            node.className?.toString() == TEST_EDIT_FIELD_CLASS_NAME && node.isFocused
+        }
+        waitForAccessibilityIdle()
         val setTextArguments =
             Bundle().apply {
                 putCharSequence(
@@ -1455,7 +1460,7 @@ internal fun Instrumentation.verifyEditorActivityRecreation() {
                 )
             }
         check(
-            editField.performAction(
+            waitForEditField().performAction(
                 AccessibilityNodeInfo.ACTION_SET_TEXT,
                 setTextArguments
             )
@@ -2118,11 +2123,18 @@ internal fun Instrumentation.waitForImeVisibility(activity: Activity, visible: B
 /** Waits until the external editor viewport shrinks for its visible IME. */
 private fun Instrumentation.waitForImeResize(editorBottomBeforeIme: Int) {
     require(editorBottomBeforeIme > 0) { "editor bottom before IME must be positive" }
-    waitForAccessibilityNode("editor resized for external IME") { node ->
-        node.className?.toString() == TEST_EDIT_FIELD_CLASS_NAME &&
-            node.isEditable &&
-            node.bottomInScreen() < editorBottomBeforeIme
+    val deadline = SystemClock.uptimeMillis() + TEST_ACTIVITY_TIMEOUT_MILLIS
+    var currentBottom: Int? = null
+    while (SystemClock.uptimeMillis() < deadline) {
+        uiAutomation.clearCache()
+        val field = uiAutomation.rootInActiveWindow?.findNode { node ->
+            node.className?.toString() == TEST_EDIT_FIELD_CLASS_NAME && node.isEditable
+        }
+        currentBottom = field?.bottomInScreen()
+        if (currentBottom != null && currentBottom < editorBottomBeforeIme) return
+        SystemClock.sleep(TEST_ACCESSIBILITY_POLL_MILLIS)
     }
+    error("external editor did not resize for its IME: before=$editorBottomBeforeIme, current=$currentBottom")
 }
 
 /** Returns one accessibility node's lower screen edge. */

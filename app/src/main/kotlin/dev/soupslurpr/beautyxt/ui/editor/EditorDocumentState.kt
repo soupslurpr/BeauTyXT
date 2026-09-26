@@ -7,6 +7,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.document.DocumentMetrics
+import dev.soupslurpr.beautyxt.document.DocumentPatch
+import dev.soupslurpr.beautyxt.document.DocumentSearch
+import dev.soupslurpr.beautyxt.document.SearchOptions
+import dev.soupslurpr.beautyxt.document.SearchCursor
+import dev.soupslurpr.beautyxt.document.SearchPage
+import dev.soupslurpr.beautyxt.document.MAX_REPLACEMENT_HISTORY_UNITS
 import dev.soupslurpr.beautyxt.document.DocumentSizeLimitException
 import dev.soupslurpr.beautyxt.document.EditWindowLimits
 import dev.soupslurpr.beautyxt.document.EditWindowSnapshot
@@ -133,7 +139,11 @@ internal data class CommittedEditDelta(
     val removedText: String,
     val insertedText: String,
     val selectionBefore: Utf16Range,
-    val selectionAfter: Utf16Range
+    val selectionAfter: Utf16Range,
+    val patches: List<DocumentPatch> = listOf(DocumentPatch(
+        Utf16Range(rangeStart, Math.addExact(rangeStart, removedText.length.toLong())),
+        removedText, insertedText
+    ))
 ) {
     init {
         require(revisionBefore >= INITIAL_DOCUMENT_REVISION) {
@@ -153,7 +163,7 @@ internal data class CommittedEditDelta(
 
     /** Returns the retained UTF-16 memory cost of this history entry. */
     val retainedUtf16Units: Int
-        get() = Math.addExact(removedText.length, insertedText.length)
+        get() = Math.toIntExact(patches.sumOf { it.retainedUnits.toLong() })
 }
 
 /** Describes one revision-bound replacement for history or bulk input. */
@@ -615,7 +625,8 @@ internal constructor(
     }
 
     /** Resolves an exact reading position without constructing an editable window. */
-    suspend fun navigateToSourceOffset(revision: Long, utf16Offset: Long): Boolean =
+    suspend fun navigateToSourceOffset(revision: Long, utf16Offset: Long,
+        canPublish: () -> Boolean = { true }): Boolean =
         operations.withLock {
             val currentMetrics = metrics ?: return@withLock false
             if (
@@ -659,6 +670,10 @@ internal constructor(
                 check(snapshot.blocks.firstOrNull()?.globalUtf16Start == utf16Offset) {
                     "source viewport does not begin at its requested position"
                 }
+                if (!canPublish()) {
+                    status = EditorDocumentStatus.Ready
+                    return@withLock false
+                }
                 applyViewport(snapshot, ViewportLoadDirection.Target)
                 true
             } catch (cancellation: CancellationException) {
@@ -675,6 +690,98 @@ internal constructor(
                 }
             }
         }
+
+    /** Creates a query once, outside the main thread and document operation lock. */
+    suspend fun compileSearch(query: String, options: SearchOptions): DocumentSearch {
+        var owned: DocumentSearch? = null
+        return try {
+            withContext(workerDispatcher) { document.compileSearch(query, options).also { owned = it } }
+        } catch (failure: Exception) {
+            owned?.close()
+            throw failure
+        }
+    }
+
+    /** Searches immutable source; publication still checks the session's revision. */
+    suspend fun searchSource(search: DocumentSearch, revision: Long, scope: Utf16Range,
+        cursor: SearchCursor, replacement: String?): SearchPage = withContext(workerDispatcher) {
+        search.source(revision, scope, cursor, replacement).also { page ->
+            check(page.revision == revision)
+            check(page.next.start in cursor.start..scope.end)
+            check(page.hits.all { it.range.start >= cursor.start && it.range.end <= scope.end })
+        }
+    }
+
+    suspend fun searchText(search: DocumentSearch, text: String, scope: Utf16Range,
+        cursor: SearchCursor): SearchPage = withContext(workerDispatcher) { search.text(text, scope, cursor) }
+
+    suspend fun readSourceRange(revision: Long, range: Utf16Range): String =
+        withContext(workerDispatcher) { document.readRange(revision, range) }
+
+    suspend fun resolvePosition(revision: Long, offset: Long): ViewportCursor = try {
+        withContext(workerDispatcher) { document.positionAt(revision, offset) }
+    } catch (failure: Exception) {
+        handleStaleRevision(failure)
+        throw failure
+    }
+
+    /** Moves a clean source caret independently from displayed Find decoration. */
+    suspend fun openSourceCaret(revision: Long, offset: Long,
+        canPublish: () -> Boolean = { true }): Boolean = operations.withLock {
+        if (status != EditorDocumentStatus.Ready || hasActiveDraftChanges ||
+            revision != currentRevision || closeStarted.get()) return@withLock false
+        val snapshot = loadEditWindowLocked(Utf16Range(offset, offset)) ?: return@withLock false
+        if (!canPublish()) {
+            status = EditorDocumentStatus.Ready
+            return@withLock false
+        }
+        publishEditWindow(snapshot)
+        status = EditorDocumentStatus.Ready
+        true
+    }
+
+    /** Applies a prepared batch only while the draft and revision still agree. */
+    suspend fun replaceDocumentBatch(revision: Long, patches: List<DocumentPatch>,
+        selectionAfter: Utf16Range): DocumentReplacementResult = operations.withLock {
+        val previous = metrics ?: return@withLock DocumentReplacementResult.Unavailable
+        if (status != EditorDocumentStatus.Ready || hasActiveDraftChanges ||
+            revision != currentRevision || previous.revision != revision || closeStarted.get() ||
+            patches.isEmpty() || patches.any { it.range.end > previous.utf16Length } ||
+            patches.sumOf { it.retainedUnits.toLong() } > MAX_REPLACEMENT_HISTORY_UNITS
+        ) return@withLock DocumentReplacementResult.Unavailable
+        val removed = patches.joinToString("") { it.removed }
+        val inserted = patches.joinToString("") { it.inserted }
+        if (selectionAfter.end > previous.utf16Length - removed.length + inserted.length)
+            return@withLock DocumentReplacementResult.Unavailable
+        withContext(NonCancellable) commit@ {
+            status = EditorDocumentStatus.ApplyingEdit
+            editorMessage = null
+            val result = try {
+                withContext(workerDispatcher) { document.replaceBatch(revision, patches) }
+            } catch (failure: Exception) {
+                if (!handleStaleRevision(failure)) status = EditorDocumentStatus.Ready
+                return@commit if (failure is DocumentSizeLimitException)
+                    DocumentReplacementResult.RejectedBySizeLimit else DocumentReplacementResult.Failed
+            }
+            try {
+                validateReplacementMetrics(previous, result, removed, inserted)
+            } catch (_: Exception) {
+                recoverUnverifiedAppliedEdit(result.revision)
+                return@commit DocumentReplacementResult.Failed
+            }
+            currentRevision = result.revision
+            clearRevisionBoundViewport()
+            clearPrefetchedEditWindows()
+            activeEdit = null
+            hasActiveDraftChanges = false
+            metrics = result
+            failedEditWindowSelection = null
+            failedEditWindowLine = null
+            status = EditorDocumentStatus.Ready
+            requestEditWindowLocked(selectionAfter)
+            DocumentReplacementResult.Applied(result.revision)
+        }
+    }
 
     /** Runs and validates one bounded native Find batch against the current revision. */
     suspend fun findBatch(request: FindRequest): FindBatchResult = operations.withLock {
@@ -745,7 +852,7 @@ internal constructor(
         }
 
     /** Publishes one bounded viewport retaining readable context before a Find match. */
-    suspend fun navigateToMatch(match: FindMatch): MatchViewportResult = operations.withLock {
+    suspend fun navigateToMatch(match: FindMatch, canPublish: () -> Boolean = { true }): MatchViewportResult = operations.withLock {
         val currentMetrics = metrics ?: return@withLock MatchViewportResult.Unavailable
         if (
             status != EditorDocumentStatus.Ready ||
@@ -773,7 +880,7 @@ internal constructor(
                     null
                 }
             currentCoroutineContext().ensureActive()
-            if (closeStarted.get()) {
+            if (closeStarted.get() || !canPublish()) {
                 return@withLock MatchViewportResult.Unavailable
             }
             contextSnapshot?.let { snapshot ->
@@ -791,7 +898,7 @@ internal constructor(
                     document.viewport(cursor = viewportCursor, limits = viewportLimits)
                 }
             currentCoroutineContext().ensureActive()
-            if (closeStarted.get()) {
+            if (closeStarted.get() || !canPublish()) {
                 return@withLock MatchViewportResult.Unavailable
             }
             val validationCursor =
@@ -1636,6 +1743,22 @@ internal constructor(
                 throw failure
             }
         CapturedDocumentRevision(metrics = capturedMetrics, snapshot = snapshot)
+    }
+
+    /** Captures exactly one selection; cancellation always releases unclaimed native ownership. */
+    suspend fun captureSelectedRevision(revision: Long, range: Utf16Range): CapturedDocumentRevision? = operations.withLock {
+        if (status != EditorDocumentStatus.Ready || hasActiveDraftChanges ||
+            closeStarted.get() || currentRevision != revision) return@withLock null
+        var owned: EditorDocumentSnapshot? = null
+        try {
+            withContext(workerDispatcher) {
+                owned = document.captureRange(revision, range)
+                val snapshot = checkNotNull(owned)
+                CapturedDocumentRevision(snapshot.metrics(), snapshot)
+            }.also { owned = null }
+        } finally {
+            owned?.close()
+        }
     }
 
     /** Renders one immutable current revision without blocking document mutations. */

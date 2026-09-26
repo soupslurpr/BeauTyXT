@@ -49,6 +49,8 @@ private fun Instrumentation.verifyReadingSelectionBackWithWindows() {
         captureReadingSelection("02-canceled-back")
         sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         requireStillReading(activity, session, "first Back with a selection")
+        captureReadingSelection("first-back-state")
+        runOnMainSync { check(session.documentSelection == null) { "first Back retained logical selection: ${session.documentSelection}" } }
         requireNoReadingSelectionMenu()
         captureReadingSelection("03-selection-cleared")
         check(!session.state.hasDocumentChanges) { "dismissing selection changed the document" }
@@ -107,7 +109,7 @@ private fun Instrumentation.verifyReadingSelectionBackWithWindows() {
         }
     }
 
-    // Copy still works, and its own selection dismissal must not leave a stale Back interceptor.
+    // Copy preserves the global selection for another output; Back clears it before navigation.
     withReadingPage(SELECTION_TEXT, viewOnly = true) { activity, session ->
         val clipboard = checkNotNull(activity.getSystemService(ClipboardManager::class.java))
         try {
@@ -119,9 +121,12 @@ private fun Instrumentation.verifyReadingSelectionBackWithWindows() {
                     "copying the selected word produced unexpected text"
                 }
             }
+            waitForReadingCopyMenu()
+            sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            requireStillReading(activity, session, "Back after Copy")
             requireNoReadingSelectionMenu()
             sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-            awaitReadingCondition("Copy left an extra Back interception behind") {
+            awaitReadingCondition("cleared selection left an extra Back interception behind") {
                 activity.isFinishing
             }
         } finally {
@@ -169,22 +174,18 @@ private fun selectionBackEvent(progress: Float) = BackEventCompat(
 private fun Instrumentation.requireNoReadingSelectionMenu() {
     val deadline = SystemClock.uptimeMillis() + 5_000L
     while (SystemClock.uptimeMillis() < deadline) {
-        val menu = uiAutomation.windows.firstNotNullOfOrNull { window ->
-            window.root?.findNode { it.text?.toString() in listOf("Copy", "Select all") }
-        }
+        val menu = uiAutomation.rootInActiveWindow?.findNode { it.text?.toString() in listOf("Copy", "Select all") }
         if (menu == null) return
         SystemClock.sleep(20L)
     }
     error("selection toolbar remained after dismissing the selection")
 }
 
-/** Android's floating selection toolbar lives in a separate accessibility window. */
+/** Find Copy in the document selection bar or a platform selection window. */
 private fun Instrumentation.findReadingCopyMenu(): AccessibilityNodeInfo? =
-    uiAutomation.windows.firstNotNullOfOrNull { window ->
-        window.root?.findNode { it.text?.toString() == "Copy" }
+    uiAutomation.rootInActiveWindow?.findNode { it.text?.toString() == "Copy" }
             ?.let { generateSequence(it) { node -> node.parent } }
             ?.firstOrNull { it.isClickable && it.isEnabled }
-    }
 
 private fun Instrumentation.waitForReadingCopyMenu(): AccessibilityNodeInfo {
     val deadline = SystemClock.uptimeMillis() + 10_000L

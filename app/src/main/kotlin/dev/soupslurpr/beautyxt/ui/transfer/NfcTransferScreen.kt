@@ -216,7 +216,7 @@ internal fun NfcWriteScreen(
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     var isNfcEnabled by remember(adapter) { mutableStateOf(adapter.isEnabled) }
-    var state by retain(ready.generation) { mutableStateOf<NfcWriteState>(NfcWriteState.Ready) }
+    var state by retain(ready.generation) { mutableStateOf<NfcWriteState>(if (ready.armedOnOpen) NfcWriteState.Armed else NfcWriteState.Ready) }
     val isArmed = state.isArmed
     val isWorking = state == NfcWriteState.Writing
 

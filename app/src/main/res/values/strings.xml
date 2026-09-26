@@ -16,8 +16,6 @@
     <string name="action_retry">Retry</string>
     <string name="action_open">Open</string>
     <string name="action_dismiss">Dismiss</string>
-    <string name="find_case_on">On</string>
-    <string name="find_case_off">Off</string>
     <string name="action_scan_qr">Scan QR code</string>
     <string name="action_read_nfc">Read NFC tag</string>
     <string name="action_keep_reading">Keep reading</string>

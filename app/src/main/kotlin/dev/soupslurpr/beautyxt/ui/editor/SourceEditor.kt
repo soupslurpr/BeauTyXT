@@ -766,6 +766,7 @@ private fun ReadOnlyBlock(
             )
             ReadOnlyBlockText(
                 text = block.text,
+                globalStart = block.globalUtf16Start,
                 highlights = highlights,
                 highlightRange = highlightRange,
                 onTextLayout = { result -> textLayoutResult = result },
@@ -785,6 +786,7 @@ private fun ReadOnlyBlock(
             )
             ReadOnlyBlockText(
                 text = block.text,
+                globalStart = block.globalUtf16Start,
                 highlights = highlights,
                 highlightRange = highlightRange,
                 onTextLayout = { result -> textLayoutResult = result },
@@ -799,12 +801,17 @@ private fun ReadOnlyBlock(
 @Composable
 private fun ReadOnlyBlockText(
     text: String,
+    globalStart: Long,
     highlights: List<TextRange>,
     highlightRange: TextRange?,
     onTextLayout: (TextLayoutResult) -> Unit,
     onTextContentPositioned: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var selectionLayout by remember(globalStart, text) { mutableStateOf<TextLayoutResult?>(null) }
+    val selectionModifier = Modifier.documentSelectionText("source-$globalStart", selectionLayout,
+        point = { SelectionPoint.Source(globalStart + it) },
+        offset = { (it as? SelectionPoint.Source)?.offset?.takeIf { offset -> offset in globalStart..globalStart + text.length }?.let { (it - globalStart).toInt() } })
     val currentOnTextContentPositioned by rememberUpdatedState(onTextContentPositioned)
     val styles = findHighlightStyles()
     val renderedText =
@@ -819,16 +826,18 @@ private fun ReadOnlyBlockText(
             }
             currentOnTextContentPositioned(contentTopInBlockPixels.roundToInt())
         }
-    ReadingSelectionContainer(modifier = positionedModifier) {
+    val content: @Composable () -> Unit = {
         Text(
             text = renderedText,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = positionedModifier.fillMaxWidth().then(selectionModifier),
             color = MaterialTheme.colorScheme.onSurface,
             fontFamily = FontFamily.Monospace,
-            onTextLayout = onTextLayout,
+            onTextLayout = { selectionLayout = it; onTextLayout(it) },
             style = MaterialTheme.typography.bodyLarge
         )
     }
+    if (LocalDocumentSelectionLayout.current == null) ReadingSelectionContainer { content() }
+    else content()
 }
 
 /** Displays one stable multiline text field backed by a bounded Rust window. */
@@ -850,6 +859,15 @@ private fun ActiveEditWindowEditor(
         mutableStateOf<TextLayoutResult?>(null)
     }
     val textFieldState = draft.textFieldState
+    val selectionInset = with(LocalDensity.current) { 16.dp.toPx() }
+    val sourceSelectionModifier = Modifier.documentSelectionText(
+        key = "source-edit-${edit.generation}", layout = textLayoutResult,
+        nativeSelection = draft.isEditorFocused,
+        point = { SelectionPoint.Source(edit.snapshot.range.start + it) },
+        offset = { (it as? SelectionPoint.Source)?.offset?.takeIf { offset -> offset in edit.snapshot.range.start..edit.snapshot.range.end }
+            ?.let { (it - edit.snapshot.range.start).toInt() } },
+        contentOffset = { androidx.compose.ui.geometry.Offset(selectionInset, selectionInset - draft.scrollState.value) }
+    )
     val highlights = rememberFindHighlights(
         session = session,
         revision = edit.snapshot.metrics.revision,
@@ -1066,6 +1084,7 @@ private fun ActiveEditWindowEditor(
                         .fillMaxWidth()
                         .padding(horizontal = DocumentPageGutter - EditorHorizontalPadding)
                         .focusRequester(focusRequester)
+                        .then(sourceSelectionModifier)
                         .onPreviewKeyEvent { event ->
                             handleEditorHistoryShortcut(
                                 event = event,

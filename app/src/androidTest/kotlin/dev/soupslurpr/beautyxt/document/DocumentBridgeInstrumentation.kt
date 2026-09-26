@@ -379,6 +379,25 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 }
                 verifyPhase("license scroll insets", ::verifyNoticeScrollInsets)
                 verifyPhase("document bridge", ::verifyDocumentBridge)
+                verifyPhase("document experience") { verifyDocumentExperience(targetContext) }
+                verifyPhase("document experience controls") { verifyPackagedDocumentExperience(targetContext.packageName) }
+                verifyPhase("Home document experience") {
+                    verifyPackagedDocumentExperience(targetContext.packageName, fromHome = true)
+                }
+                verifyOptInPhase("staging document experience") { verifyPackagedDocumentExperience() }
+                verifyPhase("excerpt preparation") { verifyExcerptPreparation(targetContext) }
+                verifyPhase("excerpt sharing") { verifyExcerptSharing() }
+                verifyPhase("Find continuation") { verifyFindContinuation() }
+                verifyOptInPhase("physical NFC excerpt") { verifyPhysicalNfcExcerpt() }
+                verifyPhase("excerpt save recovery") { verifyExcerptSave(targetContext, context.packageName) }
+                verifyPhase("excerpt PDF pages") { verifyExcerptPdfPages() }
+                verifyPhase("document selection controls") { verifyDocumentSelectionControls() }
+                verifyPhase("document keyboard journey") { verifyDocumentKeyboardJourney() }
+                verifyPhase("replacement review") { verifyReplacementReview() }
+                verifyPhase("replacement progress") { verifyReplacementProgress() }
+                verifyPhase("reading match visibility") { verifyReadingMatchVisibility() }
+                verifyPhase("selection mode editing") { verifySelectionModeEditing() }
+                verifyOptInPhase("wide document tools") { verifyWideDocumentTools() }
                 verifyPhase("unique isolated instances") {
                     verifyUniqueServiceInstances(targetContext)
                 }

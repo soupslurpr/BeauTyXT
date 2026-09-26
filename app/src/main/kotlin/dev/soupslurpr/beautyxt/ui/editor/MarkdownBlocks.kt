@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.input.then
 import androidx.compose.material3.Button
@@ -43,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -56,7 +59,6 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -510,6 +512,9 @@ internal fun MarkdownCodeBlocks(
                 copy = LocalMarkdownCodeCopies.current[firstBlockIndex],
                 extraAction = if (isDiagram) {
                     {
+                        val span = blocks.first().spans.single()
+                        val drawing = (span.illustration as IllustrationResult.Rendered).drawing
+                        DiagramLabelSelectionAction(drawing, firstBlockIndex, span.start)
                         IconButton(onClick = { fitDiagram = !fitDiagram }) {
                             Icon(
                                 painterResource(
@@ -656,7 +661,20 @@ private fun MarkdownListItem(
                 horizontalArrangement = Arrangement.spacedBy(EditorCompactSpacing),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                MarkdownTaskIndicator(checked = checked)
+                Box {
+                    MarkdownTaskIndicator(checked = checked)
+                    val blockIndex = LocalMarkdownPreviewBlockIndex.current
+                    var markerLayout by remember(blockIndex) { mutableStateOf<TextLayoutResult?>(null) }
+                    val selection = if (blockIndex == null) Modifier else Modifier.documentSelectionText(
+                        key = "task-marker-$blockIndex", layout = markerLayout,
+                        point = { SelectionPoint.Reading(ReadingPoint(blockIndex, it)) },
+                        offset = { point -> (point as? SelectionPoint.Reading)?.point?.takeIf {
+                            it.block == blockIndex && it.offset in 0..2
+                        }?.offset })
+                    Text(block.text.take(2), color = Color.Transparent, maxLines = 1, softWrap = false,
+                        modifier = Modifier.size(24.dp).then(selection), onTextLayout = { markerLayout = it },
+                        style = markdownBodyStyle())
+                }
                 MarkdownStyledText(
                     block = contentBlock,
                     sourceBlock = block,
@@ -675,10 +693,30 @@ private fun MarkdownListItem(
         verticalAlignment = Alignment.Top
     ) {
         when {
-            marker != null ->
+            marker != null -> {
+                val blockIndex = LocalMarkdownPreviewBlockIndex.current
+                var markerLayout by remember(blockIndex, marker) { mutableStateOf<TextLayoutResult?>(null) }
+                val prefix = readingListPrefix(block)
+                val selection = if (blockIndex == null) Modifier else Modifier.documentSelectionText(
+                    key = "list-marker-$blockIndex", layout = markerLayout,
+                    point = { SelectionPoint.Reading(ReadingPoint(blockIndex, it - prefix.length)) },
+                    offset = { point -> (point as? SelectionPoint.Reading)?.point?.takeIf {
+                        it.block == blockIndex && it.offset in -prefix.length..-1
+                    }?.let { it.offset + prefix.length } })
+                val highlights = LocalReadingFindHighlights.current[blockIndex].orEmpty()
+                val styles = findHighlightStyles()
+                val annotated = buildAnnotatedString {
+                    append(marker)
+                    highlights.forEach {
+                        val start = (it.start + prefix.length).coerceIn(0, marker.length)
+                        val end = (it.end + prefix.length).coerceIn(0, marker.length)
+                        if (start < end) addStyle(if (it.current) styles.current else styles.other, start, end)
+                    }
+                }
                 Text(
-                    text = marker,
-                    modifier = Modifier.widthIn(min = MarkdownListMarkerWidth),
+                    text = annotated,
+                    onTextLayout = { markerLayout = it },
+                    modifier = Modifier.widthIn(min = MarkdownListMarkerWidth).then(selection),
                     color = MaterialTheme.colorScheme.primary,
                     style = markdownBodyStyle(),
                     fontWeight = FontWeight.SemiBold,
@@ -686,6 +724,7 @@ private fun MarkdownListItem(
                     softWrap = false,
                     maxLines = 1
                 )
+            }
 
             block.continuesPrevious || block.continuesListItem ->
                 Spacer(Modifier.width(MarkdownListMarkerWidth))
@@ -1276,7 +1315,7 @@ private fun MarkdownPresentationText(
         remember(sourceText, sourceSpans, footnoteNumbers) {
             markdownInlinePresentation(sourceText, sourceSpans, footnoteNumbers)
         }
-    val annotated =
+    val baseAnnotated =
         remember(
             sourceText,
             sourceSpans,
@@ -1297,7 +1336,9 @@ private fun MarkdownPresentationText(
         footnotePresentation?.spans ?: sourceSpans,
         style,
         fontFamily,
-        fontWeight
+        fontWeight,
+        sourceSpans,
+        renderedOffsetBase
     )
     val formulaDescription = if (standaloneDisplayIllustration(sourceText, sourceSpans)) {
         stringResource(
@@ -1314,6 +1355,27 @@ private fun MarkdownPresentationText(
     }
     val navigationState = LocalMarkdownPreviewNavigationState.current
     val blockIndex = LocalMarkdownPreviewBlockIndex.current
+    val findStyles = findHighlightStyles()
+    val findRanges = LocalReadingFindHighlights.current[blockIndex].orEmpty().mapNotNull { highlight ->
+        val start = maxOf(highlight.start, renderedOffsetBase) - renderedOffsetBase
+        val end = minOf(highlight.end, renderedOffsetBase + sourceText.length) - renderedOffsetBase
+        if (end < start || start !in 0..sourceText.length) null else {
+            fun display(offset: Int): Int = footnotePresentation?.presentationUtf16OffsetForSource(
+                offset, sourceText.length, sourceSpans) ?: offset
+            highlight.copy(start = display(start) + highlight.markerStart, end = display(end) + highlight.markerEnd,
+                markerStart = 0, markerEnd = 0)
+        }
+    }
+    val annotated = remember(baseAnnotated, findRanges, findStyles) {
+        buildAnnotatedString {
+            append(baseAnnotated)
+            findRanges.filter { !it.collapsed }.forEach { highlight ->
+                addStyle(if (highlight.current) findStyles.current else findStyles.other,
+                    highlight.start, highlight.end)
+            }
+        }
+    }
+    val markerColor = MaterialTheme.colorScheme.primary
     val key =
         remember(blockIndex, renderedOffsetBase, sourceText.length) {
             blockIndex?.let { index ->
@@ -1325,8 +1387,31 @@ private fun MarkdownPresentationText(
             }
         }
     val owner = remember(key) { Any() }
+    val bringIntoViewRequester = remember(owner) { BringIntoViewRequester() }
     var layoutResult by remember(owner) { mutableStateOf<TextLayoutResult?>(null) }
     var topInWindowPixels by remember(owner) { mutableStateOf<Int?>(null) }
+    val editSourceLabel = stringResource(R.string.markdown_edit_source)
+    val sourceActions = if (navigationState?.isEditable == true && key != null) {
+        listOf(CustomAccessibilityAction(label = editSourceLabel) {
+            val top = topInWindowPixels ?: return@CustomAccessibilityAction false
+            val layout = layoutResult ?: return@CustomAccessibilityAction false
+            navigationState.editSource(
+                block = sourceBlock,
+                renderedUtf16Offset = renderedOffsetBase,
+                lineTopInWindowPixels = Math.addExact(top, layout.getLineTop(0).roundToInt())
+            )
+            true
+        })
+    } else emptyList()
+    val selectionModifier = if (blockIndex != null) Modifier.documentSelectionText(
+        key = "reading-$blockIndex-$renderedOffsetBase-${sourceText.length}", layout = layoutResult,
+        point = { offset -> SelectionPoint.Reading(readingPresentationPoint(blockIndex, renderedOffsetBase,
+            offset, sourceText, sourceSpans, footnotePresentation)) },
+        offset = { point -> (point as? SelectionPoint.Reading)?.point?.takeIf {
+            it.block == blockIndex && it.offset in renderedOffsetBase..renderedOffsetBase + sourceText.length
+        }?.let { readingPresentationOffset(it, renderedOffsetBase, sourceText, sourceSpans, footnotePresentation) } },
+        additionalActions = sourceActions
+    ) else Modifier
     fun publishMeasurement() {
         val navigation = navigationState ?: return
         val measurementKey = key ?: return
@@ -1341,7 +1426,8 @@ private fun MarkdownPresentationText(
                 sourceSpans = sourceSpans,
                 footnotePresentation = footnotePresentation,
                 layoutResult = layout,
-                topInWindowPixels = top
+                topInWindowPixels = top,
+                bringIntoViewRequester = bringIntoViewRequester
             )
         )
     }
@@ -1352,26 +1438,9 @@ private fun MarkdownPresentationText(
             }
         }
     }
-    val editSourceLabel = stringResource(R.string.markdown_edit_source)
     val sourceTapModifier =
         if (navigationState?.isEditable == true && key != null) {
-            Modifier.semantics {
-                customActions = listOf(
-                    CustomAccessibilityAction(label = editSourceLabel) {
-                        val top = topInWindowPixels ?: return@CustomAccessibilityAction false
-                        val layout = layoutResult ?: return@CustomAccessibilityAction false
-                        navigationState.editSource(
-                            block = sourceBlock,
-                            renderedUtf16Offset = renderedOffsetBase,
-                            lineTopInWindowPixels = Math.addExact(
-                                top,
-                                layout.getLineTop(0).roundToInt()
-                            )
-                        )
-                        true
-                    }
-                )
-            }.pointerInput(annotated, owner) {
+            Modifier.pointerInput(annotated, owner) {
                 awaitEachGesture {
                     awaitFirstDown(
                         requireUnconsumed = false,
@@ -1443,12 +1512,22 @@ private fun MarkdownPresentationText(
                 inlineContent = inlineFormulas,
                 modifier =
                     (if (softWrap) Modifier.fillMaxWidth() else Modifier)
+                        .bringIntoViewRequester(bringIntoViewRequester)
                         .semantics { formulaDescription?.let { contentDescription = it } }
                         .onGloballyPositioned { coordinates ->
                             topInWindowPixels = coordinates.positionInWindow().y.roundToInt()
                             publishMeasurement()
                         }
-                        .then(sourceTapModifier),
+                        .then(sourceTapModifier)
+                        .then(selectionModifier)
+                        .drawWithContent {
+                            drawContent()
+                            val layout = layoutResult ?: return@drawWithContent
+                            findRanges.filter { it.collapsed }.forEach { highlight ->
+                                val rect = layout.getCursorRect(highlight.start)
+                                drawLine(markerColor, rect.topLeft, rect.bottomLeft, 3.dp.toPx())
+                            }
+                        },
                 style = style,
                 fontFamily = fontFamily,
                 fontWeight = fontWeight,
@@ -1460,7 +1539,7 @@ private fun MarkdownPresentationText(
                 }
             )
         }
-        if (formulaDescription == null) {
+        if (formulaDescription == null && LocalDocumentSelectionLayout.current == null) {
             ReadingSelectionContainer { textContent() }
         } else {
             // The atomic display placeholder is not source text; its explicit Copy action is.

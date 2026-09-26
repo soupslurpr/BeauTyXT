@@ -2,6 +2,7 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -103,10 +104,24 @@ internal fun DocumentOutlineSheet(
     onSelect: (DocumentOutlineEntry) -> Unit,
     onDismiss: () -> Unit
 ) {
+    DocumentSheet(onDismiss = onDismiss) {
+        DocumentOutlineContent(title, entries, documentListState, onSelect)
+    }
+}
+
+/** Shares one virtualized outline between the compact sheet and the wide document pane. */
+@Composable
+internal fun DocumentOutlineContent(
+    title: String,
+    entries: List<DocumentOutlineEntry>,
+    documentListState: LazyListState,
+    onSelect: (DocumentOutlineEntry) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val activeEntry by remember(entries, documentListState) {
         derivedStateOf { activeOutlineEntry(entries, documentListState.firstVisibleItemIndex) }
     }
-    DocumentSheet(onDismiss = onDismiss) {
+    Column(modifier) {
         DocumentSheetHeading(title = stringResource(R.string.outline_title), subtitle = title)
         if (entries.isEmpty()) {
             Text(

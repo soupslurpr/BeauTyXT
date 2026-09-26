@@ -110,7 +110,7 @@ internal class ActiveEditDraft(
     private var lastObservedSelection = textFieldState.selection
     private var pendingHistorySelectionBefore: TextRange? = null
     private var lastObservedComposition: TextRange? = null
-    private var editorFocused = false
+    private var editorFocused by mutableStateOf(false)
     private var focusRestorationSelection = textFieldState.selection
 
     val hasChanges: Boolean

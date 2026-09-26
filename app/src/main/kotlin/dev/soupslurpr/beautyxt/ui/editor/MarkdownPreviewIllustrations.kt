@@ -49,7 +49,8 @@ internal fun rememberMarkdownIllustrations(
     cache: IllustrationCache,
     listState: LazyListState,
     navigation: MarkdownPreviewNavigationState,
-    items: List<MarkdownPreviewItem>
+    items: List<MarkdownPreviewItem>,
+    searching: Boolean = false
 ): MarkdownPreviewIllustrations {
     if (plan.isEmpty) return MarkdownPreviewIllustrations()
     val application = LocalContext.current.applicationContext
@@ -120,7 +121,7 @@ internal fun rememberMarkdownIllustrations(
         )
     }
     DisposableEffect(scheduler) { onDispose { scheduler.close() } }
-    LaunchedEffect(scheduler, lifecycle, items) {
+    LaunchedEffect(scheduler, lifecycle, items, searching) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             try {
                 snapshotFlow {
@@ -138,7 +139,10 @@ internal fun rememberMarkdownIllustrations(
                         val end = item.firstBlockIndex + item.blocks.size
                         (item.firstBlockIndex until end).toList()
                     }
-                    scheduler.updateViewport(plan.requests(blocks))
+                    val searchBlocks = if (searching) items.flatMap { item ->
+                        (item.firstBlockIndex until item.firstBlockIndex + item.blocks.size).toList()
+                    } else emptyList()
+                    scheduler.updateViewport(plan.requests(blocks + searchBlocks))
                 }
             } finally {
                 scheduler.updateViewport(emptyList())
