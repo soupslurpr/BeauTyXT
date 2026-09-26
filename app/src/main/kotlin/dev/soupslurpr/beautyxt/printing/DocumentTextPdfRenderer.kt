@@ -188,6 +188,16 @@ internal suspend fun renderMarkdownDocumentPdf(
         )
     try {
         val footnoteNumbers = markdownFootnoteNumbers(document.blocks)
+        val headingItems = ArrayList<dev.soupslurpr.beautyxt.markdown.MarkdownPreviewHeadingItem>()
+        document.blocks.forEachIndexed { index, block ->
+            if (block.kind == MarkdownBlockKind.Heading) {
+                if (block.continuesPrevious && headingItems.isNotEmpty()) {
+                    val last = headingItems.last()
+                    headingItems[headingItems.lastIndex] = last.copy(text = last.text + block.text)
+                } else headingItems += dev.soupslurpr.beautyxt.markdown.MarkdownPreviewHeadingItem(index, true, block.text)
+            }
+        }
+        val headingAnchors = dev.soupslurpr.beautyxt.markdown.MarkdownHeadingIndex(headingItems).destinations.entries.associate { it.value to it.key }
         var blockIndex = 0
         var blockOffset = 0
         while (blockIndex < document.blocks.size) {
@@ -232,6 +242,7 @@ internal suspend fun renderMarkdownDocumentPdf(
                 }
                 pages.addMarkdown(
                     block = block,
+                    anchor = headingAnchors[blockIndex] ?: if (block.kind == MarkdownBlockKind.Footnote) "footnote:${block.metadata}" else null,
                     footnoteNumbers = footnoteNumbers,
                     connectsAlertSpacing = connectsAlertSpacing,
                     continuesAtEnd = current.continuesAtEnd,
@@ -521,7 +532,8 @@ private class TextPrintPages(
         footnoteNumbers: Map<String, Int>,
         connectsAlertSpacing: Boolean,
         continuesAtEnd: Boolean = false,
-        followingBlocks: List<MarkdownPrintBlock> = emptyList()
+        followingBlocks: List<MarkdownPrintBlock> = emptyList(),
+        anchor: String? = null
     ) {
         check(!closed) { "print pages are closed" }
         require(!continuesAtEnd || block.text.endsWith('\n')) {
@@ -530,7 +542,7 @@ private class TextPrintPages(
         val measured = if (block.kind == MarkdownBlockKind.Rule) {
             null
         } else {
-            layoutMarkdownBlock(block, footnoteNumbers, continuesAtEnd)
+            layoutMarkdownBlock(block, footnoteNumbers, continuesAtEnd, anchor)
         }
         if (measured != null) {
             val keepHeight = if (block.kind == MarkdownBlockKind.Heading) {
@@ -581,7 +593,8 @@ private class TextPrintPages(
     private fun layoutMarkdownBlock(
         block: MarkdownRenderBlock,
         footnoteNumbers: Map<String, Int>,
-        continuesAtEnd: Boolean
+        continuesAtEnd: Boolean,
+        anchor: String? = null
     ): MarkdownPrintLayout? {
         configureMarkdownPaint(block)
         val availableWidth = layout.bodyWidthPixels - markdownBlockIndent(block)
@@ -590,7 +603,8 @@ private class TextPrintPages(
             block,
             footnoteNumbers,
             resources,
-            formulaBounds(availableWidth)
+            formulaBounds(availableWidth),
+            anchor
         )
         val text = content.text
         if (text.isEmpty()) return null
@@ -1272,7 +1286,8 @@ private fun markdownPrintText(
     block: MarkdownRenderBlock,
     footnoteNumbers: Map<String, Int>,
     resources: Resources,
-    formulaBounds: PrintFormulaBounds
+    formulaBounds: PrintFormulaBounds,
+    anchor: String? = null
 ): MarkdownPrintText {
     val builder = SpannableStringBuilder()
     if (!block.continuesPrevious) {
@@ -1347,6 +1362,8 @@ private fun markdownPrintText(
             Color.WHITE
         }
     )
+    if (anchor != null && contentStart < builder.length) builder.setSpan(
+        PdfAnchorSpan(anchor), contentStart, contentStart + Character.charCount(Character.codePointAt(builder, contentStart)), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     illustrationFallbackMessages(block.spans).forEach { message ->
         builder.append('\n')
         val start = builder.length
@@ -1451,6 +1468,16 @@ private fun applyMarkdownPrintSpans(
             builder.setSpan(RelativeSizeSpan(0.75f), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         if (span.destination != null) {
+            val target = if (span.destinationKind == dev.soupslurpr.beautyxt.markdown.MarkdownInlineDestinationKind.FootnoteReference)
+                PdfLinkSpan("footnote:${span.destination}", true)
+            else when (val action = dev.soupslurpr.beautyxt.markdown.markdownLinkAction(span.destination)) {
+                is dev.soupslurpr.beautyxt.markdown.MarkdownLinkAction.Heading ->
+                    PdfLinkSpan(dev.soupslurpr.beautyxt.markdown.markdownHeadingAnchor(action.fragment), true)
+                is dev.soupslurpr.beautyxt.markdown.MarkdownLinkAction.External ->
+                    runCatching { PdfLinkSpan(java.net.URI(action.destination).toASCIIString(), false) }.getOrNull()
+                else -> null
+            }
+            if (target != null) builder.setSpan(target, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             builder.setSpan(UnderlineSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             builder.setSpan(
                 ForegroundColorSpan(PrintAccentColor),

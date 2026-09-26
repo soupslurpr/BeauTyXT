@@ -27,6 +27,14 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.BeauTyXT"
         android:usesCleartextTraffic="false">
+        <provider
+            android:name=".sharing.ExcerptProvider"
+            android:authorities="${applicationId}.excerpts"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+        <receiver
+            android:name=".sharing.ExcerptShareRefinementReceiver"
+            android:exported="false" />
         <activity
             android:name=".HomeActivity"
             android:alwaysRetainTaskState="true"

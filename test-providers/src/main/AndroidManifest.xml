@@ -16,6 +16,19 @@
             android:name="dev.soupslurpr.beautyxt.testing.DocumentCallerActivity"
             android:exported="true"
             android:permission="dev.soupslurpr.beautyxt.testproviders.ACCESS" />
+        <activity
+            android:name="dev.soupslurpr.beautyxt.testing.ExcerptReceiverActivity"
+            android:label="@string/excerpt_receiver"
+            android:exported="true"
+            android:permission="dev.soupslurpr.beautyxt.testproviders.ACCESS">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/markdown" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+        </activity>
 
         <provider
             android:name="dev.soupslurpr.beautyxt.exporting.client.StatelessExportTestProvider"

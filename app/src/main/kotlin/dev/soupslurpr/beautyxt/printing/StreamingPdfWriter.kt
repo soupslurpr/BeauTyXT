@@ -71,6 +71,10 @@ internal class StreamingPdfWriter(
     private var sectionObjects = IntArray(INITIAL_OBJECT_CAPACITY)
     private var parentObjects = IntArray(INITIAL_OBJECT_CAPACITY)
     private var finished = false
+    private val namedDestinations = sortedMapOf<String, String>()
+    private data class PendingLink(val objectId: Int, val rectangle: String, val destination: String)
+    private val internalLinks = ArrayList<PendingLink>()
+    private val pageAnnotations = ArrayList<Pair<Int, IntArray>>()
 
     var writtenPageCount = 0
         private set
@@ -97,6 +101,18 @@ internal class StreamingPdfWriter(
         val visualObjects = IntArray(page.resources.size) { allocateObject() }
         val sectionObjectId = allocateObject()
         val parentObjectId = allocateObject()
+        val annotations = IntArray(text.links.size) { allocateObject() }
+        val annotationsId = if (annotations.isEmpty()) null else allocateObject().also {
+            pageAnnotations += it to annotations
+        }
+        val scaleX = layout.contentWidthPoints.toFloat() / layout.rasterWidthPixels
+        val scaleY = layout.contentHeightPoints.toFloat() / layout.rasterHeightPixels
+        text.anchors.forEach { anchor ->
+            check(namedDestinations.size < 16384) { "PDF exceeds its destination limit" }
+            namedDestinations.putIfAbsent(anchor.name, "[$pageObjectId 0 R /XYZ " +
+                pdfCoordinate(layout.contentLeftPoints + anchor.left * scaleX) + " " +
+                pdfCoordinate(layout.contentBottomPoints + layout.contentHeightPoints - anchor.top * scaleY) + " null]")
+        }
         val textIndices = LinkedHashMap<PdfGlyphKey, Int>()
         for (segment in text.segments) {
             for (glyph in segment.glyphs) {
@@ -122,8 +138,28 @@ internal class StreamingPdfWriter(
             visualObjects = visualObjects,
             alphaValues = page.alphaValues,
             fontObjects = fontObjects,
-            layout = layout
+            layout = layout,
+            annotationsId = annotationsId
         )
+        text.links.forEachIndexed { index, link ->
+            val left = layout.contentLeftPoints + link.left * scaleX
+            val right = layout.contentLeftPoints + link.right * scaleX
+            val top = layout.contentBottomPoints + layout.contentHeightPoints - link.top * scaleY
+            val bottom = layout.contentBottomPoints + layout.contentHeightPoints - link.bottom * scaleY
+            val rectangle = "[${pdfCoordinate(left)} ${pdfCoordinate(bottom)} ${pdfCoordinate(right)} ${pdfCoordinate(top)}]"
+            if (link.target.internal) {
+                check(internalLinks.size < 65536) { "PDF exceeds its internal link limit" }
+                internalLinks += PendingLink(annotations[index], rectangle, link.target.destination)
+            } else {
+                startObject(annotations[index])
+                writeAscii("<< /Type /Annot /Subtype /Link /Rect $rectangle /Border [0 0 0] ")
+                // A hex string cannot terminate a PDF object or introduce executable dictionary keys.
+                val uri = java.net.URI(link.target.destination).toASCIIString().toByteArray(StandardCharsets.UTF_8)
+                    .joinToString("") { "%02X".format(it.toInt() and 255) }
+                writeAscii("/A << /S /URI /URI <$uri> >>")
+                writeAscii(" >>\nendobj\n")
+            }
+        }
         writeContentObject(
             objectId = contentObjectId,
             page = page,
@@ -155,6 +191,7 @@ internal class StreamingPdfWriter(
     fun finish() {
         check(!finished) { "PDF writer is finished" }
         require(writtenPageCount > 0) { "PDF must contain at least one page" }
+        writeInternalLinks()
         writeCatalogObject()
         writePagesObject()
         writeStructureTree()
@@ -180,7 +217,8 @@ internal class StreamingPdfWriter(
         visualObjects: IntArray,
         alphaValues: Set<Int>,
         fontObjects: IntArray,
-        layout: PrintRasterLayout
+        layout: PrintRasterLayout,
+        annotationsId: Int?
     ) {
         startObject(objectId)
         writeAscii("<< /Type /Page /Parent $PDF_PAGES_OBJECT_ID 0 R /MediaBox [0 0 ")
@@ -198,7 +236,32 @@ internal class StreamingPdfWriter(
         fontObjects.forEachIndexed { fontIndex, fontId -> writeAscii(" /F$fontIndex $fontId 0 R") }
         writeAscii(" >> >> /Contents ")
         writeAscii(contentObjectId.toString())
-        writeAscii(" 0 R >>\nendobj\n")
+        writeAscii(" 0 R")
+        annotationsId?.let { writeAscii(" /Annots $it 0 R") }
+        writeAscii(" >>\nendobj\n")
+    }
+
+    /** Resolve forward links only after page selection and pagination have fixed destinations. */
+    private fun writeInternalLinks() {
+        val unavailable = HashSet<Int>()
+        internalLinks.forEach { link ->
+            checkCancellation()
+            startObject(link.objectId)
+            val destination = namedDestinations[link.destination]
+            if (destination == null) {
+                unavailable += link.objectId
+                writeAscii("null\nendobj\n")
+            } else {
+                writeAscii("<< /Type /Annot /Subtype /Link /Rect ${link.rectangle} /Border [0 0 0] " +
+                    "/A << /S /GoTo /D $destination >> >>\nendobj\n")
+            }
+        }
+        pageAnnotations.forEach { (id, links) ->
+            startObject(id)
+            writeAscii("[")
+            links.filterNot { it in unavailable }.forEach { writeAscii("$it 0 R ") }
+            writeAscii("]\nendobj\n")
+        }
     }
 
     /** Places the visual artifact and its nonpainting, measured original text at the same margins. */
@@ -502,8 +565,14 @@ internal class StreamingPdfWriter(
         startObject(PDF_CATALOG_OBJECT_ID)
         writeAscii(
             "<< /Type /Catalog /Pages $PDF_PAGES_OBJECT_ID 0 R " +
-                "/MarkInfo << /Marked true >> /StructTreeRoot $PDF_STRUCTURE_OBJECT_ID 0 R >>\nendobj\n"
+                "/MarkInfo << /Marked true >> /StructTreeRoot $PDF_STRUCTURE_OBJECT_ID 0 R "
         )
+        if (namedDestinations.isNotEmpty()) {
+            writeAscii("/Names << /Dests << /Names [")
+            namedDestinations.forEach { (name, destination) -> writeAscii("<FEFF${pdfUnicodeHex(name)}> $destination ") }
+            writeAscii("] >> >> ")
+        }
+        writeAscii(">>\nendobj\n")
     }
 
     /** Writes the selected-page tree from compact retained object references. */
