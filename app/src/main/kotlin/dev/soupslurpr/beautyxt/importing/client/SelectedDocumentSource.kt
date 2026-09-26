@@ -3,6 +3,7 @@ package dev.soupslurpr.beautyxt.importing.client
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import androidx.core.net.toUri
 import android.os.OperationCanceledException
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
@@ -69,11 +70,15 @@ internal class SelectedDocumentSource private constructor(
             currentSourceVersion
         }
 
-    /** Returns whether this open source retains the exact encoded content URI. */
+    /** Recognizes exact URIs and tree/document aliases of the same provider document. */
     fun matchesUri(encodedUri: String): Boolean {
         require(encodedUri.isNotBlank()) { "candidate source URI must not be blank" }
         return synchronized(ownershipLock) {
-            selectedUri?.toString() == encodedUri
+            val source = selectedUri ?: return@synchronized false
+            if (source.toString() == encodedUri) return@synchronized true
+            val candidate = encodedUri.toUri()
+            candidate.scheme == ContentResolver.SCHEME_CONTENT && candidate.authority == source.authority && isDocumentUri &&
+                runCatching { DocumentsContract.getDocumentId(candidate) == DocumentsContract.getDocumentId(source) }.getOrDefault(false)
         }
     }
 

@@ -49,6 +49,8 @@ internal class PdfTextPage {
     private val collected = mutableListOf<PdfTextSegment>()
     private val characters = BreakIterator.getCharacterInstance(Locale.ROOT)
     private var textUnits = 0
+    val links = ArrayList<PdfLinkBox>()
+    val anchors = ArrayList<PdfAnchor>()
 
     val segments: List<PdfTextSegment> get() = collected
 
@@ -56,6 +58,8 @@ internal class PdfTextPage {
     fun clear() {
         collected.clear()
         textUnits = 0
+        links.clear()
+        anchors.clear()
     }
 
     /** Copies measured visible graphemes without retaining the Android layout or source block. */
@@ -114,6 +118,21 @@ internal class PdfTextPage {
                     left >= clipLeft && right <= clipRight &&
                     top >= clipTop && bottom <= clipBottom && !isLineBreak
                 ) {
+                    (layout.text as? Spanned)?.let { styled ->
+                        styled.getSpans(start + clusterStart, start + clusterEnd, PdfAnchorSpan::class.java).forEach { anchor ->
+                            if (anchors.none { it.name == anchor.name }) anchors += PdfAnchor(anchor.name, left, top)
+                        }
+                        styled.getSpans(start + clusterStart, start + clusterEnd, PdfLinkSpan::class.java).singleOrNull()?.let { link ->
+                            val previous = links.lastOrNull()
+                            if (previous != null && previous.target == link && previous.top == top && previous.bottom == bottom &&
+                                left <= previous.right + 1f && right >= previous.left - 1f) {
+                                links[links.lastIndex] = previous.copy(left = minOf(left, previous.left), right = maxOf(right, previous.right))
+                            } else {
+                                if (links.size >= 4096) throw IOException("PDF page exceeds its link limit")
+                                links += PdfLinkBox(link, left, top, right, bottom)
+                            }
+                        }
+                    }
                     val formula = (layout.text as? Spanned)?.getSpans(
                         start + clusterStart,
                         start + clusterEnd,

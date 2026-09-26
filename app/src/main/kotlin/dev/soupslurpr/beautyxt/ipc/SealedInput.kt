@@ -1,6 +1,7 @@
 /* Owns immutable memory-only input prepared for isolated consumers. */
 package dev.soupslurpr.beautyxt.ipc
 
+import android.content.Context
 import android.os.ParcelFileDescriptor
 import android.system.Os
 import android.system.OsConstants
@@ -19,6 +20,33 @@ internal class SealedInput private constructor(
     private val inode: Long,
     private var reader: ParcelFileDescriptor?
 ) : AutoCloseable {
+    /** Creates an independently seekable sealed input for an isolated consumer. */
+    @Synchronized
+    fun duplicate(): SealedInput {
+        val source = checkNotNull(reader) { "sealed input is closed" }
+        validateAnonymousDescriptor(source, device, inode, byteCount, requireSeals = true)
+        // dup shares a file position, and Android does not permit reopening memfd through /proc.
+        // Isolated workers require sealed anonymous files, so give them their own bounded copy.
+        return fromStream(byteCount) { output ->
+            val buffer = ByteArray(64 * 1024)
+            var offset = 0L
+            while (offset < byteCount) {
+                val count = Os.pread(source.fileDescriptor, buffer, 0,
+                    minOf(buffer.size.toLong(), byteCount - offset).toInt(), offset)
+                if (count <= 0) throw IOException("sealed input ended early")
+                output.write(buffer, 0, count)
+                offset += count
+            }
+        }
+    }
+
+    /** Opens an independent read-only view without copying or exposing the backing descriptor. */
+    @Synchronized
+    fun openReadOnly(context: Context): ParcelFileDescriptor {
+        val source = checkNotNull(reader) { "sealed input is closed" }
+        validateAnonymousDescriptor(source, device, inode, byteCount, requireSeals = true)
+        return ReadOnlyMemoryFile.open(context, source, byteCount)
+    }
     /** Transfers the only sealed input descriptor to one consumer. */
     @Synchronized
     fun takeReader(): ParcelFileDescriptor {
@@ -37,6 +65,25 @@ internal class SealedInput private constructor(
     }
 
     companion object {
+        /** Bounds a cancellable producer without creating an app-private staging file. */
+        suspend fun fromSuspendingStream(maxBytes: Long, write: suspend (OutputStream) -> Unit): SealedInput {
+            require(maxBytes >= 0L)
+            val raw = createAnonymousDescriptor(INPUT_BUFFER_NAME)
+            var reader: ParcelFileDescriptor? = null
+            try {
+                val status = Os.fstat(raw)
+                reader = ParcelFileDescriptor.dup(raw)
+                val count = BoundedOutputStream(ParcelFileDescriptor.AutoCloseOutputStream(ParcelFileDescriptor.dup(raw)), maxBytes).use {
+                    write(it)
+                    it.flush()
+                    it.byteCount
+                }
+                sealAnonymousDescriptor(reader)
+                validateAnonymousDescriptor(reader, status.st_dev, status.st_ino, count, requireSeals = true)
+                return SealedInput(count, status.st_dev, status.st_ino, reader).also { reader = null }
+            } finally { closeQuietly(reader); closeRawDescriptor(raw) }
+        }
+
         /** Copies one exact bounded byte array into a sealed anonymous input. */
         fun fromBytes(bytes: ByteArray, maxBytes: Long): SealedInput {
             require(bytes.size.toLong() <= maxBytes) { "input exceeds its byte limit" }
