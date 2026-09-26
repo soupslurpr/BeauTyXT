@@ -1,5 +1,7 @@
 //! Bridges Android's bounded editor requests to the Rust document core.
 
+mod experience;
+
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -653,6 +655,69 @@ pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_capt
                 registry.capture_snapshot(handle, expected_revision)?
             };
             lock_snapshot_registry()?.insert(snapshot)
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// Captures a selected logical range without exposing the rest of its document.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_captureRange<
+    'caller,
+>(
+    mut unowned_env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    handle: jlong,
+    revision: jlong,
+    start: jlong,
+    end: jlong,
+) -> jlong {
+    unowned_env
+        .with_env(|_| -> Result<jlong, BridgeError> {
+            let snapshot = lock_registry()?.get(handle)?.snapshot_range(
+                nonnegative_u64(revision, "selection revision")?,
+                Utf16Range::new(
+                    nonnegative_usize(start, "selection start")?,
+                    nonnegative_usize(end, "selection end")?,
+                ),
+            )?;
+            lock_snapshot_registry()?.insert(snapshot)
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// Returns metrics for an independently owned immutable snapshot.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_duplicateSnapshot<
+    'caller,
+>(
+    mut unowned_env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    handle: jlong,
+) -> jlong {
+    unowned_env
+        .with_env(|_| -> Result<jlong, BridgeError> {
+            let mut registry = lock_snapshot_registry()?;
+            let snapshot = registry.get_captured(handle)?.clone();
+            registry.insert(snapshot)
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// Returns metrics for an independently owned immutable snapshot.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_snapshotMetrics<
+    'caller,
+>(
+    mut unowned_env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    handle: jlong,
+) -> JByteArray<'caller> {
+    unowned_env
+        .with_env(|env| -> Result<JByteArray<'caller>, BridgeError> {
+            let packet = encode_document_metrics(
+                &lock_snapshot_registry()?.get_captured(handle)?.metrics(),
+            )?;
+            Ok(env.byte_array_from_slice(&packet)?)
         })
         .resolve::<ThrowRuntimeExAndDefault>()
 }

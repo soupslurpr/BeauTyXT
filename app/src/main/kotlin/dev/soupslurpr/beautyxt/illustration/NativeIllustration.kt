@@ -13,6 +13,10 @@ internal object IllustrationLimits {
     const val MAX_MATH_SOURCE_BYTES = 4 * 1024
     const val MAX_DIAGRAM_SOURCE_BYTES = 16 * 1024
     const val HEADER_BYTES = 48
+    const val SEMANTIC_HEADER_BYTES = 60
+    const val MAX_TEXT_RUNS = 2_048
+    const val MAX_TEXT_BYTES = 32 * 1024
+    const val MAX_TEXT_BOXES = 4_096
     const val MAX_TITLE_BYTES = 1_024
     const val MAX_DESCRIPTION_BYTES = 4_096
     const val PATH_HEADER_BYTES = 16
@@ -28,8 +32,17 @@ internal class NativeIllustration(
     val paths: List<IllustrationPath>,
     val packetBytes: Int,
     val title: String = "",
-    val description: String = ""
+    val description: String = "",
+    val textRuns: List<IllustrationTextRun> = emptyList(),
+    val isTextComplete: Boolean = false
 )
+
+internal data class IllustrationTextBox(
+    val start: Int, val end: Int,
+    val left: Float, val top: Float, val right: Float, val bottom: Float
+)
+
+internal data class IllustrationTextRun(val text: String, val boxes: List<IllustrationTextBox>)
 
 /** A filled path: colors 0..3 are theme roles; other valid colors are explicit ARGB. */
 internal class IllustrationPath(
@@ -84,8 +97,10 @@ internal object IllustrationPacketDecoder {
         valid(packet.size in IllustrationLimits.HEADER_BYTES..IllustrationLimits.MAX_PACKET_BYTES)
         val input = ByteBuffer.wrap(packet).order(ByteOrder.LITTLE_ENDIAN)
         val magic = ByteArray(8).also(input::get)
-        valid(magic.contentEquals(byteArrayOf(66, 84, 88, 84, 73, 76, 76, 51)))
-        valid(input.int == 3 && input.int == packet.size)
+        val version = input.int
+        valid(version in 3..4)
+        valid(magic.contentEquals(byteArrayOf(66, 84, 88, 84, 73, 76, 76, (48 + version).toByte())))
+        valid(input.int == packet.size)
         val pathCount = input.int
         valid(pathCount in 0..IllustrationLimits.MAX_PATHS)
         val width = input.float
@@ -98,6 +113,12 @@ internal object IllustrationPacketDecoder {
         val clipCount = input.int
         val titleBytes = input.int
         val descriptionBytes = input.int
+        valid(version == 3 || input.remaining() >= 12)
+        val runCount = if (version == 4) input.int else 0
+        val runBytes = if (version == 4) input.int else 0
+        val textFlags = if (version == 4) input.int else 0
+        valid(runCount in 0..IllustrationLimits.MAX_TEXT_RUNS)
+        valid(runBytes in 0..IllustrationLimits.MAX_PACKET_BYTES && textFlags in 0..1)
         valid(titleBytes in 0..IllustrationLimits.MAX_TITLE_BYTES)
         valid(descriptionBytes in 0..IllustrationLimits.MAX_DESCRIPTION_BYTES)
         valid(componentCount in 0..IllustrationLimits.MAX_COMPONENTS)
@@ -105,11 +126,12 @@ internal object IllustrationPacketDecoder {
         valid(
             pathCount.toLong() * IllustrationLimits.PATH_HEADER_BYTES +
                 clipCount.toLong() * IllustrationLimits.CLIP_HEADER_BYTES +
-                componentCount.toLong() * Float.SIZE_BYTES + titleBytes + descriptionBytes ==
+                componentCount.toLong() * Float.SIZE_BYTES + titleBytes + descriptionBytes + runBytes ==
                 input.remaining().toLong()
         )
         val title = readText(input, titleBytes)
         val description = readText(input, descriptionBytes)
+        val runs = readRuns(input, runCount, runBytes)
         val paths = ArrayList<IllustrationPath>(pathCount)
         var componentsRead = 0
         var clipsRead = 0
@@ -144,7 +166,42 @@ internal object IllustrationPacketDecoder {
             paths += IllustrationPath(color, flags == 1, components, clips)
         }
         valid(componentsRead == componentCount && clipsRead == clipCount && !input.hasRemaining())
-        return NativeIllustration(width, height, baseline, paths, packet.size, title, description)
+        return NativeIllustration(width, height, baseline, paths, packet.size, title, description, runs, textFlags == 1)
+    }
+
+    private fun readRuns(input: ByteBuffer, count: Int, bytes: Int): List<IllustrationTextRun> {
+        val end = input.position() + bytes
+        var textBytes = 0
+        var boxes = 0
+        val result = ArrayList<IllustrationTextRun>(count)
+        repeat(count) {
+            valid(end - input.position() >= 8)
+            val length = input.int
+            val boxCount = input.int
+            valid(length in 1..IllustrationLimits.MAX_TEXT_BYTES - textBytes)
+            valid(boxCount in 1..IllustrationLimits.MAX_TEXT_BOXES - boxes)
+            valid(length.toLong() + boxCount.toLong() * 24 <= end - input.position())
+            textBytes += length
+            boxes += boxCount
+            val text = readText(input, length)
+            val rectangles = List(boxCount) {
+                val start = input.int
+                val stop = input.int
+                valid(start in 0 until stop && stop <= text.length)
+                valid(start == 0 || !text[start].isLowSurrogate())
+                valid(stop == text.length || !text[stop].isLowSurrogate())
+                val left = input.float
+                val top = input.float
+                val right = input.float
+                val bottom = input.float
+                valid(listOf(left, top, right, bottom).all(::finiteCoordinate))
+                valid(left < right && top < bottom)
+                IllustrationTextBox(start, stop, left, top, right, bottom)
+            }
+            result += IllustrationTextRun(text, rectangles)
+        }
+        valid(input.position() == end)
+        return result
     }
 
     private fun readText(input: ByteBuffer, length: Int): String {

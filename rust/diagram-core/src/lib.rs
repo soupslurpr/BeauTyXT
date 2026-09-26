@@ -318,9 +318,9 @@ mod tests {
             let packet = render_diagram(&source, &font).unwrap();
             let title_bytes = u32::from_le_bytes(packet[40..44].try_into().unwrap()) as usize;
             let description_bytes = u32::from_le_bytes(packet[44..48].try_into().unwrap()) as usize;
-            assert_eq!(&packet[48..48 + title_bytes], "Décisions".as_bytes());
+            assert_eq!(&packet[60..60 + title_bytes], "Décisions".as_bytes());
             assert_eq!(
-                &packet[48 + title_bytes..48 + title_bytes + description_bytes],
+                &packet[60 + title_bytes..60 + title_bytes + description_bytes],
                 b"Read, then share."
             );
         }
@@ -338,7 +338,7 @@ mod tests {
         ] {
             let packet =
                 render_diagram(source, &font).unwrap_or_else(|error| panic!("{error}: {source}"));
-            assert_eq!(&packet[..8], b"BTXTILL3");
+            assert_eq!(&packet[..8], b"BTXTILL4");
             assert!(packet.len() > 200);
             assert_host_palette(&packet, source);
         }
@@ -357,7 +357,7 @@ mod tests {
         ] {
             let packet =
                 render_diagram(source, &font).unwrap_or_else(|error| panic!("{error}: {source}"));
-            assert_eq!(&packet[..8], b"BTXTILL3");
+            assert_eq!(&packet[..8], b"BTXTILL4");
             assert!(packet.len() > 200);
             assert_host_palette(&packet, source);
         }
@@ -366,7 +366,7 @@ mod tests {
     fn assert_host_palette(packet: &[u8], source: &str) {
         let integer =
             |offset| u32::from_le_bytes(packet[offset..offset + 4].try_into().unwrap()) as usize;
-        let mut offset = 48 + integer(40) + integer(44);
+        let mut offset = 60 + integer(40) + integer(44) + integer(52);
         for _ in 0..integer(16) {
             let color = integer(offset);
             assert!(color <= 3, "fixed color {color:x} in {source}");

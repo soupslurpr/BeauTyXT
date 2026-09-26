@@ -15,7 +15,13 @@ pub const MAX_COMPONENTS: usize = 100_000;
 /// Maximum absolute coordinate or drawing dimension.
 pub const MAX_COORDINATE: f64 = 8_192.0;
 /// Bytes before the first path.
-pub const HEADER_BYTES: usize = 48;
+pub const HEADER_BYTES: usize = 60;
+/// Maximum independent visible text runs in one drawing.
+pub const MAX_TEXT_RUNS: usize = 2_048;
+/// Maximum aggregate UTF-8 semantic text in one drawing.
+pub const MAX_TEXT_BYTES: usize = 32 * 1024;
+/// Maximum aggregate text rectangles in one drawing.
+pub const MAX_TEXT_BOXES: usize = 4_096;
 /// Maximum authored accessibility title, encoded as plain UTF-8.
 pub const MAX_TITLE_BYTES: usize = 1_024;
 /// Maximum authored accessibility description, encoded as plain UTF-8.
@@ -164,6 +170,30 @@ pub struct Drawing {
     packet_bytes: usize,
     title: String,
     description: String,
+    text_runs: Vec<TextRun>,
+    text_bytes: usize,
+    text_boxes: usize,
+    text_complete: bool,
+}
+
+/// A rectangle covering a nonempty UTF-16 range of one visible text run.
+#[derive(Clone, Debug)]
+pub struct TextBox {
+    /// Inclusive UTF-16 start within the run.
+    pub start: u32,
+    /// Exclusive UTF-16 end within the run.
+    pub end: u32,
+    /// Left, top, right, and bottom in drawing-local em units.
+    pub bounds: [f32; 4],
+}
+
+/// A visible label or formula run. Separate runs never acquire invented separators.
+#[derive(Clone, Debug)]
+pub struct TextRun {
+    /// Displayed Unicode text; never executable markup or an accessibility alternative.
+    pub text: String,
+    /// Geometry for clusters or, when only that is proven, the complete label.
+    pub boxes: Vec<TextBox>,
 }
 
 impl Drawing {
@@ -185,7 +215,61 @@ impl Drawing {
             packet_bytes: HEADER_BYTES,
             title: String::new(),
             description: String::new(),
+            text_runs: Vec::new(),
+            text_bytes: 0,
+            text_boxes: 0,
+            text_complete: false,
         })
+    }
+
+    /// Marks whether all visible text has a supported semantic representation.
+    pub fn set_text_complete(&mut self, complete: bool) {
+        self.text_complete = complete;
+    }
+
+    /// Adds one visible run, validating scalar boundaries and geometry before retention.
+    ///
+    /// # Errors
+    /// Rejects missing geometry, invalid UTF-16 ranges, and aggregate resource violations.
+    pub fn push_text(&mut self, run: TextRun) -> Result<(), DrawingError> {
+        let bytes = self.packet_bytes + 8 + run.text.len() + run.boxes.len() * 24;
+        if self.text_runs.len() == MAX_TEXT_RUNS
+            || self.text_bytes + run.text.len() > MAX_TEXT_BYTES
+            || self.text_boxes + run.boxes.len() > MAX_TEXT_BOXES
+            || bytes > MAX_PACKET_BYTES
+        {
+            return Err(DrawingError::Limit);
+        }
+        if run.text.is_empty() || run.boxes.is_empty() {
+            return Err(DrawingError::Invalid);
+        }
+        let mut boundaries = vec![true];
+        for character in run.text.chars() {
+            if character.len_utf16() == 2 {
+                boundaries.push(false);
+            }
+            boundaries.push(true);
+        }
+        for rect in &run.boxes {
+            let [left, top, right, bottom] = rect.bounds;
+            if rect.start >= rect.end
+                || boundaries.get(rect.start as usize) != Some(&true)
+                || boundaries.get(rect.end as usize) != Some(&true)
+                || left >= right
+                || top >= bottom
+                || rect
+                    .bounds
+                    .iter()
+                    .any(|value| !value.is_finite() || f64::from(value.abs()) > MAX_COORDINATE)
+            {
+                return Err(DrawingError::Invalid);
+            }
+        }
+        self.text_bytes += run.text.len();
+        self.text_boxes += run.boxes.len();
+        self.packet_bytes = bytes;
+        self.text_runs.push(run);
+        Ok(())
     }
 
     /// Attaches bounded authored alternatives without admitting markup or capabilities.
@@ -235,15 +319,15 @@ impl Drawing {
         Ok(())
     }
 
-    /// Encodes one exact version-three packet, without padding or trailing data.
+    /// Encodes one exact version-four packet, without padding or trailing data.
     ///
     /// # Errors
     /// Returns an error if an encoded integer cannot represent the bounded output.
     pub fn encode(&self) -> Result<Vec<u8>, DrawingError> {
         let mut out = Vec::with_capacity(self.packet_bytes);
-        out.extend_from_slice(b"BTXTILL3");
+        out.extend_from_slice(b"BTXTILL4");
         for value in [
-            3,
+            4,
             packet_integer(self.packet_bytes)?,
             packet_integer(self.paths.len())?,
         ] {
@@ -256,8 +340,26 @@ impl Drawing {
         out.extend_from_slice(&packet_integer(self.clips)?.to_le_bytes());
         out.extend_from_slice(&packet_integer(self.title.len())?.to_le_bytes());
         out.extend_from_slice(&packet_integer(self.description.len())?.to_le_bytes());
+        out.extend_from_slice(&packet_integer(self.text_runs.len())?.to_le_bytes());
+        out.extend_from_slice(
+            &packet_integer(self.text_bytes + self.text_runs.len() * 8 + self.text_boxes * 24)?
+                .to_le_bytes(),
+        );
+        out.extend_from_slice(&u32::from(self.text_complete).to_le_bytes());
         out.extend_from_slice(self.title.as_bytes());
         out.extend_from_slice(self.description.as_bytes());
+        for run in &self.text_runs {
+            out.extend_from_slice(&packet_integer(run.text.len())?.to_le_bytes());
+            out.extend_from_slice(&packet_integer(run.boxes.len())?.to_le_bytes());
+            out.extend_from_slice(run.text.as_bytes());
+            for rect in &run.boxes {
+                out.extend_from_slice(&rect.start.to_le_bytes());
+                out.extend_from_slice(&rect.end.to_le_bytes());
+                for value in rect.bounds {
+                    out.extend_from_slice(&value.to_le_bytes());
+                }
+            }
+        }
         for path in &self.paths {
             for value in [
                 path.color,
@@ -341,6 +443,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn semantic_ranges_preserve_unicode_and_reject_split_scalars_before_publication() {
+        let mut drawing = Drawing::new(2.0, 1.0, 0.5).unwrap();
+        let mut run = TextRun {
+            text: "😀x".into(),
+            boxes: vec![TextBox {
+                start: 0,
+                end: 1,
+                bounds: [0.0, 0.0, 1.0, 1.0],
+            }],
+        };
+        assert_eq!(drawing.push_text(run.clone()), Err(DrawingError::Invalid));
+        assert_eq!(drawing.encode().unwrap().len(), HEADER_BYTES);
+        run.boxes[0].end = 2;
+        drawing.push_text(run).unwrap();
+        drawing.set_text_complete(true);
+        let packet = drawing.encode().unwrap();
+        assert_eq!(packet.len(), HEADER_BYTES + 8 + "😀x".len() + 24);
+        assert_eq!(u32::from_le_bytes(packet[48..52].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(packet[56..60].try_into().unwrap()), 1);
+    }
+
+    #[test]
     fn rejects_invalid_command_grammar_and_geometry() {
         for components in [
             vec![1.0, 0.0, 0.0],
@@ -365,7 +489,7 @@ mod tests {
             .unwrap();
         let packet = drawing.encode().unwrap();
         assert_eq!(packet.len(), HEADER_BYTES + PATH_HEADER_BYTES + 7 * 4);
-        assert_eq!(&packet[..8], b"BTXTILL3");
+        assert_eq!(&packet[..8], b"BTXTILL4");
         assert_eq!(
             u32::from_le_bytes(packet[12..16].try_into().unwrap()) as usize,
             packet.len()
@@ -391,7 +515,7 @@ mod tests {
         let packet = drawing.encode().unwrap();
         assert_eq!(packet.len(), drawing.packet_bytes);
         assert_eq!(u32::from_le_bytes(packet[36..40].try_into().unwrap()), 1);
-        assert_eq!(u32::from_le_bytes(packet[60..64].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(packet[72..76].try_into().unwrap()), 1);
     }
 
     #[test]

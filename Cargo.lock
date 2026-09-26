@@ -110,6 +110,7 @@ dependencies = [
  "beautyxt-source-save-core",
  "memchr",
  "regex",
+ "regex-automata",
  "unicode-segmentation",
 ]
 
@@ -185,6 +186,7 @@ version = "0.1.0"
 dependencies = [
  "html5ever",
  "pulldown-cmark",
+ "unicode-segmentation",
 ]
 
 [[package]]

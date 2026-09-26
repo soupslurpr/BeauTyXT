@@ -41,6 +41,11 @@ internal class StaleDocumentRevisionException(
 
 /** Defines one immutable document revision owned independently from its source. */
 internal interface EditorDocumentSnapshot : AutoCloseable {
+    /** Returns the exact metrics of this independently owned revision. */
+    fun metrics(): DocumentMetrics = error("snapshot metrics are unsupported")
+
+    /** Creates independent ownership for another consumer of this exact revision. */
+    fun duplicate(): EditorDocumentSnapshot = error("snapshot duplication is unsupported")
     /** Returns one bounded viewport without consuming this immutable revision. */
     fun viewport(cursor: ViewportCursor, limits: ViewportLimits): ViewportSnapshot =
         error("snapshot viewport is unsupported")
@@ -66,6 +71,20 @@ internal interface EditorDocumentSnapshot : AutoCloseable {
 
 /** Defines the bounded document operations required by the Compose editor. */
 internal interface EditorDocument : AutoCloseable {
+    /** Creates one bounded native matcher with independent cancellation. */
+    fun compileSearch(query: String, options: SearchOptions): DocumentSearch =
+        error("advanced search is unsupported")
+
+    /** Reads an exact, bounded source range in one revision. */
+    fun readRange(revision: Long, range: Utf16Range): String = error("source range reading is unsupported")
+
+    /** Resolves a source offset without changing the editor selection. */
+    fun positionAt(revision: Long, offset: Long): ViewportCursor = error("position resolution is unsupported")
+
+    /** Applies sorted verified patches as one revision, with a preflighted Undo budget. */
+    fun replaceBatch(revision: Long, patches: List<DocumentPatch>): DocumentMetrics =
+        error("atomic replacement is unsupported")
+
     /** Returns one decoded viewport for a revision-bound cursor. */
     fun viewport(cursor: ViewportCursor, limits: ViewportLimits): ViewportSnapshot
 
@@ -93,4 +112,8 @@ internal interface EditorDocument : AutoCloseable {
 
     /** Captures one exact immutable revision for independent streaming. */
     fun captureSnapshot(expectedRevision: Long): EditorDocumentSnapshot
+
+    /** Captures only a logical selection, without a BOM or source newline encoding. */
+    fun captureRange(expectedRevision: Long, range: Utf16Range): EditorDocumentSnapshot =
+        error("selection snapshots are unsupported")
 }

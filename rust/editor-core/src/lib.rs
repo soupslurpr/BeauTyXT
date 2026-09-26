@@ -4,6 +4,10 @@
 
 mod find_highlights;
 mod piece_tree;
+mod replacements;
+pub mod search;
+
+pub use replacements::{DocumentEdit, MAX_BATCH_EDITS, MAX_BATCH_HISTORY_UTF16_UNITS};
 
 pub use find_highlights::{FindHighlightRequest, MAX_FIND_HIGHLIGHT_UTF16_UNITS};
 
@@ -616,7 +620,58 @@ impl Document {
         DocumentSnapshot {
             tree: self.tree.clone(),
             metrics: self.metrics(),
+            logical_serialization: false,
         }
+    }
+
+    /// Captures only a selected logical range, serialized as UTF-8 with LF and no BOM.
+    ///
+    /// The persistent tree shares immutable storage without copying the document.
+    /// Neither viewport access nor streaming can expose text outside the selection.
+    ///
+    /// # Errors
+    ///
+    /// Rejects stale revisions, reversed or out-of-bounds ranges, and boundaries
+    /// inside a surrogate pair. Source read failures leave the document unchanged.
+    pub fn snapshot_range(
+        &self,
+        expected_revision: u64,
+        range: Utf16Range,
+    ) -> Result<DocumentSnapshot, DocumentError> {
+        let original = self.metrics();
+        if expected_revision != original.revision {
+            return Err(DocumentError::StaleRevision {
+                expected: expected_revision,
+                actual: original.revision,
+            });
+        }
+        // Validate both endpoints against the original tree before either trim.
+        self.tree.reader().bounded_text_prefix(range, 0)?;
+        let mut tree = self.tree.clone();
+        for removal in [
+            Utf16Range::new(range.end, original.utf16_units),
+            Utf16Range::new(0, range.start),
+        ] {
+            if let ReplaceOutcome::Replaced(trimmed) = tree.replace(removal, "")? {
+                tree = trimmed;
+            }
+        }
+        let selected = Self {
+            tree,
+            revision: original.revision,
+        };
+        let mut metrics = selected.metrics();
+        metrics.serialized_bytes = metrics.bytes;
+        metrics.has_utf8_bom = false;
+        metrics.has_lf_line_endings = metrics.lines > 1;
+        metrics.has_crlf_line_endings = false;
+        metrics.has_cr_line_endings = false;
+        metrics.inserted_line_ending = DocumentLineEnding::Lf;
+        Ok(DocumentSnapshot {
+            tree: selected.tree,
+            metrics,
+            logical_serialization: true,
+        })
     }
 
     /// Replaces a UTF-16 range and returns the resulting document metrics.
@@ -995,9 +1050,11 @@ impl Document {
 }
 
 /// Owns an immutable piece-tree revision for lock-free streaming output.
+#[derive(Clone)]
 pub struct DocumentSnapshot {
     tree: PieceTree,
     metrics: DocumentMetrics,
+    logical_serialization: bool,
 }
 
 impl DocumentSnapshot {
@@ -1052,6 +1109,11 @@ impl DocumentSnapshot {
     /// Returns an error when package metrics overflow or the serialized
     /// revision exceeds the source-save protocol limit.
     pub fn prepare_source_save(self) -> Result<PreparedSourceSave, DocumentError> {
+        if self.logical_serialization {
+            return Err(invalid_source_save(
+                "selected text requires logical streaming",
+            ));
+        }
         PreparedSourceSave::new(self.tree, self.metrics)
     }
 
@@ -1061,7 +1123,20 @@ impl DocumentSnapshot {
     ///
     /// Returns [`DocumentError::Io`] when the destination cannot be written.
     pub fn write_to(&self, mut writer: impl Write) -> Result<(), DocumentError> {
-        self.tree.write_to(&mut writer)
+        if !self.logical_serialization {
+            return self.tree.write_to(&mut writer);
+        }
+        let mut reader = self.tree.reader();
+        let mut offset = 0;
+        while offset < self.metrics.utf16_units {
+            let prefix = reader.bounded_text_prefix(
+                Utf16Range::new(offset, self.metrics.utf16_units),
+                64 * 1024,
+            )?;
+            writer.write_all(prefix.text.as_bytes())?;
+            offset += prefix.utf16_units;
+        }
+        Ok(())
     }
 }
 
@@ -4140,6 +4215,47 @@ mod tests {
                 actual: 1
             }
         ));
+    }
+
+    /// Selection capabilities expose only their range, using normalized logical characters.
+    #[test]
+    fn selection_snapshot_is_independent_and_normalized() {
+        let mut document = document_from_source(b"\xef\xbb\xbfprivate\r\nselected\r\nlast\rsecret");
+        let selected = document.snapshot_range(0, Utf16Range::new(8, 21)).unwrap();
+        document
+            .replace(0, Utf16Range::new(0, 8), "changed")
+            .unwrap();
+        drop(document);
+        let mut output = Vec::new();
+        selected.write_to(&mut output).unwrap();
+        assert_eq!(output, b"selected\nlast");
+        assert_eq!(selected.metrics().serialized_bytes, output.len());
+        assert!(!selected.metrics().has_utf8_bom);
+        assert!(!selected.metrics().has_crlf_line_endings);
+        let viewport = selected.viewport(ViewportRequest::default()).unwrap();
+        assert_eq!(viewport.blocks[0].text, "selected");
+        assert_eq!(viewport.blocks[1].text, "last");
+        assert!(selected.prepare_source_save().is_err());
+    }
+
+    /// Selection endpoints are validated before trimming a persistent tree.
+    #[test]
+    fn selection_snapshot_rejects_invalid_boundaries_and_revision() {
+        let document = Document::from_text("a😀b");
+        for range in [
+            Utf16Range::new(2, 3),
+            Utf16Range::new(0, 2),
+            Utf16Range::new(3, 1),
+            Utf16Range::new(0, 5),
+        ] {
+            assert!(document.snapshot_range(0, range).is_err());
+        }
+        assert!(document.snapshot_range(1, Utf16Range::new(0, 4)).is_err());
+        let empty = document.snapshot_range(0, Utf16Range::new(3, 3)).unwrap();
+        assert_eq!(empty.metrics().bytes, 0);
+        let mut output = Vec::new();
+        empty.write_to(&mut output).unwrap();
+        assert!(output.is_empty());
     }
 
     /// Verifies ordinary extended grapheme clusters remain in one block.

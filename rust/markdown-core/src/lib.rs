@@ -12,6 +12,7 @@ use std::fmt::{Display, Formatter};
 use std::ops::Range;
 
 use block_buffer::BlockBuffer;
+use unicode_segmentation::UnicodeSegmentation;
 
 use pulldown_cmark::{
     Alignment, BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
@@ -121,6 +122,9 @@ pub const BLOCK_FLAG_TABLE_START: u32 = 1 << 12;
 
 /// Indicates a later paragraph in the same list item, not a transport fragment.
 pub const BLOCK_FLAG_LIST_ITEM_CONTINUATION: u32 = 1 << 13;
+
+/// Marks the first semantic paragraph of an original list group.
+pub const BLOCK_FLAG_LIST_START: u32 = 1 << 14;
 
 const BLOCK_FLAGS_QUOTE_KIND: u32 = BLOCK_FLAG_QUOTE_NOTE
     | BLOCK_FLAG_QUOTE_TIP
@@ -710,6 +714,7 @@ fn bounded_block_packet_bytes(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ListContext {
     next_number: Option<u64>,
+    first_item: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -718,6 +723,7 @@ struct ListItemContext {
     number: u64,
     source: SourceRange,
     first_paragraph: bool,
+    starts_list: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -793,6 +799,7 @@ impl DocumentBuilder {
             number: 0,
             source,
             first_paragraph: true,
+            starts_list: false,
         });
         let continues_list_item = is_list_item && !item.first_paragraph;
         if is_list_item {
@@ -819,6 +826,10 @@ impl DocumentBuilder {
                 },
                 flags: (if is_list_item && item.ordered {
                     BLOCK_FLAG_ORDERED_LIST
+                } else {
+                    0
+                }) | (if is_list_item && item.starts_list && item.first_paragraph {
+                    BLOCK_FLAG_LIST_START
                 } else {
                     0
                 }) | if continues_list_item {
@@ -1187,7 +1198,7 @@ impl DocumentBuilder {
         }
         let mut continuation_spec = completed.spec.clone();
         continuation_spec.flags |= BLOCK_FLAG_CONTINUATION;
-        continuation_spec.flags &= !BLOCK_FLAG_TABLE_START;
+        continuation_spec.flags &= !(BLOCK_FLAG_TABLE_START | BLOCK_FLAG_LIST_START);
         if completed.spec.kind == BLOCK_KIND_TABLE_ROW {
             continuation_spec.metadata = table_alignment_suffix(
                 &completed.spec.metadata,
@@ -1217,7 +1228,10 @@ impl DocumentBuilder {
         if self.lists.len() >= usize::try_from(MAX_LIST_DEPTH).unwrap_or(usize::MAX) {
             return Err(RenderError::NestingLimit);
         }
-        self.lists.push(ListContext { next_number: start });
+        self.lists.push(ListContext {
+            next_number: start,
+            first_item: true,
+        });
         Ok(())
     }
 
@@ -1243,7 +1257,9 @@ impl DocumentBuilder {
             number,
             source,
             first_paragraph: true,
+            starts_list: list.first_item,
         });
+        list.first_item = false;
         Ok(())
     }
 
@@ -2114,7 +2130,8 @@ fn presentation_block_spec(
     Ok(BlockSpec {
         kind: spec.kind,
         flags: if is_continuation {
-            (spec.flags | BLOCK_FLAG_CONTINUATION) & !BLOCK_FLAG_TABLE_START
+            (spec.flags | BLOCK_FLAG_CONTINUATION)
+                & !(BLOCK_FLAG_TABLE_START | BLOCK_FLAG_LIST_START)
         } else {
             spec.flags
         },
@@ -2359,9 +2376,20 @@ fn natural_presentation_boundary(value: &str) -> usize {
         .rev()
         .find(|(_, character)| character.is_whitespace())
     {
-        return preferred_start + offset + character.len_utf8();
+        return bounded_grapheme_boundary(value, preferred_start + offset + character.len_utf8());
     }
-    scalar_boundary
+    bounded_grapheme_boundary(value, scalar_boundary)
+}
+
+/// Preserves complete ordinary clusters; oversized clusters retain bounded scalar fragments.
+fn bounded_grapheme_boundary(value: &str, limit: usize) -> usize {
+    value
+        .grapheme_indices(true)
+        .map(|(offset, _)| offset)
+        .take_while(|offset| *offset <= limit)
+        .last()
+        .filter(|offset| *offset > 0)
+        .unwrap_or(limit)
 }
 
 /// Encodes the complete render document into the strict binary protocol.
@@ -2675,13 +2703,13 @@ mod tests {
     }
 
     use super::{
-        BLOCK_FLAG_CONTINUATION, BLOCK_FLAG_ORDERED_LIST, BLOCK_FLAG_QUOTE_ALERT_START,
-        BLOCK_FLAG_QUOTE_NOTE, BLOCK_FLAG_RAW_HTML, BLOCK_FLAG_TABLE_HEADER,
-        BLOCK_FLAG_TASK_CHECKED, BLOCK_KIND_CODE, BLOCK_KIND_FOOTNOTE, BLOCK_KIND_HEADING,
-        BLOCK_KIND_HTML_LITERAL, BLOCK_KIND_LIST_ITEM, BLOCK_KIND_PARAGRAPH, BLOCK_KIND_RULE,
-        BLOCK_KIND_TABLE_ROW, DOCUMENT_FLAG_RAW_HTML, InlineSourceMap, MAX_BLOCK_TEXT_BYTES,
-        MAX_INPUT_BYTES, MAX_LINK_DESTINATION_BYTES, PACKET_HEADER_BYTES, PACKET_MAGIC,
-        RenderControl, RenderError, RenderInterruption, SPAN_FLAG_FOOTNOTE_REFERENCE,
+        BLOCK_FLAG_CONTINUATION, BLOCK_FLAG_LIST_START, BLOCK_FLAG_ORDERED_LIST,
+        BLOCK_FLAG_QUOTE_ALERT_START, BLOCK_FLAG_QUOTE_NOTE, BLOCK_FLAG_RAW_HTML,
+        BLOCK_FLAG_TABLE_HEADER, BLOCK_FLAG_TASK_CHECKED, BLOCK_KIND_CODE, BLOCK_KIND_FOOTNOTE,
+        BLOCK_KIND_HEADING, BLOCK_KIND_HTML_LITERAL, BLOCK_KIND_LIST_ITEM, BLOCK_KIND_PARAGRAPH,
+        BLOCK_KIND_RULE, BLOCK_KIND_TABLE_ROW, DOCUMENT_FLAG_RAW_HTML, InlineSourceMap,
+        MAX_BLOCK_TEXT_BYTES, MAX_INPUT_BYTES, MAX_LINK_DESTINATION_BYTES, PACKET_HEADER_BYTES,
+        PACKET_MAGIC, RenderControl, RenderError, RenderInterruption, SPAN_FLAG_FOOTNOTE_REFERENCE,
         SPAN_STYLE_CODE, SPAN_STYLE_EMPHASIS, SPAN_STYLE_FOOTNOTE_REFERENCE, SPAN_STYLE_STRONG,
         SPAN_STYLE_SUBSCRIPT, SPAN_STYLE_SUPERSCRIPT, SourceRange, render_markdown,
         render_markdown_with_control,
@@ -2819,6 +2847,21 @@ mod tests {
                 .collect();
             assert_eq!(formulas.len(), 1);
             assert!(formulas[0].text.contains(formula));
+            assert!(
+                blocks
+                    .iter()
+                    .all(|block| block.text.len() <= MAX_BLOCK_TEXT_BYTES)
+            );
+        }
+    }
+
+    #[test]
+    fn presentation_chunks_preserve_combining_and_joined_emoji_clusters() {
+        for cluster in ["e\u{301}", "👩‍🔬", "🇨🇦", " \u{301}"] {
+            let source = format!("{}{cluster}tail", "a".repeat(MAX_BLOCK_TEXT_BYTES - 1));
+            let blocks = decode_blocks(render_markdown(&source).unwrap().as_bytes());
+            assert_eq!(blocks.concat_text(), source);
+            assert!(blocks.iter().any(|block| block.text.contains(cluster)));
             assert!(
                 blocks
                     .iter()
@@ -3497,6 +3540,31 @@ mod tests {
         assert_eq!(decoded[1].list_depth, 2);
         assert_eq!(decoded[1].list_number, 1);
         assert_ne!(decoded[1].flags & BLOCK_FLAG_ORDERED_LIST, 0);
+    }
+
+    #[test]
+    fn preserves_distinct_list_groups_without_repeating_chunk_markers() {
+        for source in [
+            "- First\n- Second\n\n* Separate\n",
+            "<ul><li>First</li><li>Second</li></ul><ul><li>Separate</li></ul>\n",
+        ] {
+            let packet = render_markdown(source).unwrap();
+            let blocks = decode_blocks(packet.as_bytes());
+            assert_eq!(blocks.len(), 3);
+            assert_ne!(blocks[0].flags & BLOCK_FLAG_LIST_START, 0);
+            assert_eq!(blocks[1].flags & BLOCK_FLAG_LIST_START, 0);
+            assert_ne!(blocks[2].flags & BLOCK_FLAG_LIST_START, 0);
+        }
+        let source = format!("- {}\n", "long ".repeat(MAX_BLOCK_TEXT_BYTES));
+        let packet = render_markdown(&source).unwrap();
+        let blocks = decode_blocks(packet.as_bytes());
+        assert!(blocks.len() > 1);
+        assert_ne!(blocks[0].flags & BLOCK_FLAG_LIST_START, 0);
+        assert!(
+            blocks[1..]
+                .iter()
+                .all(|block| block.flags & BLOCK_FLAG_LIST_START == 0)
+        );
     }
 
     #[test]

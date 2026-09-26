@@ -12,6 +12,16 @@ internal object NativeDocument {
     @JvmStatic
     external fun createEmpty(): Long
 
+    @JvmStatic external fun compileSearch(query: String, regex: Boolean, matchCase: Boolean, wholeWord: Boolean): Long
+    @JvmStatic external fun closeSearch(handle: Long)
+    @JvmStatic external fun searchSource(handle: Long, revision: Long, pattern: Long,
+        start: Long, end: Long, cursor: Long, skipEmpty: Boolean, replace: Boolean, replacement: String): ByteArray
+    @JvmStatic external fun searchText(pattern: Long, text: String, start: Long, end: Long,
+        cursor: Long, skipEmpty: Boolean): ByteArray
+    @JvmStatic external fun readRange(handle: Long, revision: Long, start: Long, end: Long): String
+    @JvmStatic external fun positionAt(handle: Long, revision: Long, offset: Long): LongArray
+    @JvmStatic external fun replaceBatch(handle: Long, revision: Long, packet: ByteArray): ByteArray
+
     /** Opens format-preserving UTF-8 from a descriptor and returns its native handle. */
     @JvmStatic
     external fun openSource(rawFileDescriptor: Int, expectedBytes: Long): Long
@@ -103,6 +113,12 @@ internal object NativeDocument {
     /** Captures an exact immutable document revision and returns its native handle. */
     @JvmStatic
     external fun captureSnapshot(handle: Long, expectedRevision: Long): Long
+
+    external fun captureRange(handle: Long, revision: Long, start: Long, end: Long): Long
+
+    external fun snapshotMetrics(handle: Long): ByteArray
+
+    external fun duplicateSnapshot(handle: Long): Long
 
     /** Prepares one snapshot package and returns its fixed metrics packet. */
     @JvmStatic

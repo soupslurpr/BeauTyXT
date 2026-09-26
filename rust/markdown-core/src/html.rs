@@ -527,10 +527,18 @@ fn render_list(
             max_packet_bytes: blocks.remaining_packet_bytes(),
             ..context
         };
-        let Some(item_blocks) = render_list_item(item, item_context, list_depth, ordered, number)?
+        let Some(mut item_blocks) =
+            render_list_item(item, item_context, list_depth, ordered, number)?
         else {
             return Ok(None);
         };
+        if item_index == 0
+            && let Some(first) = item_blocks.blocks.iter_mut().find(|block| {
+                block.spec.kind == BLOCK_KIND_LIST_ITEM && block.spec.list_depth == list_depth
+            })
+        {
+            first.spec.flags |= super::BLOCK_FLAG_LIST_START;
+        }
         blocks.append(item_blocks)?;
         item_index = item_index
             .checked_add(1)

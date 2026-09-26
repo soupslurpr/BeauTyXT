@@ -51,11 +51,7 @@ internal data class FindRequest(
 }
 
 /** Identifies one literal match and its revision-bound line-relative start. */
-internal data class FindMatch(val range: Utf16Range, val start: ViewportCursor) {
-    init {
-        require(range.start != range.end) { "find match must not be empty" }
-    }
-}
+internal data class FindMatch(val range: Utf16Range, val start: ViewportCursor)
 
 /** Contains one bounded find result or the exact candidate range still unsearched. */
 internal data class FindBatch(

@@ -9,6 +9,9 @@ internal class MarkdownHeadingIndex(items: Iterable<MarkdownPreviewHeadingItem>)
     private val itemIndices: Map<String, Int>
     private val hasItems: Boolean
 
+    /** Exposes immutable heading identities to excerpt and PDF destination generation. */
+    val destinations: Map<String, Int> get() = itemIndices
+
     init {
         val indices = HashMap<String, Int>()
         val nextSuffixes = HashMap<String, Int>()

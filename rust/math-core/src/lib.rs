@@ -3,6 +3,8 @@
 #![forbid(unsafe_code)]
 
 mod admission;
+mod semantics;
+mod text_spaces;
 
 use beautyxt_illustration_core::{Drawing, DrawingError, FilledPath, INK, coordinate};
 use ratex_layout::{LayoutOptions, layout, to_display_list};
@@ -42,7 +44,10 @@ pub fn render_math(source: &str, display: bool) -> Result<Vec<u8>, DrawingError>
         return Err(DrawingError::Limit);
     }
     let mut drawing = Drawing::new(list.width, list.total_height(), list.height)?;
-    for item in list.items {
+    let mut semantic_nodes = nodes;
+    let mut semantics =
+        semantics::Semantics::from_nodes(&mut semantic_nodes, &options, &list.items).ok();
+    for (index, item) in list.items.into_iter().enumerate() {
         match item {
             DisplayItem::GlyphPath {
                 x,
@@ -68,6 +73,9 @@ pub fn render_math(source: &str, display: bool) -> Result<Vec<u8>, DrawingError>
                     continue;
                 }
                 let components = place_outline(outline, x, y, scale)?;
+                if let Some(semantics) = &mut semantics {
+                    semantics.glyph(index, char_code, &components)?;
+                }
                 drawing.push(FilledPath::new(color, false, components)?)?;
             }
             DisplayItem::Line {
@@ -106,6 +114,13 @@ pub fn render_math(source: &str, display: bool) -> Result<Vec<u8>, DrawingError>
             } => {
                 append_path(&mut drawing, x, y, commands, fill, math_color(color)?)?;
             }
+        }
+    }
+    if let Some(semantics) = semantics {
+        let (complete, runs) = semantics.finish()?;
+        drawing.set_text_complete(complete);
+        for run in runs {
+            drawing.push_text(run)?;
         }
     }
     drawing.encode()
@@ -297,7 +312,7 @@ mod tests {
             for display in [false, true] {
                 let packet =
                     render_math(source, display).unwrap_or_else(|e| panic!("{source}: {e}"));
-                assert_eq!(&packet[..8], b"BTXTILL3");
+                assert_eq!(&packet[..8], b"BTXTILL4");
                 assert!(packet.len() > beautyxt_illustration_core::HEADER_BYTES);
             }
         }
