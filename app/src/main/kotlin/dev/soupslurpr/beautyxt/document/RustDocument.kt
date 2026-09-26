@@ -64,6 +64,30 @@ internal data class Utf16Range(val start: Long, val end: Long) {
 internal class RustDocument private constructor(private var nativeHandle: Long) : EditorDocument {
     private val documentLock = Any()
 
+    override fun compileSearch(query: String, options: SearchOptions): DocumentSearch =
+        NativeSearch(query, options) { pattern, revision, scope, cursor, replacement ->
+            withOpenHandle { handle ->
+                decodeSearchPage(NativeDocument.searchSource(handle, revision, pattern,
+                    scope.start, scope.end, cursor.start, cursor.skipEmpty,
+                    replacement != null, replacement.orEmpty()))
+            }
+        }
+
+    override fun readRange(revision: Long, range: Utf16Range): String = withOpenHandle { handle ->
+        NativeDocument.readRange(handle, revision, range.start, range.end)
+    }
+
+    override fun positionAt(revision: Long, offset: Long): ViewportCursor = withOpenHandle { handle ->
+        val values = NativeDocument.positionAt(handle, revision, offset)
+        require(values.size == 2)
+        ViewportCursor(revision, values[0], values[1])
+    }
+
+    override fun replaceBatch(revision: Long, patches: List<DocumentPatch>): DocumentMetrics =
+        withOpenHandle { handle ->
+            DocumentMetricsPacketDecoder.decode(NativeDocument.replaceBatch(handle, revision, encodeReplacementBatch(patches)))
+        }
+
     init {
         require(nativeHandle > CLOSED_DOCUMENT_HANDLE) {
             "native document handle must be positive"
@@ -210,6 +234,11 @@ internal class RustDocument private constructor(private var nativeHandle: Long) 
         }
     }
 
+    override fun captureRange(expectedRevision: Long, range: Utf16Range): EditorDocumentSnapshot =
+        withOpenHandle { handle ->
+            RustDocumentSnapshot(NativeDocument.captureRange(handle, expectedRevision, range.start, range.end))
+        }
+
     /** Closes the native document exactly once. */
     override fun close() {
         synchronized(documentLock) {
@@ -255,6 +284,16 @@ internal class RustDocument private constructor(private var nativeHandle: Long) 
 private class RustDocumentSnapshot(private var nativeHandle: Long) : EditorDocumentSnapshot {
     private val snapshotLock = Any()
     private var preparedPackageMetrics: SourceSavePackageMetrics? = null
+
+    override fun metrics(): DocumentMetrics = synchronized(snapshotLock) {
+        check(nativeHandle != CLOSED_SNAPSHOT_HANDLE) { "snapshot is closed" }
+        DocumentMetricsPacketDecoder.decode(NativeDocument.snapshotMetrics(nativeHandle))
+    }
+
+    override fun duplicate(): EditorDocumentSnapshot = synchronized(snapshotLock) {
+        check(nativeHandle != CLOSED_SNAPSHOT_HANDLE) { "snapshot is closed" }
+        RustDocumentSnapshot(NativeDocument.duplicateSnapshot(nativeHandle))
+    }
 
     init {
         require(nativeHandle > CLOSED_SNAPSHOT_HANDLE) {

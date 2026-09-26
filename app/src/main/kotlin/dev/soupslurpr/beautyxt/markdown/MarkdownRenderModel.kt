@@ -99,7 +99,8 @@ internal data class MarkdownRenderBlock(
     val startsTable: Boolean = false,
     val continuesListItem: Boolean = false,
     // Caller-owned presentation only: retain a stable block slot covered by a complete drawing.
-    val illustrationContinuation: Boolean = false
+    val illustrationContinuation: Boolean = false,
+    val startsList: Boolean = false
 )
 
 /** Contains one immutable, bounded Markdown preview model. */

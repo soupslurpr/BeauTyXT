@@ -16,6 +16,8 @@ internal class IllustrationCache(
     private val entries = LinkedHashMap<IllustrationRequest, IllustrationResult>(16, 0.75f, true)
     var retainedBytes: Int = 0
         private set
+    var version: Long = 0
+        private set
 
     operator fun get(request: IllustrationRequest): IllustrationResult? = entries[request]
     fun snapshot(): Map<IllustrationRequest, IllustrationResult> = entries.toMap()
@@ -35,12 +37,14 @@ internal class IllustrationCache(
         }
         entries[request] = result
         retainedBytes += bytes
+        version++
         return true
     }
 
     fun clear() {
         entries.clear()
         retainedBytes = 0
+        version++
     }
 
     private fun packetBytes(result: IllustrationResult) =

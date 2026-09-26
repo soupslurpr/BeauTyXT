@@ -2,7 +2,8 @@
 
 use super::fonts::DiagramFonts;
 use beautyxt_illustration_core::{
-    Drawing, DrawingError, FilledPath, INK, MAX_PATH_CLIPS, PathClip, SURFACE, TONE,
+    Drawing, DrawingError, FilledPath, INK, MAX_PATH_CLIPS, PathClip, SURFACE, TONE, TextBox,
+    TextRun,
 };
 
 pub(super) fn drawing(source: &str, fonts: &DiagramFonts) -> Result<Vec<u8>, DrawingError> {
@@ -64,6 +65,7 @@ pub(super) fn drawing(source: &str, fonts: &DiagramFonts) -> Result<Vec<u8>, Dra
         Ok(text.trim().to_owned())
     };
     drawing.describe(&alternative("title")?, &alternative("desc")?)?;
+    drawing.set_text_complete(true);
     visit(tree.root(), &mut drawing, 0, &[])?;
     drawing.encode()
 }
@@ -129,6 +131,12 @@ fn visit(
                 if !super::fonts::supported(text) {
                     return Err(DrawingError::Unsupported);
                 }
+                if clips.is_empty() {
+                    visible_label(text, drawing)?;
+                } else {
+                    // A partial clip does not prove which characters remain visible.
+                    drawing.set_text_complete(false);
+                }
                 // usvg 0.48 propagates the text's absolute transform to its outlined paths.
                 // Applying it again here would displace or rescale every nested diagram label.
                 visit(text.flattened(), drawing, depth + 1, &clips)?;
@@ -138,6 +146,40 @@ fn visit(
         }
     }
     Ok(())
+}
+
+fn visible_label(text: &usvg::Text, drawing: &mut Drawing) -> Result<(), DrawingError> {
+    let mut label = String::new();
+    for chunk in text.chunks() {
+        if chunk.spans().iter().any(|span| !span.is_visible()) {
+            drawing.set_text_complete(false);
+            return Ok(());
+        }
+        if !label.is_empty() {
+            label.push('\n');
+        }
+        label.push_str(chunk.text());
+    }
+    if label.is_empty() {
+        return Ok(());
+    }
+    let rect = text.abs_bounding_box();
+    if rect.width() <= 0.0 || rect.height() <= 0.0 {
+        return Ok(());
+    }
+    drawing.push_text(TextRun {
+        boxes: vec![TextBox {
+            start: 0,
+            end: u32::try_from(label.encode_utf16().count()).map_err(|_| DrawingError::Limit)?,
+            bounds: [
+                rect.left() / 16.0,
+                rect.top() / 16.0,
+                rect.right() / 16.0,
+                rect.bottom() / 16.0,
+            ],
+        }],
+        text: label,
+    })
 }
 
 fn path_drawing(
@@ -279,6 +321,23 @@ mod tests {
             ),
         ] {
             let mut expected = Drawing::new(20.0, 20.0, 0.0).unwrap();
+            expected.set_text_complete(true);
+            let rect = text.abs_bounding_box().transform(transform).unwrap();
+            expected
+                .push_text(TextRun {
+                    text: "Read locally".to_owned(),
+                    boxes: vec![TextBox {
+                        start: 0,
+                        end: 12,
+                        bounds: [
+                            rect.left() / 16.0,
+                            rect.top() / 16.0,
+                            rect.right() / 16.0,
+                            rect.bottom() / 16.0,
+                        ],
+                    }],
+                })
+                .unwrap();
             for node in text.flattened().children() {
                 let usvg::Node::Path(path) = node else {
                     panic!("fixture font must use outline glyphs");

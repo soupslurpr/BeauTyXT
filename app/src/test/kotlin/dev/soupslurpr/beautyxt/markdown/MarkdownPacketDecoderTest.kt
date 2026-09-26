@@ -109,7 +109,7 @@ class MarkdownPacketDecoderTest {
     @Test
     fun rejectsUnsupportedAndMalformedBlockData() {
         val flagPacket = createHeadingPacket()
-        flagPacket.writeLittleEndianInt(TEST_BLOCK_FLAGS_OFFSET, 1L shl 14)
+        flagPacket.writeLittleEndianInt(TEST_BLOCK_FLAGS_OFFSET, 1L shl 15)
         assertProtocolFailure(
             "block flags contains unsupported bits",
             flagPacket

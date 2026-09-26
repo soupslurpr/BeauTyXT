@@ -21,6 +21,36 @@ import org.junit.Test
 
 class IllustrationTest {
     @Test
+    fun semanticPacketsValidateTextGeometryCountsAndScalarBoundaries() {
+        val legacy = packet()
+        val text = "😀x".toByteArray()
+        val semantic = ByteBuffer.allocate(8 + text.size + 24).order(ByteOrder.LITTLE_ENDIAN).apply {
+            putInt(text.size); putInt(1); put(text)
+            putInt(0); putInt(2)
+            putFloat(0f); putFloat(0f); putFloat(1f); putFloat(1f)
+        }.array()
+        val bytes = legacy.copyOfRange(0, 48) + ByteArray(12) + semantic + legacy.copyOfRange(48, legacy.size)
+        ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).apply {
+            put(7, 52.toByte()); putInt(8, 4); putInt(12, bytes.size)
+            putInt(48, 1); putInt(52, semantic.size); putInt(56, 1)
+        }
+        val result = IllustrationPacketDecoder.decode(bytes)
+        assertTrue(result.isTextComplete)
+        assertEquals("😀x", result.textRuns.single().text)
+        assertEquals(2, result.textRuns.single().boxes.single().end)
+        assertEquals(1, result.paths.size)
+        val endOffset = 60 + 8 + text.size + 4
+        for ((offset, value) in listOf(endOffset to 1, 48 to 2_049, 52 to -1, 56 to 2)) {
+            val malformed = bytes.copyOf()
+            ByteBuffer.wrap(malformed).order(ByteOrder.LITTLE_ENDIAN).putInt(offset, value)
+            assertThrows(IllustrationProtocolException::class.java) { IllustrationPacketDecoder.decode(malformed) }
+        }
+        for (size in 48 until bytes.size) {
+            assertThrows(IllustrationProtocolException::class.java) { IllustrationPacketDecoder.decode(bytes.copyOf(size)) }
+        }
+    }
+
+    @Test
     fun decodesCompleteClosedPacket() {
         val drawing = IllustrationPacketDecoder.decode(packet())
         assertEquals(2f, drawing.width, 0f)

@@ -32,6 +32,7 @@ private const val BLOCK_FLAG_QUOTE_CAUTION = 1L shl 10
 private const val BLOCK_FLAG_QUOTE_ALERT_START = 1L shl 11
 private const val BLOCK_FLAG_TABLE_START = 1L shl 12
 private const val BLOCK_FLAG_LIST_ITEM_CONTINUATION = 1L shl 13
+private const val BLOCK_FLAG_LIST_START = 1L shl 14
 private const val BLOCK_FLAGS_QUOTE_KIND =
     BLOCK_FLAG_QUOTE_NOTE or
         BLOCK_FLAG_QUOTE_TIP or
@@ -48,7 +49,7 @@ private const val BLOCK_FLAGS_ALLOWED =
         BLOCK_FLAGS_QUOTE_KIND or
         BLOCK_FLAG_QUOTE_ALERT_START or
         BLOCK_FLAG_TABLE_START or
-        BLOCK_FLAG_LIST_ITEM_CONTINUATION
+        BLOCK_FLAG_LIST_ITEM_CONTINUATION or BLOCK_FLAG_LIST_START
 internal const val MARKDOWN_SPAN_STYLE_EMPHASIS = 1
 internal const val MARKDOWN_SPAN_STYLE_STRONG = 1 shl 1
 internal const val MARKDOWN_SPAN_STYLE_CODE = 1 shl 2
@@ -310,7 +311,8 @@ internal object MarkdownPacketDecoder {
                     startsQuoteAlert = blockFlags and BLOCK_FLAG_QUOTE_ALERT_START != 0L,
                     tableAlignments = tableAlignments,
                     startsTable = blockFlags and BLOCK_FLAG_TABLE_START != 0L,
-                    continuesListItem = blockFlags and BLOCK_FLAG_LIST_ITEM_CONTINUATION != 0L
+                    continuesListItem = blockFlags and BLOCK_FLAG_LIST_ITEM_CONTINUATION != 0L,
+                    startsList = blockFlags and BLOCK_FLAG_LIST_START != 0L
                 ),
             textBytes = textByteLength,
             auxiliaryBytes = checkedAdd(metadataByteLength, destinationBytes),
@@ -498,6 +500,10 @@ internal object MarkdownPacketDecoder {
         val hasCheckedFlag = flags and BLOCK_FLAG_TASK_CHECKED != 0L
         val hasUncheckedFlag = flags and BLOCK_FLAG_TASK_UNCHECKED != 0L
         val continuesListItem = flags and BLOCK_FLAG_LIST_ITEM_CONTINUATION != 0L
+        if (flags and BLOCK_FLAG_LIST_START != 0L &&
+            (kind != MarkdownBlockKind.ListItem || continuesListItem || flags and BLOCK_FLAG_CONTINUATION != 0L)) {
+            throw MarkdownProtocolException("list start must begin a list item")
+        }
         if (hasCheckedFlag && hasUncheckedFlag) {
             throw MarkdownProtocolException("Markdown task item has conflicting states")
         }

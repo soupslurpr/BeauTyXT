@@ -11,6 +11,7 @@ rust-version.workspace = true
 [dependencies]
 html5ever = { version = "0.40.1", default-features = false }
 pulldown-cmark = { version = "0.13.4", default-features = false }
+unicode-segmentation = "1.13.3"
 
 [lints]
 workspace = true
