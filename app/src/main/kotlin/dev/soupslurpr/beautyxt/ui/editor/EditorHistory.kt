@@ -28,6 +28,10 @@ internal class EditorHistory(
     val redoEntry: CommittedEditDelta?
         get() = redoEntries.lastOrNull()
 
+    /** Required before a batch is published; ordinary typing retains its existing policy. */
+    fun canRetain(patches: List<dev.soupslurpr.beautyxt.document.DocumentPatch>): Boolean =
+        patches.sumOf { it.retainedUnits.toLong() } <= maxRetainedUtf16Units
+
     /** Appends one verified edit and releases any superseded redo branch. */
     fun record(delta: CommittedEditDelta) {
         if (headRevision != null && headRevision != delta.revisionBefore) {

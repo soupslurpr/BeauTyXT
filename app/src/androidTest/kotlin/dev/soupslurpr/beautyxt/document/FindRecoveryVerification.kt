@@ -44,9 +44,9 @@ internal fun Instrumentation.verifyFindRetry(capturePreviews: Boolean = false) {
         title = "Find recovery.txt",
         state = EditorDocumentState(
             object : EditorDocument by document {
-                override fun find(request: FindRequest): FindBatch {
+                override fun compileSearch(query: String, options: SearchOptions): DocumentSearch {
                     check(!failNextFind.getAndSet(false)) { "injected Find failure" }
-                    return document.find(request)
+                    return document.compileSearch(query, options)
                 }
             },
             initialRevision = metrics.revision
@@ -78,7 +78,6 @@ internal fun Instrumentation.verifyFindRetry(capturePreviews: Boolean = false) {
         requireActionableContentDescription("Find in document").performRequiredClick()
         runOnMainSync { session.updateFindFieldValue(TextFieldValue("alpha")) }
         awaitFindRecovery { session.findStatus is FindStatus.Failed && session.canNavigateFind }
-        requireActionableContentDescription("Find in document").performRequiredClick()
         waitForAccessibilityNode("inline Find retry beside the query") { node ->
             if (node.text?.toString() != "Retry") return@waitForAccessibilityNode false
             val query = uiAutomation.rootInActiveWindow?.findNode {
@@ -95,20 +94,22 @@ internal fun Instrumentation.verifyFindRetry(capturePreviews: Boolean = false) {
         if (capturePreviews) captureFindRecovery("find-retry-landscape")
         val retry = requireActionableText("Retry")
         val retryBounds = Rect().also(retry::getBoundsInScreen)
-        val queryBounds = Rect().also(
-            requireActionableContentDescription("Find in document")::getBoundsInScreen
-        )
+        val queryBounds = Rect().also(waitForAccessibilityNode("retained query") {
+            it.isEditable && it.text?.toString() == "alpha"
+        }::getBoundsInScreen)
         check(abs(retryBounds.centerY() - queryBounds.centerY()) <
             24 * activity.resources.displayMetrics.density) {
             "Retry did not appear beside the inline query: $retryBounds, $queryBounds"
         }
         retry.performRequiredClick()
-        awaitFindRecovery { session.findStatus is FindStatus.Match && session.canNavigateFind }
+        awaitFindRecovery { session.isFindComplete && session.canNavigateFind }
         runOnMainSync {
             check(session.isFindVisible && session.findFieldValue.text == "alpha") {
                 "retry changed the retained query or closed Find"
             }
-            check(session.findMatch?.range?.start == 0L) { "retry did not find the first match" }
+            check(session.findMatch == null && session.findResults.first().source?.start == 0L) {
+                "retry must refresh results without navigating"
+            }
             check(!session.state.hasDocumentChanges) { "retry changed the document" }
         }
         if (capturePreviews) captureFindRecovery("find-recovered-landscape")

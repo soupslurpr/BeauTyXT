@@ -49,7 +49,8 @@ internal fun EditorBody(
     activeDraft: ActiveEditDraft?,
     onSaveAsNewFile: () -> Unit,
     onRestartExplicitSave: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    documentFocus: DocumentFocus? = null
 ) {
     val sourceSaveStatus = session.sourceSaveStatus
     val saveStatus = session.saveStatus
@@ -133,11 +134,9 @@ internal fun EditorBody(
                     )
                 }
             }
-            EditorContent(
-                session = session,
-                activeDraft = activeDraft,
-                modifier = Modifier.weight(1f)
-            )
+            DocumentSelectionHost(session, Modifier.weight(1f), documentFocus) {
+                EditorContent(session = session, activeDraft = activeDraft, modifier = Modifier.fillMaxSize())
+            }
         }
     }
 }

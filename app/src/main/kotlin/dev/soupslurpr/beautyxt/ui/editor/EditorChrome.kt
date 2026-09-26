@@ -56,7 +56,8 @@ internal data class EditorNavigationActions(
     val onGoToLine: () -> Unit,
     val onFileInfo: () -> Unit,
     val onScanQr: () -> Unit,
-    val onReadNfc: () -> Unit
+    val onReadNfc: () -> Unit,
+    val onKeyboardShortcuts: () -> Unit = {}
 )
 
 /** Describes the single operation that currently offers cancellation. */
@@ -169,14 +170,15 @@ internal fun EditorTopBar(
                     Icon(painterResource(R.drawable.ic_close), contentDescription = cancellation.label)
                 }
             } else if (!isCancelling && !session.isClosePending) {
-                if (session.presentation == EditorPresentation.Text) {
+                run {
                     IconButton(onClick = actions.onFind, enabled = session.canShowFind) {
                         Icon(
                             painterResource(R.drawable.ic_search),
                             contentDescription = stringResource(R.string.find_in_document)
                         )
                     }
-                } else {
+                }
+                if (session.presentation == EditorPresentation.MarkdownPreview) {
                     IconButton(onClick = actions.onContents, enabled = contentsEnabled) {
                         Icon(
                             painterResource(R.drawable.ic_format_list_bulleted),
@@ -234,6 +236,12 @@ internal fun EditorTopBar(
                         )
                         HorizontalDivider(
                             modifier = Modifier.padding(MenuDefaults.HorizontalDividerPadding)
+                        )
+                        ActionMenuItem(
+                            shape = MenuDefaults.middleItemShape,
+                            label = stringResource(R.string.document_keyboard_shortcuts),
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_info), contentDescription = null) },
+                            onClick = { onOverflowExpandedChange(false); actions.onKeyboardShortcuts() }
                         )
                         ActionMenuItem(
                             shape = MenuDefaults.middleItemShape,

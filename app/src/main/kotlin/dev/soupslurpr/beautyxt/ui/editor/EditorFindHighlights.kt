@@ -4,17 +4,13 @@ package dev.soupslurpr.beautyxt.ui.editor
 import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
-import dev.soupslurpr.beautyxt.document.FindHighlightRequest
 import dev.soupslurpr.beautyxt.document.Utf16Range
 
 /** Keeps only the coverage belonging to this query, revision, and displayed source. */
@@ -24,26 +20,14 @@ internal fun rememberFindHighlights(
     revision: Long,
     range: Utf16Range
 ): List<TextRange> {
-    val query = session.findFieldValue.text.takeIf { session.isFindVisible }.orEmpty()
-    val matchCase = session.isFindCaseSensitive
-    val request = remember(revision, range, query, matchCase) {
-        if (query.isEmpty() || range.start == range.end) null else {
-            FindHighlightRequest(revision, query, matchCase, range)
-        }
-    }
-    var highlights by remember(session, request) { mutableStateOf(emptyList<TextRange>()) }
-    val ready = session.state.status == EditorDocumentStatus.Ready
-    LaunchedEffect(session, request, ready) {
-        if (request != null && ready) {
-            highlights = session.state.findHighlights(request).map { match ->
-                TextRange(
-                    Math.toIntExact(match.start - range.start),
-                    Math.toIntExact(match.end - range.start)
-                )
-            }
-        }
-    }
-    return highlights
+    if (!session.isFindVisible || session.state.metrics?.revision != revision) return emptyList()
+    return session.findResults.asSequence().filter { it.representation == SearchRepresentation.Source }
+        .mapNotNull { result ->
+            val matched = result.source ?: return@mapNotNull null
+            val start = maxOf(matched.start, range.start)
+            val end = minOf(matched.end, range.end)
+            if (end <= start) null else TextRange(Math.toIntExact(start - range.start), Math.toIntExact(end - range.start))
+        }.toList()
 }
 
 /** Shares the same theme-aware hierarchy between selectable and editable source text. */

@@ -113,15 +113,12 @@ internal fun Instrumentation.verifyCompactEditorControls() {
             "compact Find placeholder grew beyond one input row: $queryBounds"
         }
         query.setVerificationText(COMPACT_EDITOR_QUERY)
-        waitForAccessibilityNode("live compact Find match") { node ->
-            node.text?.toString() in setOf(
-                "Match on line 1",
-                "Wrapped to beginning · Match on line 1"
-            )
-        }
+        awaitReadingCondition("live compact Find count did not finish") { session.isFindComplete && session.findResults.size == 2 }
+        check(session.findMatch == null) { "typing moved the document" }
+        requireActionableContentDescription("Next match").performRequiredClick()
         awaitCompactFindMatch(session, 0L)
         for (description in listOf(
-            "Close Find", "Clear search", "Match case", "Previous match", "Next match"
+            "Close Find", "Clear search", "Previous match", "Next match"
         )) {
             requireControlBounds(
                 requireActionableContentDescription(description),
@@ -140,13 +137,21 @@ internal fun Instrumentation.verifyCompactEditorControls() {
                 COMPACT_EDITOR_QUERY,
                 "after reflow to $newWidth at font scale $newFontScale"
             )
-            check(Rect().also(retainedQuery::getBoundsInScreen).height() <= 96 * density) {
-                "Find query grew beyond a single large-text row"
+            val reflowBounds = Rect().also(retainedQuery::getBoundsInScreen)
+            check(reflowBounds.height() <= 96 * density) {
+                "Find query grew beyond a single large-text row: $reflowBounds at density $density, $newWidth / $newFontScale"
             }
             clickCompactActionAfterReflow("Next match")
             awaitCompactFindMatch(session, if (index == 0) 11L else 0L)
         }
-        requireActionableContentDescription("Match case").performRequiredClick()
+        waitForAccessibilityIdle()
+        requireActionableText("Options and results").performRequiredClick()
+        awaitReadingCondition("compact options did not expand") { session.isFindResultsExpanded }
+        val matchCase = requireActionableText("Match case")
+        requireControlBounds(matchCase, minimumTouchPixels, (width.value.value * density).roundToInt())
+        matchCase.performRequiredClick()
+        awaitReadingCondition("Match case did not refresh") { session.isFindComplete && session.isFindCaseSensitive }
+        requireActionableContentDescription("Next match").performRequiredClick()
         awaitCompactFindMatch(session, 0L)
         requireActionableContentDescription("Clear search").performRequiredClick()
         val clearedQuery = waitForFindQuery("", "after clearing the query")
@@ -160,6 +165,8 @@ internal fun Instrumentation.verifyCompactEditorControls() {
             check(!session.canNavigateFind) { "empty Find still allows match navigation" }
         }
         clearedQuery.setVerificationText("beta")
+        awaitReadingCondition("new query did not finish") { session.isFindComplete && session.findResults.size == 1 }
+        requireActionableContentDescription("Next match").performRequiredClick()
         awaitCompactFindMatch(session, 6L)
         requireActionableContentDescription("Close Find").performRequiredClick()
         waitForEditorText(COMPACT_EDITOR_TEXT)
@@ -207,7 +214,7 @@ private fun Instrumentation.waitForFindQuery(
     val label = waitForAccessibilityNode("focused Find query $stage") { node ->
         node.contentDescription?.toString() == "Find in document" &&
             node.editableAncestor()?.let { input ->
-                input.isFocused && (expectedText == null || input.text?.toString() == expectedText)
+                (expectedText != null || input.isFocused) && (expectedText == null || input.text?.toString() == expectedText)
             } == true
     }
     return checkNotNull(label.editableAncestor())

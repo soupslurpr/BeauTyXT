@@ -205,12 +205,14 @@ internal fun Instrumentation.profileStagingEditing(arguments: Bundle) {
             val previewStart = now()
             preview.performRequiredClick()
             await("rendered Markdown") {
+                uiAutomation.clearCache()
                 val root = uiAutomation.rootInActiveWindow
                 root?.findNode { it.contentDescription?.toString()?.startsWith("Formula:") == true } != null &&
                     root.findNode { it.contentDescription?.toString()?.startsWith("Diagram:") == true } != null
             }
             result.put("previewContentMs", msSince(previewStart))
             await("rendered illustrations") {
+                uiAutomation.clearCache()
                 val root = uiAutomation.rootInActiveWindow
                 root != null && root.findNode { it.text?.toString() == "Rendering…" && it.isVisibleToUser } == null &&
                     root.findNode { it.contentDescription?.toString() == "Show diagram at text size" } != null

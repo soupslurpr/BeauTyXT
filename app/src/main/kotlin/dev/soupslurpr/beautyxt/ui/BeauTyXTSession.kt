@@ -603,6 +603,7 @@ internal constructor(
                 activeSourceReloadEditor === originalEditor &&
                 originalEditor.isSourceReloading
             ) {
+                candidate.inheritFindInputs(originalEditor)
                 editor = candidate
                 candidate = null
                 originalEditor.close()

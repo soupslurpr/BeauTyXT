@@ -75,6 +75,9 @@ internal fun Instrumentation.verifyFindHighlights(capturePreviews: Boolean = fal
                     check(session.showFind()) { "Find did not open after source became ready" }
                     withTimeout(10_000) { snapshotFlow { session.isFindVisible }.first { it } }
                     session.updateFindFieldValue(TextFieldValue("river"))
+                    awaitHighlightCoverage(session)
+                    check(session.findMatch == null) { "typing a query moved to a match" }
+                    session.findNext()
                     awaitHighlightMatch(session, 0)
                     for (darkTheme in listOf(false, true)) {
                         dark.value = darkTheme
@@ -109,6 +112,8 @@ internal fun Instrumentation.verifyFindHighlights(capturePreviews: Boolean = fal
                         }
                     }
                     session.updateFindCaseSensitivity(true)
+                    awaitHighlightCoverage(session)
+                    session.findNext()
                     awaitHighlightMatch(session, 6)
                     awaitHighlightedSource(activity, "River river RIVER") { text ->
                         text.spanStyles.filter { it.start < 17 }.map { it.start to it.end } ==
@@ -116,12 +121,14 @@ internal fun Instrumentation.verifyFindHighlights(capturePreviews: Boolean = fal
                     }
                     session.updateFindCaseSensitivity(false)
                     session.updateFindFieldValue(TextFieldValue("ana"))
+                    awaitHighlightCoverage(session)
+                    session.findNext()
                     awaitHighlightMatch(session, 19)
                     session.findNext()
                     awaitHighlightMatch(session, 21)
                     awaitHighlightedSource(activity, "banana banana") { text ->
                         val offset = if (readOnly) 0 else 18
-                        text.spanStyles.any { it.start == offset + 1 && it.end == offset + 6 } &&
+                        (1..5).all { character -> text.spanStyles.any { offset + character in it.start until it.end } } &&
                             text.spanStyles.last().let { it.start == offset + 3 && it.end == offset + 6 }
                     }
                     // Superseded work must never restore decoration for an older query.
@@ -132,6 +139,8 @@ internal fun Instrumentation.verifyFindHighlights(capturePreviews: Boolean = fal
                     }
                     awaitHighlightedSource(activity, "banana banana") { it.spanStyles.isEmpty() }
                     session.updateFindFieldValue(TextFieldValue("r"))
+                    awaitHighlightCoverage(session)
+                    session.findNext()
                     awaitHighlightedSource(activity, "River river RIVER") { it.spanStyles.size >= 6 }
                     session.closeFind()
                     awaitHighlightedSource(activity, "River river RIVER") { it.spanStyles.isEmpty() }
@@ -143,6 +152,15 @@ internal fun Instrumentation.verifyFindHighlights(capturePreviews: Boolean = fal
                     }
                 }
             }
+        } catch (failure: Exception) {
+            uiAutomation.takeScreenshot()?.let { bitmap ->
+                try { File(targetContext.cacheDir, "find-highlights-failure.png").outputStream().use {
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+                } } finally { bitmap.recycle() }
+            }
+            throw IllegalStateException("${failure.message}; readOnly=$readOnly, expanded=${session.isFindResultsExpanded}, " +
+                "reveal=${session.findRevealRequest}, presentation=${session.presentation}, draft=${session.activeDraft?.textFieldState?.text}, " +
+                "layouts=${highlightTextLayouts(activity.window.decorView).map { it.layoutInput.text }}", failure)
         } finally {
             runOnMainSync {
                 activity.finishAndRemoveTask()
@@ -152,10 +170,18 @@ internal fun Instrumentation.verifyFindHighlights(capturePreviews: Boolean = fal
     }
 }
 
+private suspend fun awaitHighlightCoverage(session: EditorSession) {
+    withTimeout(10_000) { snapshotFlow { session.isFindComplete }.first { it } }
+}
+
 private suspend fun awaitHighlightMatch(session: EditorSession, start: Long) {
-    withTimeout(10_000) {
-        snapshotFlow { (session.findStatus as? FindStatus.Match)?.match?.range?.start }
-            .first { it == start }
+    try {
+        withTimeout(10_000) {
+            snapshotFlow { (session.findStatus as? FindStatus.Match)?.match?.range?.start }
+                .first { it == start }
+        }
+    } catch (failure: kotlinx.coroutines.TimeoutCancellationException) {
+        error("Expected match at $start; status=${session.findStatus}, results=${session.findResults.map { it.source }}")
     }
 }
 
@@ -164,7 +190,7 @@ private suspend fun awaitHighlightedSource(
     activity: HomeActivity,
     content: String,
     condition: (AnnotatedString) -> Boolean
-): AnnotatedString = withTimeout(10_000) {
+): AnnotatedString = try { withTimeout(10_000) {
     while (true) {
         val texts = highlightTextLayouts(activity.window.decorView).map { it.layoutInput.text }
         texts.firstOrNull { it.text.contains(content) && condition(it) }?.let { return@withTimeout it }
@@ -172,6 +198,8 @@ private suspend fun awaitHighlightedSource(
     }
     @Suppress("UNREACHABLE_CODE")
     error("highlighted source never appeared")
+} } catch (failure: kotlinx.coroutines.TimeoutCancellationException) {
+    error("Highlight assertion for '$content': ${highlightTextLayouts(activity.window.decorView).map { it.layoutInput.text }.filter { it.text.contains(content) }.map { it.spanStyles }}")
 }
 
 private fun highlightTextLayouts(view: View): List<TextLayoutResult> = buildList {

@@ -2,6 +2,14 @@ package dev.soupslurpr.beautyxt.testing
 
 import dev.soupslurpr.beautyxt.document.DocumentLineEnding
 import dev.soupslurpr.beautyxt.document.DocumentMetrics
+import dev.soupslurpr.beautyxt.document.DocumentPatch
+import dev.soupslurpr.beautyxt.document.DocumentSearch
+import dev.soupslurpr.beautyxt.document.SearchOptions
+import dev.soupslurpr.beautyxt.document.SearchCursor
+import dev.soupslurpr.beautyxt.document.SearchPage
+import dev.soupslurpr.beautyxt.document.SearchHit
+import dev.soupslurpr.beautyxt.document.SearchCompletion
+import dev.soupslurpr.beautyxt.document.MAX_FIND_CANDIDATE_UTF16_UNITS
 import dev.soupslurpr.beautyxt.document.EditWindowLimits
 import dev.soupslurpr.beautyxt.document.EditWindowSnapshot
 import dev.soupslurpr.beautyxt.document.EditorDocument
@@ -141,6 +149,60 @@ internal class TestEditorDocument(
         get() = snapshots
     var closeCallCount = 0
         private set
+
+    /** Literal-only workflow fixture; native tests own Unicode and regex dialect verification. */
+    override fun compileSearch(query: String, options: SearchOptions): DocumentSearch = object : DocumentSearch {
+        private var closed = false
+        override fun source(revision: Long, scope: Utf16Range, cursor: SearchCursor, replacement: String?): SearchPage {
+            check(!closed)
+            requireCurrentRevision(revision)
+            findCalls += FindRequest(revision, query, options.matchCase, scope, FindDirection.Forward,
+                MAX_FIND_CANDIDATE_UTF16_UNITS)
+            return matches(text, revision, scope, cursor, replacement)
+        }
+        override fun text(text: String, scope: Utf16Range, cursor: SearchCursor): SearchPage =
+            matches(text, 0, scope, cursor, null)
+        private fun matches(input: String, revision: Long, scope: Utf16Range,
+            cursor: SearchCursor, replacement: String?): SearchPage {
+            check(!options.regex) { "workflow fixture does not implement Rust regex" }
+            val hits = ArrayList<SearchHit>()
+            var start = cursor.start.toInt()
+            while (start <= scope.end) {
+                val found = input.indexOf(query, start, ignoreCase = !options.matchCase)
+                if (found < 0 || found + query.length > scope.end) break
+                val end = found + query.length
+                val word = !options.wholeWord ||
+                    (found == 0 || !input[found - 1].isLetterOrDigit()) &&
+                    (end == input.length || !input[end].isLetterOrDigit())
+                if (word) hits += SearchHit(Utf16Range(found.toLong(), end.toLong()), input.substring(found, end), replacement,
+                    input.substring(maxOf(0, found - 20), found), input.substring(end, minOf(input.length, end + 20)))
+                start = if (replacement != null) end else found + Character.charCount(input.codePointAt(found))
+                if (hits.size == 256) return SearchPage(revision, hits, SearchCompletion.PageLimit, SearchCursor(start.toLong()))
+            }
+            return SearchPage(revision, hits, SearchCompletion.Complete, SearchCursor(scope.end, true))
+        }
+        override fun close() { closed = true }
+    }
+
+    override fun positionAt(revision: Long, offset: Long): ViewportCursor {
+        requireCurrentRevision(revision)
+        val start = text.lastIndexOf('\n', offset.toInt() - 1) + 1
+        return ViewportCursor(revision, text.take(offset.toInt()).count { it == '\n' }.toLong(), offset - start)
+    }
+
+    override fun readRange(revision: Long, range: Utf16Range): String {
+        requireCurrentRevision(revision)
+        return text.substring(range.start.toInt(), range.end.toInt())
+    }
+
+    override fun replaceBatch(revision: Long, patches: List<DocumentPatch>): DocumentMetrics {
+        requireCurrentRevision(revision)
+        patches.forEach { check(readRange(revision, it.range) == it.removed) }
+        replaceFailure?.let { throw it }
+        patches.asReversed().forEach { text = text.replaceRange(it.range.start.toInt(), it.range.end.toInt(), it.inserted) }
+        this@TestEditorDocument.revision++
+        return transformedMetrics()
+    }
 
     /** Returns one complete line-aligned viewport for the current revision. */
     override fun viewport(cursor: ViewportCursor, limits: ViewportLimits): ViewportSnapshot {

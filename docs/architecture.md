@@ -144,6 +144,9 @@ dynamic libraries for import, export, Markdown, local transfers, math, and diagr
   header styling. Preview and printing preserve adjacent tables as separate
   groups, including headerless HTML tables and tables with multiple header rows.
   Continuation chunks never repeat that table-start marker.
+  A separate first-list-item flag preserves original list groups through
+  reading search and excerpt generation. Transport continuation chunks never
+  repeat that flag or acquire a new displayed marker.
 - Implemented: the transfer service creates and validates bounded QR and NFC
   envelopes, decodes bounded QR luminance frames, and strictly parses complete
   bounded NDEF messages into inert text.
@@ -279,39 +282,73 @@ published until that response is validated, so failure cannot blank or move
 the document. Successful navigation atomically replaces the cache, while a
 failed target remains retryable or dismissible.
 
-Find uses live literal substring matching over the engine's LF-normalized
-logical text. It ignores case by default and exposes an explicit Match case
-toggle; it does not interpret regular expressions or execute Markdown or HTML.
-A query is limited to 4,096 UTF-16 code units and 16 KiB of UTF-8. Next advances
-by the first Unicode scalar of the current query, so overlapping matches remain
-reachable; Previous excludes only the current match start. Each direction wraps
-at most once for one user request. The UI reports the selected match and its
-logical line, but does not calculate a document-wide match count.
+Find shares one Rust matcher between exact LF-normalized source and displayed
+reading flows. Literal search supports simple Unicode case folding, Match case,
+and Unicode 17 whole-word boundaries. Regex uses the bounded Rust dialect,
+including named captures, multiline patterns, and zero-width positions; pattern
+backreferences and look-around are unsupported. Whole word remains a literal
+option. Replacement syntax is validated before applying any source change.
 
-While Find is open, both selectable source blocks and editable source windows
-highlight every matching substring, including single-character queries. Other
-matches use secondary-container colors; the current result uses primary colors
-and an underline. Closing Find removes the decorations. Editable-field spans
-are output transformations and never change source text, selections, or history.
+Queries are limited to 4,096 UTF-16 units / 16 KiB UTF-8, with a 4 MiB compiled
+pattern limit. Literal source traversal uses 256 Ki-unit pages and bounded
+lookahead; Regex retains original boundary context up to 8 Mi UTF-16 units.
+BESR version 1 packets hold at most 256 matches and 256 Ki retained text units.
+The session retains at most 4,096 results / 256 Ki copied match and replacement
+units, with a three-second scan budget. Continue search resumes time-limited
+work while retaining the review, or replaces a full result batch with later
+matches. Query, scope, revision, and illustration changes invalidate its cursor.
+Restart returns to the first batch. Context or non-progressing work limits
+require narrowing the selection or query. Only a review retaining the complete
+scope can produce a Replace all plan or a whole-document zero-match claim.
 
-Highlight requests cover only composed render blocks or the active edit window,
-with a 32 Ki UTF-16-unit limit per request. Rust searches a captured revision
-off the UI thread, including query-bounded context on both sides to find matches
-crossing a display boundary. Matching shares Find's Unicode simple case folding
-and overlapping-match semantics. Returned coverage is clipped, sorted, and
-merged to avoid redundant spans for dense queries. Composition cancels obsolete
-requests and discards their decorations when the query, case option, revision,
-or displayed range changes. This does not enumerate matches elsewhere in the
-document or calculate a total or partial count.
+Typing, retries, and illustration completion update counts and highlights
+without moving the document. Submission, match arrows, and result selection
+navigate explicitly. Compact navigation reveals the passage and dismisses the
+keyboard; a wide results pane remains open and can switch to Contents. Source
+and reading keep a document focus target for hardware commands after Find is
+dismissed or a match is revealed. The session retains whether Find focus belongs
+to the document, query, replacement input, or results controls; newer input
+intent supersedes an older pending reveal. Apply and review Undo/Redo leave
+keyboard focus in the results pane, where document history shortcuts work even
+when the compact layout hides the document. Editing query or replacement text
+keeps its own field history. Reading navigation also reveals the first
+match line inside nested horizontal code and table scrollers. Recreating the
+same reading layout does not restart search unless illustration content changed.
+Source highlights are output transformations and never change document characters.
+Zero-width matches have position markers. Source navigation retains bounded
+context around a match, and stale query/revision responses cannot move it.
 
-Each native request searches a candidate-start span of at most 256 Ki UTF-16
-code units. Its fixed-size bridge packet returns revision metrics and either
-one half-open UTF-16 match with its line-relative viewport cursor, or the
-remaining candidate range for the next bounded request. The registry lock is
-released before the engine scans an immutable snapshot. Compose retains the
-old viewport while the bounded batches run and publishes the exact matching
-viewport only after its revision and offsets are validated. Stale responses
-and superseded queries are discarded.
+Reading joins styled prose and transport fragments, with explicit paragraph
+and list separators. Cells, diagram labels, and formula runs remain distinct.
+BTXTILL4 supplies validated semantic text and glyph/label geometry. Reading Find
+defaults to displayed text so matches correspond to what the reader can see.
+TeX/Mermaid source is opt-in and labeled separately because those matches may
+have no visible counterpart. Consolidation requires an exact occurrence
+mapping: bare single-run literal TeX currently provides one;
+unproven general TeX/Mermaid correspondences remain separate. Missing semantic
+coverage is visible, independent of the viewport illustration cache.
+
+Selection scopes, replacement reviews, and locations belong to one revision.
+Exactly mappable edits rebase their anchors; ambiguous/deleted scopes pause.
+Location history retains 128 session-only entries and coalesces consecutive
+Find jumps. Dedicated controls keep those jumps separate from Android Back's
+dismissal and document-navigation behavior. Returns restore presentation and
+source caret; an unavailable reading render falls back to source with a notice.
+
+Replacement batches validate ordering, expected text, revision, output size,
+and the existing Undo budget before publishing one persistent-tree revision.
+BEBT version 1 carries at most 4,096 patches. The commit and its returned metrics
+are a non-cancellable publication boundary; a committed batch retains one Undo
+and Redo even if preparation was canceled concurrently. Autosave sees the final
+revision. Excluded review entries remain excluded when only replacement text
+changes and are reset when match identity changes. The review and Apply button
+count only included changes; matches already equal to their replacement are
+reported separately and do not consume a revision or Undo entry.
+Replace current's automatic advancement is captured by its follow-up search
+coroutine rather than retained as session-wide pending navigation. Superseding
+the search or its input intent drops that jump without reversing a published
+edit. Exhausting verified results claims the end of the scope only after complete
+coverage, including when replacement text equals the current match.
 
 IME interaction uses a bounded editable window around the active selection.
 The ordinary target is 16 Ki UTF-16 code units, and both the native protocol
@@ -549,8 +586,10 @@ provider-atomicity promise.
 
 Find queries, matches, direction, and wrap state are transient session state.
 They are never written to private storage, instance state, logs, indexes, or
-the document. Closing Find clears its query and match, and closing the document
-or losing the process clears the complete search state.
+the document. Closing Find releases results, highlights, scopes, and replacement reviews,
+while retaining the last query, replacement, and options in the live session.
+Closing the document or losing the process clears all of them. Provider reload
+transfers inputs only and recomputes Document scope in the new session.
 
 The Activity composition retains one application-session owner through
 Compose's lifecycle-aware in-memory retain store. It owns any in-flight import,
@@ -565,6 +604,60 @@ This policy does not prevent Android from maintaining ordinary application
 artifacts such as compiled code and runtime profiles, or BeauTyXT from storing
 content-free interface preferences. Those artifacts must never contain
 document content or identifying metadata.
+
+## Selection and excerpts
+
+Global logical selections span lazy reading items and source windows. Only
+composed text geometry is retained. Touch, keyboard, and accessibility handles
+use character boundaries; renderer chunks prefer complete extended graphemes,
+and reading endpoint validation checks at most 64 Ki UTF-16 units of adjacent
+fragments rather than guessing across an unresolved giant cluster. Whole
+illustrations are atomic; diagram-label text has a separate selection action.
+Source field selections also expose the common selection output controls.
+The focused source field retains its native editing and accessibility selection
+actions; the global layer follows those changes without replacing them.
+Presentation changes transfer a selection only through an exact mapping.
+Selection edges use the inward source affinity at invisible formatting
+delimiters. Editing a mapped passage restores the actual native edit range and
+its direction; a selection exceeding the IME window stays a global selection.
+Paragraph extension crosses complete logical paragraphs, including their
+renderer fragments.
+Generated footnote numbers retain interior displayed positions, so selecting
+or searching one digit does not expand into the entire marker. Such interior
+positions have no assumed exact source counterpart. A partial marker exports
+as superscript text without importing its note.
+
+Immediate Copy uses displayed plain text or exact logical source. A visual
+selection may span source formatting boundaries, so reading Copy avoids
+inventing Markdown syntax; generated Markdown is an explicit export format.
+Send/export owns one frozen revision and offers Copy, Android share, save, QR,
+NFC, and PDF under their existing destination limits. Generated Markdown is
+complete syntax for selected structure, including retained table columns/headers, list numbering,
+footnote closure and renumbering, and safe link destinations. Explicit inline
+HTML styles preserve clipped whitespace and adjacent runs. Unselected body text
+is not imported to repair links or headings. Source formatting is offered only
+for a precisely mapped visible passage. Preview additions and removed links
+are shown before handoff; document edits require an explicit preview refresh.
+
+PDF excerpts reuse the native text/vector print path, with real URI and internal
+GoTo annotations. Internal links are resolved against the pages actually emitted;
+a target excluded by a print page range does not leave a broken annotation.
+Preview uses PdfRenderer over a read-only anonymous descriptor. Saving creates
+a separate provider document and rejects the source URI and known aliases.
+
+Generated-file sharing uses a non-exported grant-capable ExcerptProvider, random
+single-excerpt URIs, and bounded session-owned leases (four / 256 MiB). It never
+grants the whole-source URI or creates a private staging file. Each opened
+read-only proxy descriptor has independent seek position and retains its sealed
+backing until the recipient closes it. Revoking a lease prevents future opens;
+already opened descriptors have the normal lifetime of a granted file handle.
+Anonymous readers are bounded to 32 active callbacks on one handler thread.
+Chooser refinement acknowledges a selected receiver before handoff; returning
+without that acknowledgment releases the pending lease. Failed launches also
+release it. Only an opaque request ID survives activity recreation. Successful
+shares remain readable until the session closes or the user explicitly ends
+previous shares through the capacity-recovery action. Separate-UID native tests
+exercise delayed reads, recreation, read-only grants, revocation, and PDF bytes.
 
 ## Sharing and local transfer
 

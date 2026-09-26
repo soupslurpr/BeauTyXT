@@ -684,6 +684,8 @@ class EditorSessionTest {
             )
         )
 
+        assertNull(session.findMatch)
+        assertTrue(session.findNext())
         val status = session.findStatus as FindStatus.Match
         assertEquals(
             Utf16Range(
@@ -712,6 +714,8 @@ class EditorSessionTest {
 
         assertTrue(session.updateFindFieldValue(TextFieldValue(query)))
 
+        assertNull(session.findMatch)
+        assertTrue(session.findNext())
         var status = session.findStatus as FindStatus.Match
         assertEquals(firstMatchStart.toLong(), status.match.range.start)
         assertFalse(session.isFindCaseSensitive)
@@ -719,6 +723,8 @@ class EditorSessionTest {
 
         assertTrue(session.updateFindCaseSensitivity(matchCase = true))
 
+        assertNull(session.findMatch)
+        assertTrue(session.findNext())
         status = session.findStatus as FindStatus.Match
         assertEquals(exactMatchStart.toLong(), status.match.range.start)
         assertTrue(session.isFindCaseSensitive)
@@ -752,18 +758,20 @@ class EditorSessionTest {
         assertTrue(session.isFindVisible)
         assertFalse(requireNotNull(session.activeDraft).shouldRestoreEditorFocus)
         assertTrue(session.updateFindFieldValue(TextFieldValue(query)))
+        assertNull(session.findMatch)
+        assertTrue(session.findNext())
         val status = session.findStatus as FindStatus.Match
         assertEquals(queryStart.toLong(), status.match.range.start)
         assertNull(status.wrappedAt)
         val movedDraft = requireNotNull(session.activeDraft)
-        assertEquals(status.match.range, movedDraft.edit.snapshot.selection)
+        assertEquals(Utf16Range(status.match.range.start, status.match.range.start), movedDraft.edit.snapshot.selection)
         assertFalse(movedDraft.hasChanges)
         assertFalse(movedDraft.shouldRestoreEditorFocus)
 
         session.closeFind()
 
         assertFalse(session.isFindVisible)
-        assertTrue(movedDraft.shouldRestoreEditorFocus)
+        assertFalse(movedDraft.shouldRestoreEditorFocus)
         session.close()
     }
 
@@ -1012,6 +1020,8 @@ class EditorSessionTest {
         assertTrue(session.showFind())
         assertTrue(session.updateFindFieldValue(TextFieldValue(OVERLAPPING_FIND_QUERY)))
 
+        assertNull(session.findMatch)
+        assertTrue(session.findNext())
         val status = session.findStatus as FindStatus.Match
         assertEquals(SECOND_OVERLAPPING_MATCH_START, status.match.range.start)
         assertNull(status.wrappedAt)
@@ -1035,7 +1045,8 @@ class EditorSessionTest {
 
         assertTrue(session.updateFindFieldValue(composingValue))
         assertEquals(composingValue, session.findFieldValue)
-        assertTrue(session.findStatus is FindStatus.Match)
+        assertNull(session.findMatch)
+        assertTrue(session.findResults.isNotEmpty())
         assertTrue(session.canNavigateFind)
         assertEquals(
             listOf(OVERLAPPING_FIND_QUERY),
@@ -1049,12 +1060,12 @@ class EditorSessionTest {
             )
         assertTrue(session.updateFindFieldValue(committedValue))
         assertEquals(committedValue, session.findFieldValue)
-        assertTrue(session.findStatus is FindStatus.Match)
+        assertNull(session.findMatch)
+        assertTrue(session.findResults.isNotEmpty())
         assertEquals(1, document.delegate.findCalls.size)
 
         val rejectedValues =
             listOf(
-                TextFieldValue("line\nbreak"),
                 TextFieldValue("line\rbreak"),
                 TextFieldValue("\uD800"),
                 TextFieldValue("a".repeat(MAX_FIND_QUERY_UTF16_UNITS + 1))
@@ -1088,6 +1099,8 @@ class EditorSessionTest {
 
         findDelay.complete(Unit)
 
+        assertNull(session.findMatch)
+        assertTrue(session.findNext())
         val status = session.findStatus as FindStatus.Match
         assertEquals(documentText.indexOf(expectedQuery).toLong(), status.match.range.start)
         assertEquals(listOf(expectedQuery), document.delegate.findCalls.map { call -> call.query })
@@ -1109,11 +1122,13 @@ class EditorSessionTest {
         assertTrue(session.showFind())
         assertTrue(session.updateFindFieldValue(TextFieldValue(OVERLAPPING_FIND_QUERY)))
 
+        assertNull(session.findMatch)
+        assertTrue(session.findNext())
         var status = session.findStatus as FindStatus.Match
         assertEquals(FIRST_OVERLAPPING_MATCH_START, status.match.range.start)
         assertNull(status.wrappedAt)
         assertEquals(
-            status.match.range,
+            Utf16Range(status.match.range.start, status.match.range.start),
             requireNotNull(session.state.activeEdit).snapshot.selection
         )
 
@@ -1122,7 +1137,7 @@ class EditorSessionTest {
         assertEquals(SECOND_OVERLAPPING_MATCH_START, status.match.range.start)
         assertNull(status.wrappedAt)
         assertEquals(
-            status.match.range,
+            Utf16Range(status.match.range.start, status.match.range.start),
             requireNotNull(session.state.activeEdit).snapshot.selection
         )
 
@@ -1131,9 +1146,9 @@ class EditorSessionTest {
         status = session.findStatus as FindStatus.Match
         assertEquals(FIRST_OVERLAPPING_MATCH_START, status.match.range.start)
         assertEquals(FindWrap.Beginning, status.wrappedAt)
-        assertEquals(callsBeforeForwardWrap + 2, document.delegate.findCalls.size)
+        assertEquals(callsBeforeForwardWrap, document.delegate.findCalls.size)
         assertEquals(
-            status.match.range,
+            Utf16Range(status.match.range.start, status.match.range.start),
             requireNotNull(session.state.activeEdit).snapshot.selection
         )
 
@@ -1142,9 +1157,9 @@ class EditorSessionTest {
         status = session.findStatus as FindStatus.Match
         assertEquals(SECOND_OVERLAPPING_MATCH_START, status.match.range.start)
         assertEquals(FindWrap.End, status.wrappedAt)
-        assertEquals(callsBeforeBackwardWrap + 2, document.delegate.findCalls.size)
+        assertEquals(callsBeforeBackwardWrap, document.delegate.findCalls.size)
         assertEquals(
-            status.match.range,
+            Utf16Range(status.match.range.start, status.match.range.start),
             requireNotNull(session.state.activeEdit).snapshot.selection
         )
 
@@ -1152,7 +1167,7 @@ class EditorSessionTest {
         status = session.findStatus as FindStatus.Match
         assertEquals(FIRST_OVERLAPPING_MATCH_START, status.match.range.start)
         assertNull(status.wrappedAt)
-        assertEquals(FindDirection.Backward, document.delegate.findCalls.last().direction)
+        assertEquals(1, document.delegate.findCalls.size)
         session.close()
     }
 
@@ -1174,10 +1189,7 @@ class EditorSessionTest {
 
         assertEquals(FindStatus.NoMatches, session.findStatus)
         assertEquals(
-            listOf(
-                Utf16Range(start = origin, end = FIND_DOCUMENT_TEXT.length.toLong()),
-                Utf16Range(start = 0L, end = origin)
-            ),
+            listOf(Utf16Range(0, FIND_DOCUMENT_TEXT.length.toLong())),
             document.delegate.findCalls.map { call -> call.candidateRange }
         )
         session.close()
@@ -1199,17 +1211,19 @@ class EditorSessionTest {
         assertFalse(session.canNavigateToLine)
         assertFalse(session.showGoToLineDialog(currentVisibleLogicalLine = 0L))
         assertTrue(session.updateFindFieldValue(TextFieldValue("beta")))
+        assertNull(session.findMatch)
+        assertTrue(session.findNext())
         assertTrue(session.findStatus is FindStatus.Match)
 
         session.closeFind()
 
         assertFalse(session.isFindVisible)
-        assertEquals(TextFieldValue(), session.findFieldValue)
+        assertEquals("beta", session.findFieldValue.text)
         assertEquals(FindStatus.Idle, session.findStatus)
         assertNull(session.findMatch)
         val resumedDraft = requireNotNull(session.activeDraft)
-        assertEquals(Utf16Range(start = 6L, end = 10L), resumedDraft.edit.snapshot.selection)
-        assertTrue(resumedDraft.shouldRestoreEditorFocus)
+        assertEquals(Utf16Range(start = 6L, end = 6L), resumedDraft.edit.snapshot.selection)
+        assertFalse(resumedDraft.shouldRestoreEditorFocus)
         session.close()
     }
 
@@ -1270,6 +1284,7 @@ class EditorSessionTest {
         )
         assertTrue(session.showFind())
         assertTrue(session.updateFindFieldValue(TextFieldValue(OVERLAPPING_FIND_QUERY)))
+        assertTrue(session.findNext())
         assertEquals(
             SECOND_OVERLAPPING_MATCH_START,
             requireNotNull(session.findMatch).range.start
@@ -1302,6 +1317,7 @@ class EditorSessionTest {
         )
         assertTrue(session.showFind())
         assertTrue(session.updateFindFieldValue(TextFieldValue(OVERLAPPING_FIND_QUERY)))
+        assertTrue(session.findNext())
         assertEquals(
             SECOND_OVERLAPPING_MATCH_START,
             requireNotNull(session.findMatch).range.start
@@ -1324,6 +1340,8 @@ class EditorSessionTest {
             utf16Offset = firstVisibleBlock.globalUtf16Start
         )
 
+        assertNull(session.findMatch)
+        assertTrue(session.findNext())
         val status = session.findStatus as FindStatus.Match
         assertEquals(newRevision, status.match.start.revision)
         assertEquals(FIRST_OVERLAPPING_MATCH_START, status.match.range.start)
@@ -1344,6 +1362,7 @@ class EditorSessionTest {
         session.openInitialEditor()
         assertTrue(session.showFind())
         assertTrue(session.updateFindFieldValue(TextFieldValue(OVERLAPPING_FIND_QUERY)))
+        assertTrue(session.findNext())
         val retainedFieldValue = session.findFieldValue
         val retainedStatus = session.findStatus as FindStatus.Match
         val retainedMatch = requireNotNull(session.findMatch)

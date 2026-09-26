@@ -156,6 +156,24 @@ native library packaged only in debug builds. The opt-in `import service
 profile` phase measures seven fresh bindings with `dumpsys meminfo --local`;
 ordinary application memory dumps require a managed runtime in the target.
 
+The opt-in `staging document experience` phase requires the separately
+installed minified staging APK. It drives literal, Whole word, and Regex Find,
+capture replacements, batch Undo, and selected PDF preview through Android
+accessibility actions and injected keys. It verifies the exact autosaved
+source bytes after Apply and Undo, then removes its synthetic MediaStore file.
+It does not access the staging app's classes or internal session state.
+The ordinary `document experience controls` phase runs the same journey
+against debug. `Home document experience` runs it inside Home's Navigation 3
+entry, then checks that Back dismisses export, selection, and reading before
+returning to Home in the same activity. The staging background-checkpoint
+phases also require a docked on-screen keyboard that resizes the editor; a
+floating or handwriting panel does not satisfy their keyboard-visibility check.
+The `excerpt sharing` phase uses the helper APK as a separate-UID receiver for
+grant, cancellation, delayed-read, and capacity-recovery checks. The opt-in
+`physical NFC excerpt` phase requires NFC enabled and a writable spare tag. It
+writes only `BeauTyXT NFC excerpt test.` with label `TEST`, then waits for a
+second tap through the production reader and checks the exact selected text.
+
 The opt-in `staging editing profile` phase drives the separately installed
 minified staging app through a synthetic MediaStore file. Select
 `-e profileWorkload small`, `large`, or `markdown`, and give each invocation a

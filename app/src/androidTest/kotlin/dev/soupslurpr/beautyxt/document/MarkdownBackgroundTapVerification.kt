@@ -217,6 +217,8 @@ private fun ActiveEditDraft.sourceCaret(): Long =
 internal fun Instrumentation.withReadingPage(
     text: String,
     viewOnly: Boolean = false,
+    initialPresentation: EditorPresentation = EditorPresentation.MarkdownPreview,
+    nfcProcessor: dev.soupslurpr.beautyxt.transfer.client.NfcTransferProcessor? = null,
     verify: (HomeActivity, EditorSession) -> Unit
 ) {
     val document = RustDocument.createEmpty()
@@ -234,8 +236,9 @@ internal fun Instrumentation.withReadingPage(
         title = "Reading taps.md",
         state = EditorDocumentState(document, initialRevision = metrics.revision),
         documentSource = source,
-        initialPresentation = EditorPresentation.MarkdownPreview,
-        markdownRenderer = IsolatedMarkdownRenderer(targetContext)
+        initialPresentation = initialPresentation,
+        markdownRenderer = IsolatedMarkdownRenderer(targetContext),
+        nfcTransferProcessor = nfcProcessor
     )
     val activity = startActivitySync(
         Intent(targetContext, HomeActivity::class.java)
@@ -251,7 +254,9 @@ internal fun Instrumentation.withReadingPage(
             session.openInitialEditor()
         }
         awaitReadingCondition("reading page did not become ready") {
-            session.markdownPreviewStatus is MarkdownPreviewStatus.Ready
+            if (initialPresentation == EditorPresentation.MarkdownPreview)
+                session.markdownPreviewStatus is MarkdownPreviewStatus.Ready
+            else session.activeDraft != null
         }
         waitForAccessibilityIdle()
         verify(activity, session)

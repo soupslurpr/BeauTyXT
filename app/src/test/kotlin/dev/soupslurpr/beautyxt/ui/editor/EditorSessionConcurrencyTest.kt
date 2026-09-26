@@ -28,6 +28,9 @@ class EditorSessionConcurrencyTest {
             assertTrue(session.updateFindFieldValue(TextFieldValue("beta")))
         }.use { fixture ->
             fixture.drain()
+            assertEquals(null, fixture.session.findMatch)
+            assertTrue(fixture.session.findNext())
+            fixture.drain()
             val match = fixture.session.findStatus as FindStatus.Match
             assertEquals(Utf16Range(6L, 10L), match.match.range)
             assertEquals(EditorDocumentStatus.Ready, fixture.session.state.status)
@@ -41,7 +44,8 @@ class EditorSessionConcurrencyTest {
             assertTrue(session.updateFindCaseSensitivity(true))
         }.use { fixture ->
             fixture.drain()
-            assertTrue(fixture.session.findStatus is FindStatus.Match)
+            assertEquals(null, fixture.session.findMatch)
+            assertTrue(fixture.session.findResults.isNotEmpty())
             assertEquals(EditorDocumentStatus.Ready, fixture.session.state.status)
             assertTrue(fixture.session.isFindCaseSensitive)
         }
@@ -87,10 +91,9 @@ class EditorSessionConcurrencyTest {
             fixture.startMatchNavigation(nativeWindowAlreadyLoaded = true)
             assertTrue(fixture.session.updateFindFieldValue(TextFieldValue("beta")))
             fixture.drain()
-            assertEquals(
-                Utf16Range(6L, 10L),
-                (fixture.session.findStatus as FindStatus.Match).match.range
-            )
+            assertEquals(null, fixture.session.findMatch)
+            assertEquals(Utf16Range(0, 0), fixture.session.state.activeEdit!!.snapshot.selection)
+            assertEquals(Utf16Range(6, 10), fixture.session.findResults.single().source)
             assertEquals(EditorDocumentStatus.Ready, fixture.session.state.status)
         }
     }
@@ -208,6 +211,10 @@ class EditorSessionConcurrencyTest {
             drain()
             assertTrue(session.showFind())
             assertTrue(session.updateFindFieldValue(TextFieldValue("alpha")))
+            drain()
+            assertTrue(session.findResults.isNotEmpty())
+            assertEquals(null, session.findMatch)
+            assertTrue(session.findNext())
             drainUntil { session.state.status == EditorDocumentStatus.LoadingEditWindow }
             if (nativeWindowAlreadyLoaded) assertTrue(worker.runNext())
         }

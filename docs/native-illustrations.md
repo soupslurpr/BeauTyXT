@@ -81,15 +81,28 @@ measurement and final outlines use the same shaping and fallback selection.
 
 ## Closed rendering packet
 
-`BTXTILL3` is the internal illustration protocol, unrelated to QR/NFC envelope
+`BTXTILL4` is the internal illustration protocol, unrelated to QR/NFC envelope
 versions. Its exact-size packet contains finite dimensions and filled paths
 with bounded clip chains. Limits include 2,048 paths, 100,000 combined
 command/coordinate components, eight clips per path, and 512 KiB total output.
 The host rejects unknown commands, non-finite geometry, invalid path grammar,
 extra/truncated bytes, and out-of-range dimensions before creating Android paths.
-Its 48-byte header also declares bounded UTF-8 title and description fields
+Its 60-byte header also declares bounded UTF-8 title and description fields
 (1 KiB and 4 KiB respectively); strict decoding and the total packet budget
 apply to them too. These are inert accessibility alternatives, not commands.
+It additionally declares semantic text coverage, up to 2,048 text runs, 32 KiB
+of UTF-8 text, and 4,096 highlight boxes. Each box carries scalar-aligned UTF-16
+offsets into its run and finite geometry. The total packet budget still applies.
+The decoder retains version-three compatibility for older packets without text
+metadata and treats their text coverage as incomplete.
+
+Diagram labels come from the same shaped SVG text and transforms as their
+outlines. Formula runs follow layout structure: fractions, scripts, and matrix
+cells remain separate. Semantic collection verifies glyph identity and geometry
+against the actual display list. Unsupported glyphs invalidate their entire run
+instead of concatenating its neighbors into a phrase that is not displayed.
+Missing or clipped text produces explicit incomplete search coverage. Semantic
+metadata never substitutes invented TeX provenance or spoken descriptions.
 
 For diagrams, SVG exists only inside the isolated worker. Bounded XML/USVG
 conversion rejects external references, images, scripts, masks, filters,
