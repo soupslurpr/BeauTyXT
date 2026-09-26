@@ -237,10 +237,10 @@ dimensions, and upstream automatic mirroring are unchanged.
 
 ## Gradle wrapper
 
-Source: [Gradle 9.7.1](https://services.gradle.org/distributions/gradle-9.7.1-bin.zip)
+Source: [Gradle 9.8.0](https://services.gradle.org/distributions/gradle-9.8.0-bin.zip)
 
 - `gradle/wrapper/gradle-wrapper.jar`: copied unchanged; verified against the
-  wrapper JAR embedded in the Gradle 9.7.1 distribution.
+  wrapper JAR embedded in the Gradle 9.8.0 distribution.
 
 ```text
                                  Apache License
@@ -447,7 +447,7 @@ LICENSE file.
 
 ## Gradle wrapper launchers and configuration
 
-Source: [Gradle 9.7.1](https://services.gradle.org/distributions/gradle-9.7.1-bin.zip)
+Source: [Gradle 9.8.0](https://services.gradle.org/distributions/gradle-9.8.0-bin.zip)
 
 - `gradlew`: adapted; generated Unix launcher for this project's wrapper.
 - `gradlew.bat`: adapted; generated Windows launcher for this project's wrapper.
