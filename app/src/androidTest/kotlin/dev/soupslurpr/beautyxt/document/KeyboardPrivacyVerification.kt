@@ -1,7 +1,6 @@
 package dev.soupslurpr.beautyxt.document
 
 import android.app.Instrumentation
-import android.content.Intent
 import android.os.SystemClock
 import android.text.InputType
 import android.view.View
@@ -9,8 +8,6 @@ import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
-import dev.soupslurpr.beautyxt.DocumentActivity
-import dev.soupslurpr.beautyxt.createNewDocumentSessionIntent
 import dev.soupslurpr.beautyxt.ui.keyboardPrivacyRequest
 
 /** Checks the unchanged connection/metadata and the real document host, not just a flag helper. */
@@ -40,9 +37,7 @@ internal fun Instrumentation.verifyKeyboardPrivacy() {
         check(calls == 2)
         connection.closeConnection()
     }
-    val activity = startActivitySync(
-        createNewDocumentSessionIntent(targetContext).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    ) as DocumentActivity
+    val activity = startHomeDestination("New document")
     try {
         fun input(action: (InputConnection) -> Unit) {
             val deadline = SystemClock.uptimeMillis() + 5_000

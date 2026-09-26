@@ -40,21 +40,6 @@
         </activity>
 
         <activity
-            android:name=".HomeDocumentActivity"
-            android:documentLaunchMode="never"
-            android:exported="false"
-            android:persistableMode="persistNever"
-            android:windowSoftInputMode="adjustResize" />
-
-        <activity
-            android:name=".AboutActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".ThirdPartyNoticesActivity"
-            android:exported="false" />
-
-        <activity
             android:name=".ShareActivity"
             android:excludeFromRecents="true"
             android:exported="true"

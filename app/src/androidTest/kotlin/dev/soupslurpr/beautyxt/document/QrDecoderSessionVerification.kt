@@ -13,7 +13,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import dev.soupslurpr.beautyxt.HomeActivity
-import dev.soupslurpr.beautyxt.createQrDocumentSessionIntent
 import dev.soupslurpr.beautyxt.transfer.client.IsolatedTransferProcessor
 import dev.soupslurpr.beautyxt.transfer.client.QrFrameDecoder
 import dev.soupslurpr.beautyxt.transfer.client.QrLuminanceFrame
@@ -186,9 +185,7 @@ internal fun Instrumentation.verifyQrScannerWorkerLifecycle() = runBlocking {
         while (processIds().isNotEmpty()) delay(20)
     }
     awaitNoWorkers()
-    val scanner = startActivitySync(
-        createQrDocumentSessionIntent(targetContext).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    )
+    val scanner = startHomeDestination("Scan QR code")
     try {
         val first = awaitOneWorker()
         check(uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME))
@@ -212,7 +209,16 @@ internal fun Instrumentation.verifyQrScannerWorkerLifecycle() = runBlocking {
         }
         val resumed = awaitOneWorker()
         check(resumed != first) { "The scanner reused its backgrounded process" }
-        runOnMainSync(scanner::finishAndRemoveTask)
+        requireActionableContentDescription("Close scanner").performRequiredClick()
+        requireActionableText("New document")
+        awaitNoWorkers()
+        check(!scanner.isFinishing && !scanner.isDestroyed) {
+            "closing the scanner finished Home instead of its navigation entry"
+        }
+        requireActionableText("Scan QR code").performRequiredClick()
+        check(awaitOneWorker() != resumed) { "A new scanner entry reused the previous worker" }
+        requireActionableContentDescription("Close scanner").performRequiredClick()
+        requireActionableText("New document")
         awaitNoWorkers()
         Log.i("BeauTyXTQrSession", "background released=$first resume fresh=$resumed close released=passed")
     } finally {

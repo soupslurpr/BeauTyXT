@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.view.KeyEvent
+import android.view.WindowInsets
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,6 +25,7 @@ import dev.soupslurpr.beautyxt.ui.designsystem.BeauTyXTTheme
 
 private const val CLOSURE_SOURCE_TEXT = "Document closure keeps Back distinct from Home."
 private const val SECOND_SOURCE_TEXT = "A second document has its own independent session."
+private const val HOME_DRAFT_TEXT = "Home keeps this unsaved draft while external files are open."
 private const val CLOSURE_TIMEOUT_MILLIS = 15_000L
 
 /** Verifies a live document resumes from Home but leaves recents when Back closes it. */
@@ -99,14 +101,20 @@ internal fun Instrumentation.verifyMultipleDocumentTaskClosure() {
                     awaitClosureCondition("document did not regain window focus") {
                         activity.hasWindowFocus()
                     }
+                    // EDIT entries can focus the keyboard; exercise document-level Back here.
+                    runOnMainSync { activity.window.insetsController?.hide(WindowInsets.Type.ime()) }
+                    waitForImeVisibility(activity, visible = false)
+                    uiAutomation.waitForIdle(500L, CLOSURE_TIMEOUT_MILLIS)
                 }
                 try {
+                    requireActionableText("New document").performRequiredClick()
+                    enterHomeNavigationDraft(HOME_DRAFT_TEXT)
                     for ((source, text) in listOf(
                         firstSource to CLOSURE_SOURCE_TEXT,
                         secondSource to SECOND_SOURCE_TEXT
                     )) {
                         val activity = startActivitySync(
-                            Intent(Intent.ACTION_VIEW)
+                            Intent(if (source == firstSource) Intent.ACTION_VIEW else Intent.ACTION_EDIT)
                                 .setClass(targetContext, MainActivity::class.java)
                                 .setDataAndType(source, "text/plain")
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -120,6 +128,23 @@ internal fun Instrumentation.verifyMultipleDocumentTaskClosure() {
                     }
                     showDocument(first, CLOSURE_SOURCE_TEXT)
                     showDocument(second, SECOND_SOURCE_TEXT)
+                    targetContext.startActivity(
+                        Intent(Intent.ACTION_VIEW)
+                            .setClass(targetContext, MainActivity::class.java)
+                            .setDataAndType(firstSource, "text/plain")
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                    requireActionableText("Close current")
+                    check(!first.isDestroyed && manager.appTasks.count {
+                        it.taskInfo?.baseIntent?.data == firstSource
+                    } == 1) { "reopening the same URI replaced or duplicated its document task" }
+                    requireActionableText("Keep current").performRequiredClick()
+                    waitForClosureSource()
+                    val homeTask = checkNotNull(
+                        manager.appTasks.firstOrNull { it.taskInfo?.taskId == home.taskId }
+                    ) { "opening external documents removed Home from recents" }
+                    runOnMainSync(homeTask::moveToFront)
+                    waitForEditorText(HOME_DRAFT_TEXT)
                     val closing = if (closeFirstOpened) first else second
                     val remaining = if (closeFirstOpened) second else first
                     val closingText =
@@ -142,10 +167,13 @@ internal fun Instrumentation.verifyMultipleDocumentTaskClosure() {
                     check(!home.isFinishing && !home.isDestroyed) {
                         "closing the external documents also closed Home"
                     }
-                    val homeTask = checkNotNull(
+                    val remainingHomeTask = checkNotNull(
                         manager.appTasks.firstOrNull { it.taskInfo?.taskId == home.taskId }
                     ) { "closing the external documents removed Home from recents" }
-                    runOnMainSync(homeTask::moveToFront)
+                    runOnMainSync(remainingHomeTask::moveToFront)
+                    waitForEditorText(HOME_DRAFT_TEXT)
+                    requireActionableContentDescription("Back").performRequiredClick()
+                    requireActionableText("Discard and close").performRequiredClick()
                     requireActionableText("New document")
                 } finally {
                     documents.keys.forEach { activity ->
@@ -221,7 +249,7 @@ private fun Instrumentation.waitForClosureSource(text: String = CLOSURE_SOURCE_T
 }
 
 /** Observes lifecycle transitions on the main thread with a bounded timeout. */
-private fun Instrumentation.awaitClosureCondition(message: String, condition: () -> Boolean) {
+internal fun Instrumentation.awaitClosureCondition(message: String, condition: () -> Boolean) {
     val deadline = SystemClock.uptimeMillis() + CLOSURE_TIMEOUT_MILLIS
     do {
         var ready = false

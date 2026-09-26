@@ -9,19 +9,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import dev.soupslurpr.beautyxt.HomeActivity
-import dev.soupslurpr.beautyxt.HomeDocumentActivity
-import dev.soupslurpr.beautyxt.InitialDocumentAction
 import dev.soupslurpr.beautyxt.MainActivity
 import dev.soupslurpr.beautyxt.SelectDocumentContract
 import dev.soupslurpr.beautyxt.ShareActivity
-import dev.soupslurpr.beautyxt.createDocumentSelectionIntent
-import dev.soupslurpr.beautyxt.createNewDocumentSessionIntent
-import dev.soupslurpr.beautyxt.createSelectedDocumentSessionIntent
 import dev.soupslurpr.beautyxt.createSharedDocumentSessionIntent
 import dev.soupslurpr.beautyxt.document.DocumentFormat
 import dev.soupslurpr.beautyxt.documentSessionShare
-import dev.soupslurpr.beautyxt.initialDocumentAction
-import dev.soupslurpr.beautyxt.isUnrestorableAfterProcessDeath
 
 private const val TEST_UNTRUSTED_EXTRA = "example.untrusted.EXTRA"
 
@@ -120,78 +113,6 @@ internal fun Instrumentation.verifyIncomingDocumentIntents() {
         "launcher intent did not resolve to HomeActivity"
     }
     verifyDocumentActivityManifest(targetContext)
-
-    val selectedIntent =
-        createSelectedDocumentSessionIntent(
-            context = targetContext,
-            uri = firstUri,
-            mimeType = "text/plain",
-            resultFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-        )
-    check(selectedIntent.data == firstUri) {
-        "selected document handoff changed its source URI"
-    }
-    check(
-        selectedIntent.component?.className == HomeDocumentActivity::class.java.name &&
-            initialDocumentAction(selectedIntent) ==
-            InitialDocumentAction.OpeningSelectedDocument
-    ) {
-        "selected document handoff escaped the Home workbench"
-    }
-    check(
-        selectedIntent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0 &&
-            selectedIntent.clipData?.getItemAt(0)?.uri == firstUri &&
-            selectedIntent.flags and Intent.FLAG_ACTIVITY_NEW_DOCUMENT == 0
-    ) {
-        "selected document handoff lost its temporary source grant"
-    }
-    val ungrantedSelectedIntent =
-        createSelectedDocumentSessionIntent(
-            context = targetContext,
-            uri = secondUri,
-            mimeType = "text/plain",
-            resultFlags = 0
-        )
-    check(
-        ungrantedSelectedIntent.flags and
-            (
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                ) == 0
-    ) {
-        "selected document handoff fabricated a provider capability"
-    }
-
-    val newDocumentIntent = createNewDocumentSessionIntent(targetContext)
-    check(
-        newDocumentIntent.component?.className == HomeDocumentActivity::class.java.name &&
-            newDocumentIntent.flags and Intent.FLAG_ACTIVITY_NEW_DOCUMENT == 0
-    ) {
-        "new document did not remain in the Home workbench task"
-    }
-    val selectionIntent = createDocumentSelectionIntent(targetContext)
-    check(
-        selectionIntent.component?.className == HomeDocumentActivity::class.java.name &&
-            initialDocumentAction(selectionIntent) == InitialDocumentAction.SelectDocument
-    ) {
-        "document selection did not enter the non-exported Home child"
-    }
-    check(!isUnrestorableAfterProcessDeath(selectionIntent)) {
-        "process recreation abandoned Android's active document picker"
-    }
-    check(isUnrestorableAfterProcessDeath(selectedIntent)) {
-        "process recreation retained a selected provider source"
-    }
-    check(isUnrestorableAfterProcessDeath(newDocumentIntent)) {
-        "process recreation retained a new in-memory document"
-    }
-    check(
-        isUnrestorableAfterProcessDeath(
-            Intent(Intent.ACTION_VIEW).setDataAndType(firstUri, "text/plain")
-        )
-    ) {
-        "process recreation retained an external provider source"
-    }
 
     val forwardedShareIntent =
         createSharedDocumentSessionIntent(
@@ -330,20 +251,6 @@ private fun resolvesHomeActivity(context: Context): Boolean {
 /** Verifies the manifest enforces separate internal and external task policies. */
 private fun verifyDocumentActivityManifest(context: Context) {
     val packageManager = context.packageManager
-    val homeDocument =
-        packageManager.getActivityInfo(
-            ComponentName(context, HomeDocumentActivity::class.java),
-            PackageManager.ComponentInfoFlags.of(0L)
-        )
-    check(!homeDocument.exported) {
-        "HomeDocumentActivity was exported"
-    }
-    check(
-        homeDocument.documentLaunchMode ==
-            android.content.pm.ActivityInfo.DOCUMENT_LAUNCH_NEVER
-    ) {
-        "HomeDocumentActivity did not disable document-task launching"
-    }
     val externalDocument =
         packageManager.getActivityInfo(
             ComponentName(context, MainActivity::class.java),

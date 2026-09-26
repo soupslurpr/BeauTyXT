@@ -33,6 +33,39 @@ logic.
 
 ### Application process
 
+Home, About, the bundled licenses, and documents started from Home share a
+Navigation 3 back stack inside `HomeActivity`. Each document entry owns a retained
+in-memory session, including its picker and scanner flows. The entry survives
+configuration changes and disposes its session after its exit transition. A
+closing editor stays rendered until then without restarting checkpoint or save
+work. Navigation 3 owns Home page motion, including scanner entries; a Back
+gesture stays on the editor when it must dismiss a keyboard or request a close
+confirmation. Back still passes through the editor's keyboard, nested-page,
+pending-operation, and unsaved-edit guards before navigation can close a document.
+
+Home uses Navigation 3 1.3.0-alpha01 for its `DeferredAnimatedContent` predictive
+Back handoff fix. The navigation event state is shared with `NavDisplay`; a
+committed gesture records its exit direction against the outgoing entry until
+that entry retires. This keeps both pages moving together after release, even
+when a right-edge gesture differs from toolbar Back or another Back interrupts
+the exit. Cancelled gestures do not change the stack or the next toolbar exit.
+
+Page transitions layer a full-width foreground slide over a background page
+that travels one-third as far and darkens by up to 10%. Both pages follow the
+same direction, including predictive Back and its completion or cancellation.
+Normal transitions use the shared Material spatial and effects motion specs;
+predictive progress controls placement and shading together.
+The native camera preview clips its scaled texture to its own bounds so it
+cannot draw outside the scanner page during these transitions.
+
+Only destination identities, initial actions, and ordinary page state enter
+saved navigation state. Document text and source capabilities remain in memory;
+process death replaces a live document with an ended-session notice. A pending
+system picker can deliver its result to the restored entry. External VIEW/EDIT
+documents still use `MainActivity` and Android's separate document tasks; SEND
+continues through `ShareActivity`. They retain independent Recents entries,
+canonical source task reuse, URI grants, and caller-return behavior.
+
 Legacy private-state cleanup runs once per process on an I/O dispatcher.
 Document UI, provider metadata queries, and new picker launches wait for success.
 Cleanup failure leaves these workflows gated behind an explicit Retry action;

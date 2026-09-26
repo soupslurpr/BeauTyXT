@@ -4,6 +4,7 @@ package dev.soupslurpr.beautyxt.ui.transfer
 
 import android.annotation.SuppressLint
 import android.util.Size
+import android.view.ViewOutlineProvider
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -124,15 +125,25 @@ internal fun QrScannerScreen(
     onRequestCameraPermission: () -> Unit,
     onReceived: (ReceivedTransferText) -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    navigationClosesScreen: Boolean = false
 ) {
     val predictiveBackState = rememberPredictiveBackMotionState()
-    PredictiveBackMotionHandler(state = predictiveBackState, onBack = onClose)
+    PredictiveBackMotionHandler(
+        state = predictiveBackState,
+        enabled = !navigationClosesScreen,
+        onBack = onClose
+    )
+    val screenModifier = if (navigationClosesScreen) {
+        modifier
+    } else {
+        modifier.predictiveBackMotion(predictiveBackState)
+    }
     if (!hasCameraPermission) {
         QrCameraPermissionScreen(
             onRequestPermission = onRequestCameraPermission,
             onClose = onClose,
-            modifier = modifier.predictiveBackMotion(predictiveBackState)
+            modifier = screenModifier
         )
         return
     }
@@ -140,9 +151,8 @@ internal fun QrScannerScreen(
     var isCameraStarting by remember { mutableStateOf(true) }
     Box(
         modifier =
-            modifier
+            screenModifier
                 .fillMaxSize()
-                .predictiveBackMotion(predictiveBackState)
                 .background(Color.Black)
     ) {
         QrCameraPreview(
@@ -338,6 +348,9 @@ private fun QrCameraPreview(
             PreviewView(context).apply {
                 implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                 scaleType = PreviewView.ScaleType.FILL_CENTER
+                // AndroidView does not clip the scaled camera texture during page motion.
+                outlineProvider = ViewOutlineProvider.BOUNDS
+                clipToOutline = true
             }
         }
     LifecycleStartEffect(previewView, processor, lifecycleOwner = lifecycleOwner) {

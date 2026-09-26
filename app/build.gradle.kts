@@ -505,7 +505,7 @@ android {
         compose = true
     }
 
-    // Share only the provider protocol; implementations run in their own test-only APK.
+    // Share only fixture protocols; implementations run in their own test-only APK.
     sourceSets.getByName("androidTest").kotlin.directories.add(
         rootProject.file("test-providers/src/shared/kotlin").path
     )
@@ -680,6 +680,8 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigation3.ui)
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit4)
