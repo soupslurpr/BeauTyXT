@@ -49,8 +49,28 @@ internal fun Instrumentation.verifySelectionModeEditing() {
         runOnMainSync { session.flushPendingEdit() }
         awaitReadingCondition("selected edit did not commit") { session.canUndo && !session.state.hasActiveDraftChanges }
         runBlocking { check(session.state.readSourceRange(session.state.metrics!!.revision, Utf16Range(0, expected.length.toLong())) == expected) }
-        runOnMainSync { check(session.requestUndo()) }
-        awaitReadingCondition("selected edit did not undo in one step") { session.activeDraft?.textFieldState?.text?.toString() == original }
+        val historyDraft = checkNotNull(session.activeDraft)
+        for (redo in listOf(false, true)) {
+            runOnMainSync {
+                val editor = checkNotNull(activity.window.decorView.findTextEditorView())
+                val connection = checkNotNull(editor.onCreateInputConnection(EditorInfo()))
+                check(if (redo) session.requestRedo() else session.requestUndo())
+                check(!session.canApplyEditorInput(historyDraft))
+                // An IME can mark unchanged text as composing while history work is in flight.
+                val wordLength = if (redo) 4 else 6
+                check(connection.setComposingRegion(sourceStart.toInt(), sourceStart.toInt() + wordLength))
+                check(historyDraft.textFieldState.composition != null)
+                check(!historyDraft.hasChanges)
+            }
+            val afterHistory = if (redo) expected else original
+            awaitReadingCondition("selected edit did not ${if (redo) "redo" else "undo"} in one step") {
+                session.activeDraft?.textFieldState?.text?.toString() == afterHistory &&
+                    if (redo) session.canUndo else session.canRedo
+            }
+            check(session.activeDraft === historyDraft) { "history replaced the focused draft" }
+            runBlocking { check(session.state.readSourceRange(session.state.metrics!!.revision,
+                Utf16Range(0, afterHistory.length.toLong())) == afterHistory) }
+        }
     }
     val large = List(10) { "A long paragraph. ".repeat(230).trimEnd() }.joinToString("\n\n")
     withReadingPage(large) { activity, session ->
