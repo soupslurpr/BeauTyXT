@@ -28,6 +28,9 @@ Requires **Android 17 / API 37**. The interface is currently English-only.
   Copy, and Print actions. Selected text includes a short excerpt, and PDFs
   show their page count and paper size. **Preview and settings** opens detailed
   review; PDFs use **Preview and page settings**.
+  Each format explains what it preserves or changes. **Save a copy** exports
+  the reviewed output; use the editor's **Save** to give an unsaved document
+  its own file for further editing.
   Share PDFs directly, save them to a chosen provider, or open Android's print
   screen. Choose source or formatted output, paper size, margins, font and size,
   a filename header, and page numbers.

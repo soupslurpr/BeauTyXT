@@ -1052,7 +1052,7 @@ internal fun Instrumentation.verifyEditorToolbarInteractions() {
             node.text?.toString() == "Prints the text as written, including any Markdown syntax."
         }
         requireActionableText("Done").performRequiredClick()
-        check(requireActionableText("Save PDF").isVisibleToUser) {
+        check(requireActionableText("Save a copy").isVisibleToUser) {
             "PDF action is not visible before scrolling the preview"
         }
         val printOptions = uiAutomation.rootInActiveWindow?.findNode { node ->
@@ -1066,7 +1066,7 @@ internal fun Instrumentation.verifyEditorToolbarInteractions() {
             }
         }
         waitForAccessibilityIdle()
-        check(requireActionableText("Save PDF").isVisibleToUser) {
+        check(requireActionableText("Save a copy").isVisibleToUser) {
             "PDF action scrolled away with the preview"
         }
         injectBackKey()

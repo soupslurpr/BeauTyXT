@@ -122,7 +122,6 @@
     <string name="excerpt_pdf">PDF</string>
     <string name="excerpt_copy">Copy</string>
     <string name="excerpt_share">Android share</string>
-    <string name="excerpt_save">Save file</string>
     <string name="excerpt_qr">QR code</string>
     <string name="excerpt_nfc">NFC</string>
     <string name="excerpt_print">Print</string>
@@ -148,7 +147,7 @@
     <string name="excerpt_invalid_print">Check the page settings before preparing this PDF.</string>
     <string name="excerpt_format_limit">This formatted output exceeds its limit. Choose source text or export a smaller selection.</string>
     <string name="excerpt_source_destination">Choose a separate destination. Export cannot overwrite the source document.</string>
-    <string name="excerpt_saved">File saved.</string>
+    <string name="excerpt_saved">Copy saved.</string>
     <string name="excerpt_shared">Opened Android sharing.</string>
     <string name="excerpt_save_uncertain">The file could not be confirmed as saved. The selected destination may contain incomplete output.</string>
     <string name="excerpt_added_headers">Included original column headers: %1$s</string>

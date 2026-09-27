@@ -156,7 +156,7 @@ private fun Instrumentation.verifyCompactPrintSetupAtScale(fontScale: Float) {
         revealScrollableAction("Done").performRequiredClick()
         waitForAccessibilityNode("full-size PDF action at scale $fontScale") { node ->
             node.isVisibleToUser && node.isClickable &&
-                node.findNode { it.text?.toString() == "Save PDF" } != null &&
+                node.findNode { it.text?.toString() == "Save a copy" } != null &&
                 Rect().also(node::getBoundsInScreen).height() >= 48 * density - 1
         }
         capturePrintLayout("$fontScale-actions")

@@ -57,10 +57,7 @@ internal fun DocumentExportSummary(
                     Icon(painterResource(R.drawable.ic_close), stringResource(R.string.action_close))
                 }
             }
-            SingleChoiceButtons((controller.formats + controller.format).distinct().map { format ->
-                SingleChoiceOption(exportFormatLabel(controller, format), controller.format == format,
-                    { controller.selectFormat(format) }, controller.canConfigure)
-            })
+            ExportFormatChoices(controller)
             Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
