@@ -205,8 +205,8 @@ Opt-in visual journeys are `native math UI`, `native diagram UI`,
 `progressive illustrations UI`.
 Host tests additionally cover malformed packets, geometry/layout bounds,
 source fragmentation and exact mapping, retained-byte/attempt budgets, command
-admission, and unsupported-input fallback. Keep actual runtime results, native
-visual captures, and artifact measurements with the exact tested revision in
-ignored local evidence directories. Follow the [release process](release.md)
-before distributing a candidate; these test descriptions do not certify an
-untested build.
+admission, and unsupported-input fallback. Record the exact tested revision
+with runtime results, native screenshots, and artifact measurements. Keep this
+evidence outside the checkout. Follow the [release process](release.md) before
+distributing a candidate; these test descriptions do not certify an untested
+build.

@@ -4,10 +4,10 @@ BeauTyXT uses one monotonically increasing integer for both `versionCode` and
 `versionName`. Change `versionCode` in `app/build.gradle.kts` only when a new
 release candidate is intentionally started.
 
-Build artifacts and verification evidence may live in ignored project directories
-such as `captures/`; do not commit them to Git. Keep production signing material
-outside the worktree. Never configure a production keystore, alias, or password
-in a Gradle file or commit them to Git.
+Keep saved build artifacts and verification evidence outside the checkout.
+Remove temporary files when finished. Keep production signing material outside
+the worktree. Never configure a production keystore, alias, or password in a
+Gradle file or commit them to Git.
 
 ## Toolchain
 
@@ -57,7 +57,7 @@ verify the candidate before preparing the production-signed artifact:
   clearing data; it is not a production-lineage upgrade test.
 
 Record the exact commit, toolchain, commands, artifact sizes/digests, results,
-and coverage limitations alongside the ignored local evidence. A test count
+and coverage limitations alongside the verification evidence. A test count
 or snapshot from an earlier revision does not verify the final release.
 After squashing or otherwise changing the release revision, repeat its build
 verification. Production signing, the exact signed upgrade rehearsal, merging
@@ -92,15 +92,15 @@ not a pending private patch or upstream submission.
 
 The unsigned app bundle is the reproducible source for the signed split APK
 set. Build it twice from the same clean commit and toolchain, preserving the
-first result outside the build directory and disabling Gradle build caching:
+first result outside the checkout and disabling Gradle build caching:
 
 ```sh
-mkdir -p captures/reproducibility
+release_artifact_dir=$(mktemp -d "${TMPDIR:-/tmp}/beautyxt-reproducibility.XXXXXX")
 ./gradlew clean :app:bundleRelease --no-build-cache
 cp app/build/outputs/bundle/release/app-release.aab \
-    captures/reproducibility/first.aab
+    "$release_artifact_dir/first.aab"
 ./gradlew clean :app:bundleRelease --no-build-cache
-cmp captures/reproducibility/first.aab \
+cmp "$release_artifact_dir/first.aab" \
     app/build/outputs/bundle/release/app-release.aab
 sha256sum app/build/outputs/bundle/release/app-release.aab
 ```

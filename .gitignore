@@ -11,7 +11,6 @@ target/
 .externalNativeBuild/
 local.properties
 
-captures/
 design/home-screen-candidates/
 design/about-candidates/
 *.hprof
