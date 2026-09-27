@@ -4,10 +4,8 @@ BeauTyXT uses one monotonically increasing integer for both `versionCode` and
 `versionName`. Change `versionCode` in `app/build.gradle.kts` only when a new
 release candidate is intentionally started.
 
-Keep saved build artifacts and verification evidence outside the checkout.
-Remove temporary files when finished. Keep production signing material outside
-the worktree. Never configure a production keystore, alias, or password in a
-Gradle file or commit them to Git.
+Keep production signing material outside the worktree. Never configure a
+production keystore, alias, or password in a Gradle file or commit them to Git.
 
 ## Toolchain
 
@@ -57,8 +55,8 @@ verify the candidate before preparing the production-signed artifact:
   clearing data; it is not a production-lineage upgrade test.
 
 Record the exact commit, toolchain, commands, artifact sizes/digests, results,
-and coverage limitations alongside the verification evidence. A test count
-or snapshot from an earlier revision does not verify the final release.
+and coverage limitations. A test count or snapshot from an earlier revision
+does not verify the final release.
 After squashing or otherwise changing the release revision, repeat its build
 verification. Production signing, the exact signed upgrade rehearsal, merging
 into `main`, pushing, and publication require separate approval.
@@ -91,19 +89,9 @@ not a pending private patch or upstream submission.
 ## Reproducibility
 
 The unsigned app bundle is the reproducible source for the signed split APK
-set. Build it twice from the same clean commit and toolchain, preserving the
-first result outside the checkout and disabling Gradle build caching:
-
-```sh
-release_artifact_dir=$(mktemp -d "${TMPDIR:-/tmp}/beautyxt-reproducibility.XXXXXX")
-./gradlew clean :app:bundleRelease --no-build-cache
-cp app/build/outputs/bundle/release/app-release.aab \
-    "$release_artifact_dir/first.aab"
-./gradlew clean :app:bundleRelease --no-build-cache
-cmp "$release_artifact_dir/first.aab" \
-    app/build/outputs/bundle/release/app-release.aab
-sha256sum app/build/outputs/bundle/release/app-release.aab
-```
+set. Build it twice from the same clean commit and toolchain with
+`./gradlew clean :app:bundleRelease --no-build-cache`, and compare the two
+unsigned bundles with `cmp`.
 
 APK signatures may use randomness, so independently signed APK sets are not
 required to be byte-identical. Verify their contents and signatures instead.
@@ -112,7 +100,8 @@ AGP 9.4 enumerates native debug-symbol files without sorting them. The release
 bundle therefore uses a public `SingleArtifact.BUNDLE` transform to stream all
 ZIP entries in stable name order. It retains every entry, including native
 symbols, along with entry metadata; it does not strip symbols or normalize
-away content differences. The final artifact keeps the standard path above.
+away content differences. The final artifact remains at
+`app/build/outputs/bundle/release/app-release.aab`.
 Debug/staging APK assembly and signing configuration are unchanged. The ZIP
 compression implementation comes from the build JVM, so use the same toolchain
 for both builds.

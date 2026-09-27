@@ -67,14 +67,6 @@ BeauTyXT's MIT license does not replace third-party licenses. Review any new
 dependency's obligations before adoption rather than assuming that an existing
 license exception authorizes another one.
 
-## Local verification artifacts
-
-Keep screenshots, recordings, generated documents, and copied build/test logs
-outside the checkout. Attach review screenshots and recordings directly to
-pull requests, and remove temporary files when finished. Release evidence must
-identify the exact tested revision and any coverage limitations; it does not
-replace verification of a later revision.
-
 ## Device-test providers
 
 The Kotlin providers in `test-providers/` supply synthetic import sources and
@@ -194,13 +186,6 @@ format-preserving saves (default `lf`). Keep the selected line ending
 identical between builds; it is recorded in the result.
 
 Results remain in the debug target's `files/editing-profile/NAME` directory.
-Pull them into a temporary directory outside the checkout with:
-
-```sh
-profile_artifact_dir=$(mktemp -d "${TMPDIR:-/tmp}/beautyxt-profile.XXXXXX")
-adb -s SERIAL exec-out run-as dev.soupslurpr.beautyxt.debug \
-    tar -c -C files/editing-profile NAME > "$profile_artifact_dir/editing-profile-NAME.tar"
-```
 
 The phase force-stops staging between runs and removes its synthetic source.
 Use the same instrumentation APK, keyboard, compilation mode, and physical
@@ -222,6 +207,4 @@ and after each print phase. This keeps synthetic output out of subsequent
 app-storage audits without excluding any storage from those audits.
 
 To inspect generated PDFs, select a print phase with `-e phase` and add
-`-e retainPrintArtifacts true`. Pull the needed files into a temporary directory
-outside the checkout before the next ordinary run, which removes those test
-artifacts.
+`-e retainPrintArtifacts true`. The next ordinary run removes those test artifacts.
