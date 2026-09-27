@@ -619,7 +619,14 @@ internal constructor(
         writeNfc = { envelope, bytes, format, label ->
             nfcWriteStatus = NfcWriteStatus.Ready(nextNfcWriteGeneration++, envelope, bytes, format, label, armedOnOpen = true)
         },
-        captureDocument = ::captureWholeDocumentExport)
+        captureDocument = ::captureWholeDocumentExport,
+        documentSaveReminder = {
+            when {
+                !hasDocumentSource -> UiText.Resource(R.string.export_copy_unsaved_document)
+                hasUnsavedChanges -> UiText.Resource(R.string.export_copy_unsaved_changes)
+                else -> null
+            }
+        })
     private var nextSaveGeneration = FIRST_SAVE_GENERATION
     private var activeSaveGeneration: Long? = null
     private var activeSaveJob: Job? = null

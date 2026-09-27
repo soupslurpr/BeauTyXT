@@ -8,7 +8,6 @@
     <string name="export_more">More ways to send</string>
     <string name="export_share_or_save">Share or save</string>
     <string name="export_share_pdf">Share PDF</string>
-    <string name="export_save_pdf">Save PDF</string>
     <string name="export_options">Options</string>
     <string name="export_original_file">Sharing uses the saved file. Saving creates a separate copy.</string>
     <string name="export_filename">File name</string>
@@ -23,4 +22,14 @@
     <string name="export_send_file">Send as file</string>
     <string name="export_send_text">Send as text</string>
     <string name="export_save_copy">Save a copy</string>
+    <string name="export_format_source">Keeps your text exactly as written, including any Markdown symbols.</string>
+    <string name="export_format_selected_source">Keeps the selected source text exactly as written.</string>
+    <string name="export_format_markdown_document">Keeps your text unchanged, using the Markdown format (.md).</string>
+    <string name="export_format_markdown_selection">Creates Markdown for the selection, keeping supported formatting and links.</string>
+    <string name="export_format_reading_text">Uses the readable text without Markdown formatting.</string>
+    <string name="export_format_pdf_source">Puts your source text on pages, including any Markdown symbols.</string>
+    <string name="export_format_pdf_reading_text">Puts the readable text on pages, without Markdown formatting.</string>
+    <string name="export_format_pdf_formatted">Puts the formatted content on pages for sharing or printing.</string>
+    <string name="export_copy_unsaved_document">This document is still unsaved. Use Save in the editor to keep future edits.</string>
+    <string name="export_copy_unsaved_changes">The current document still has unsaved changes.</string>
 </resources>

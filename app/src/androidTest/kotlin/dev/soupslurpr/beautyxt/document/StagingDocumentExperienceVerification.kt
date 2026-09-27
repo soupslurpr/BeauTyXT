@@ -193,7 +193,7 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
                 "Staging review" in text && "Second silver cat" in text && "PRIVATE TAIL" in text
             } == true
         }
-        check(requireActionableText("Save PDF").isVisibleToUser)
+        check(requireActionableText("Save a copy").isVisibleToUser)
         check(requireActionableText("Share PDF").isVisibleToUser)
         key(KeyEvent.KEYCODE_BACK)
         val passage = waitForAccessibilityNode("minified reading paragraph") { it.text?.toString() == paragraph }

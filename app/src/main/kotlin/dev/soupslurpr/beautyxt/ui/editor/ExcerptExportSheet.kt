@@ -168,15 +168,7 @@ internal fun ExcerptExportSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            item {
-                // Refresh temporarily releases the old capture; keep its disabled choice visible
-                // until the new capture determines which conversions are available.
-                val formats = (controller.formats + controller.format).distinct()
-                SingleChoiceButtons(formats.map { choice ->
-                    SingleChoiceOption(exportFormatLabel(controller, choice), controller.format == choice,
-                        { controller.selectFormat(choice) }, controller.canConfigure)
-                })
-            }
+            item { ExportFormatChoices(controller) }
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -260,7 +252,7 @@ internal fun ExcerptExportSheet(
             BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)) {
                 val shareLabel = stringResource(if (controller.format == ExcerptFormat.Pdf) R.string.export_share_pdf
                     else if (controller.shareAsFile) R.string.share_file else R.string.share_text)
-                val saveLabel = stringResource(if (controller.format == ExcerptFormat.Pdf) R.string.export_save_pdf else R.string.excerpt_save)
+                val saveLabel = stringResource(R.string.export_save_copy)
                 @Composable fun saveButton(modifier: Modifier = Modifier) {
                     OutlinedButton(::saveOutput, modifier.heightIn(min = 48.dp), enabled = canChoose && controller.fitsDestination(ExcerptDestination.Save)) {
                         Text(saveLabel)
@@ -375,6 +367,10 @@ internal fun ExportFeedback(controller: ExcerptExportController) {
             TextButton(controller::refresh, enabled = !controller.handingOff) { Text(stringResource(R.string.excerpt_refresh)) }
         }
         controller.message?.let { Text(it.asString()) }
+        controller.savedCopyReminder?.let {
+            Text(it.asString(), style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (controller.canRetryPreparation) TextButton(controller::retryPreparation) { Text(stringResource(R.string.excerpt_retry)) }
         if (controller.canEndPreviousShares) TextButton(controller::endPreviousShares) { Text(stringResource(R.string.excerpt_end_shares)) }
         if (controller.canCancelSave) TextButton(controller::cancelSave) { Text(stringResource(R.string.editor_cancel_save)) }
@@ -392,7 +388,7 @@ internal fun ExportFeedback(controller: ExcerptExportController) {
 private fun ExcerptDestination.label() = when (this) {
     ExcerptDestination.Copy -> R.string.excerpt_copy
     ExcerptDestination.Share -> R.string.excerpt_share
-    ExcerptDestination.Save -> R.string.excerpt_save
+    ExcerptDestination.Save -> R.string.export_save_copy
     ExcerptDestination.Qr -> R.string.excerpt_qr
     ExcerptDestination.Nfc -> R.string.excerpt_nfc
     ExcerptDestination.Print -> R.string.excerpt_print

@@ -56,7 +56,8 @@ internal class ExcerptExportController(
     private val nfcProcessor: NfcTransferProcessor?,
     private val showQr: (QrCodeGrid, Long, DocumentFormat) -> Unit,
     private val writeNfc: (NfcTransferEnvelope, Long, DocumentFormat, String?) -> Unit,
-    private val captureDocument: (suspend () -> ExcerptCapture?)? = null
+    private val captureDocument: (suspend () -> ExcerptCapture?)? = null,
+    private val documentSaveReminder: () -> UiText? = { null }
 ) : AutoCloseable {
     var exportScope by mutableStateOf(ExportScope.Selection); private set
     var sharesSourceFile by mutableStateOf(false); private set
@@ -76,6 +77,9 @@ internal class ExcerptExportController(
     var loadingTextPreview by mutableStateOf(false); private set
     var textPreviewFailed by mutableStateOf(false); private set
     var message by mutableStateOf<UiText?>(null); private set
+    // Read the live source state: an autosave can finish while this sheet remains open.
+    val savedCopyReminder: UiText?
+        get() = if (message == UiText.Resource(R.string.excerpt_saved)) documentSaveReminder() else null
     private var title = ""
     private var context: Context? = null
     private var generation = 0L

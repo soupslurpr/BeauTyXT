@@ -109,6 +109,13 @@ internal fun Instrumentation.verifyExportRecoveryControls() {
                 "Retry did not save the exact frozen bytes"
             }
             check(export.prepared === frozen && !session.state.hasDocumentChanges)
+            check(!session.hasDocumentSource) { "Saving a copy attached an autosave source" }
+            // This fixture has no dirty revision, but its document still has no source file.
+            // The copy confirmation must not mistake that clean revision for a saved session.
+            check(export.savedCopyReminder == UiText.Resource(R.string.export_copy_unsaved_document))
+            waitForAccessibilityNode("copy confirmation explains the unsaved document") {
+                it.text?.toString() == targetContext.getString(R.string.export_copy_unsaved_document)
+            }
             captureRecoveryScreen("export-retried")
         } catch (failure: Throwable) {
             runCatching { captureRecoveryScreen("export-recovery-failure") }
