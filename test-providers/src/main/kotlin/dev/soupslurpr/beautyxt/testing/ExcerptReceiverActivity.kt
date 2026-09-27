@@ -27,7 +27,7 @@ class ExcerptReceiverActivity : Activity() {
         incarnation = (savedInstanceState?.getInt("incarnation") ?: -1) + 1
         title = getString(R.string.excerpt_receiver)
         val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        status = TextView(this).apply { text = getString(R.string.excerpt_receiver_ready, Process.myUid()) + "; instance $incarnation" }
+        status = TextView(this).apply { text = getString(R.string.excerpt_receiver_ready, Process.myUid(), incarnation) }
         column.addView(status)
         fun button(label: Int, action: () -> Unit) {
             column.addView(Button(this).apply {
@@ -83,7 +83,7 @@ class ExcerptReceiverActivity : Activity() {
         val bytes = ParcelFileDescriptor.AutoCloseInputStream(input).use { it.readNBytes(2 * 1024 * 1024 + 1) }
         check(bytes.size <= 2 * 1024 * 1024) { "Fixture only accepts small synthetic excerpts" }
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
-        status.text = getString(R.string.excerpt_read_result, bytes.size, digest, Process.myUid(), detail)
+        status.text = resources.getQuantityString(R.plurals.excerpt_read_result, bytes.size, bytes.size, digest, Process.myUid(), detail)
     }
 
     override fun onDestroy() {

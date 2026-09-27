@@ -618,7 +618,8 @@ internal constructor(
         },
         writeNfc = { envelope, bytes, format, label ->
             nfcWriteStatus = NfcWriteStatus.Ready(nextNfcWriteGeneration++, envelope, bytes, format, label, armedOnOpen = true)
-        })
+        },
+        captureDocument = ::captureWholeDocumentExport)
     private var nextSaveGeneration = FIRST_SAVE_GENERATION
     private var activeSaveGeneration: Long? = null
     private var activeSaveJob: Job? = null
@@ -917,6 +918,36 @@ internal constructor(
             try { deliver(selectedPlainText(128 * 1024)); selectionMessage = null }
             catch (cancellation: CancellationException) { throw cancellation }
             catch (_: Exception) { selectionMessage = UiText.Resource(R.string.selection_output_failed) }
+        }
+    }
+
+    /** Opens the same frozen export review without changing a retained selection. */
+    fun openDocumentExport(context: android.content.Context): Boolean {
+        if (!(canStartShare || canStartPrint) || excerptExport.visible) return false
+        excerptExport.open(context, title, ExportScope.Document, hasDocumentSource)
+        return true
+    }
+
+    /** Commits the visible IME draft before taking an independently owned source snapshot. */
+    private suspend fun captureWholeDocumentExport(): ExcerptCapture? {
+        activeDraft?.let { draft ->
+            draft.commitComposingText()
+            observeActiveEdit(draft, draft.captureFieldValue())
+            requestImmediateEditSynchronization(draft)
+            editSynchronizationJob?.join()
+        }
+        if (closeStarted.get() || state.hasActiveDraftChanges || activeDraft?.hasChanges == true) return null
+        val captured = state.captureDocumentRevision() ?: return null
+        return try {
+            ExcerptCapture(captured.metrics.revision, captured, true, documentFormat, null, null,
+                wholeDocument = true,
+                formatWholeDocument = markdownRenderer != null &&
+                    captured.metrics.serializedByteLength <= MarkdownProtocol.MAX_INPUT_BYTES,
+                preferFormattedPdf = presentation == EditorPresentation.MarkdownPreview ||
+                    documentFormat == DocumentFormat.Markdown)
+        } catch (failure: Throwable) {
+            captured.close()
+            throw failure
         }
     }
 

@@ -211,11 +211,13 @@ owns the prepared content after an explicit handoff.
 Transient print setup offers source text or formatted Markdown, four independent
 margins, font family and size, source-line wrapping, a filename header, and page
 numbers. Formatted Markdown defaults to 12-point sans-serif text; source printing
-defaults to 10-point monospace. Formatted preparation releases its exact source
-snapshot after the isolated Markdown worker returns and before the native print
-screen receives the render model. Android's print service owns the printer or
-Save as PDF destination; BeauTyXT retains neither an output copy nor print
-preferences afterward.
+defaults to 10-point monospace. Formatted printing hands the renderer's bounded
+model to the print adapter. The export review retains its own frozen source and
+preview until dismissed, so format changes and later handoffs use that revision.
+Android's print service owns the printer or
+its Save as PDF destination. Direct PDF exports instead retain a sealed,
+anonymous preview for sharing or a provider save; neither path creates an
+app-private output file or persistent print preferences.
 
 Formatted output retains aligned table cells, reading-order footnote numbers,
 quote and alert rails, code-language labels, and visibly labeled inert HTML.
@@ -631,7 +633,14 @@ Immediate Copy uses displayed plain text or exact logical source. A visual
 selection may span source formatting boundaries, so reading Copy avoids
 inventing Markdown syntax; generated Markdown is an explicit export format.
 Send/export owns one frozen revision and offers Copy, Android share, save, QR,
-NFC, and PDF under their existing destination limits. Generated Markdown is
+NFC, and PDF under their existing destination limits. The document toolbar and
+selection actions open the same review, with an explicit scope label. Whole
+document capture synchronizes the latest IME draft, preserves exact source
+bytes, and leaves the retained selection unchanged. Whole Markdown offers its
+original source, displayed plain text, or PDF; selected content can additionally
+generate independent Markdown. Share and Save use the same prepared output,
+with PDF options behind Page settings and the actions outside the preview's
+scroll container. Generated Markdown is
 complete syntax for selected structure, including retained table columns/headers, list numbering,
 footnote closure and renumbering, and safe link destinations. Explicit inline
 HTML styles preserve clipped whitespace and adjacent runs. Unselected body text
@@ -639,15 +648,17 @@ is not imported to repair links or headings. Source formatting is offered only
 for a precisely mapped visible passage. Preview additions and removed links
 are shown before handoff; document edits require an explicit preview refresh.
 
-PDF excerpts reuse the native text/vector print path, with real URI and internal
+PDF exports reuse the native text/vector print path, with real URI and internal
 GoTo annotations. Internal links are resolved against the pages actually emitted;
 a target excluded by a print page range does not leave a broken annotation.
 Preview uses PdfRenderer over a read-only anonymous descriptor. Saving creates
 a separate provider document and rejects the source URI and known aliases.
 
 Generated-file sharing uses a non-exported grant-capable ExcerptProvider, random
-single-excerpt URIs, and bounded session-owned leases (four / 256 MiB). It never
-grants the whole-source URI or creates a private staging file. Each opened
+single-output URIs, and bounded session-owned leases (four / 256 MiB). It never
+grants the source URI or creates a private staging file. Sharing an existing
+whole source file uses the original provider-backed share flow described below;
+conversions and selections always receive independent capabilities. Each opened
 read-only proxy descriptor has independent seek position and retains its sealed
 backing until the recipient closes it. Revoking a lease prevents future opens;
 already opened descriptors have the normal lifetime of a granted file handle.

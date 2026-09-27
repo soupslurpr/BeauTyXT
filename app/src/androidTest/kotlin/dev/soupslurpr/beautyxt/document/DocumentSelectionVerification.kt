@@ -75,6 +75,8 @@ internal fun Instrumentation.verifyDocumentSelectionControls() {
         }
         selectionControl("Send/export").performRequiredClick()
         awaitReadingCondition("excerpt preview did not prepare") { session.excerptExport.prepared != null && !session.excerptExport.busy }
+        selectionControl("Options").performRequiredClick()
+        waitForAccessibilityNode("export options dialog") { it.text?.toString() == "Share as a file" }
         val shareSwitch = scrollToExcerptSwitch("Share as a file")
         check(shareSwitch.isClickable)
         check(shareSwitch.checked == CHECKED_STATE_FALSE)
@@ -84,8 +86,9 @@ internal fun Instrumentation.verifyDocumentSelectionControls() {
         check(checkedShareSwitch.checked == CHECKED_STATE_TRUE)
         checkedShareSwitch.performRequiredClick()
         awaitReadingCondition("accessible share switch did not restore text output") { !session.excerptExport.shareAsFile && !session.excerptExport.busy }
-        selectionControl("Save file").performRequiredClick()
-        awaitReadingCondition("reading Save did not default to Markdown") {
+        selectionControl("Done").performRequiredClick()
+        selectionControl("Markdown").performRequiredClick()
+        awaitReadingCondition("selected Markdown did not prepare") {
             session.excerptExport.format == ExcerptFormat.Markdown && session.excerptExport.prepared != null && !session.excerptExport.busy
         }
         check(session.excerptExport.prepared!!.formatted!!.blocks.none { "PRIVATE TAIL" in it.text })
@@ -115,7 +118,10 @@ internal fun Instrumentation.verifyDocumentSelectionControls() {
             }
             check(scrollToExcerptSwitch(label).checked == if (before) CHECKED_STATE_FALSE else CHECKED_STATE_TRUE)
         }
-        runOnMainSync { check(session.excerptExport.chooseSaveDestination()) }
+        runOnMainSync {
+            check(session.excerptExport.usePreparedDestination(dev.soupslurpr.beautyxt.ui.editor.ExcerptDestination.Save))
+            check(session.excerptExport.chooseSaveDestination())
+        }
         waitForAccessibilityNode("disabled PDF settings during destination handoff") {
             it.isVisibleToUser && it.isCheckable && !it.isEnabled &&
                 it.findNode { child -> child.text?.toString() == "Page numbers" } != null
@@ -160,7 +166,7 @@ internal fun Instrumentation.verifyDocumentSelectionControls() {
         kotlinx.coroutines.runBlocking { check(session.selectedPlainText(100) == "1") }
         selectionControl("Send/export").performRequiredClick()
         awaitReadingCondition("footnote digit excerpt did not prepare") { session.excerptExport.prepared != null && !session.excerptExport.busy }
-        selectionControl("Save file").performRequiredClick()
+        selectionControl("Markdown").performRequiredClick()
         awaitReadingCondition("footnote digit Markdown did not prepare") {
             session.excerptExport.format == ExcerptFormat.Markdown && session.excerptExport.prepared != null && !session.excerptExport.busy
         }

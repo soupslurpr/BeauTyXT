@@ -12,6 +12,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,11 +22,19 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.retain.retain
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
+import dev.soupslurpr.beautyxt.document.DocumentFormat
+import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceButtons
+import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceOption
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -51,102 +61,132 @@ private class ExcerptDestinationContract : ActivityResultContract<ExcerptDestina
         intent?.data.takeIf { resultCode == android.app.Activity.RESULT_OK }
 }
 
-/** Destination, representation, additions, and the exact frozen preview share one review surface. */
+/** Reviews whole documents and excerpts with one preview and explicit output actions. */
 @Composable
-internal fun ExcerptExportSheet(controller: ExcerptExportController, nfcEnabled: Boolean) {
+internal fun ExcerptExportSheet(
+    controller: ExcerptExportController,
+    nfcEnabled: Boolean,
+    onShareSourceFile: () -> Unit = {}
+) {
     val context = LocalContext.current
     val destination = rememberLauncherForActivityResult(ExcerptDestinationContract(), controller::destinationReturned)
-    // Only the opaque request identity enters saved state; excerpt bytes and URIs stay in memory.
+    // Only the opaque request identity enters saved state; bytes and URIs stay in memory.
     var shareRequestId by rememberSaveable { mutableStateOf<String?>(null) }
     val share = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         shareRequestId?.let(controller::shareChooserReturned)
         shareRequestId = null
     }
     if (!controller.visible) return
-    var rendered by remember(controller) { mutableStateOf(true) }
+    var settingsVisible by retain(controller) { mutableStateOf(false) }
+    var moreVisible by remember(controller) { mutableStateOf(false) }
+    var rendered by retain(controller) { mutableStateOf(true) }
     val payload = controller.prepared
     val previewItems = remember(payload?.formatted) { payload?.formatted?.let { markdownPreviewItems(it.blocks) }.orEmpty() }
     val footnotes = remember(payload?.formatted) { payload?.formatted?.let { markdownFootnoteNumbers(it.blocks) }.orEmpty() }
-    val immutable = controller.handingOff
-    val canConfigure = controller.canConfigure
-    DocumentSheet(controller::dismiss) {
-        LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val links = remember(payload?.formatted) {
+        payload?.formatted?.blocks?.flatMap { it.spans }?.filter {
+            it.destinationKind == dev.soupslurpr.beautyxt.markdown.MarkdownInlineDestinationKind.Link
+        }?.mapNotNull { it.destination }?.distinct().orEmpty()
+    }
+    val ordinaryOutput = controller.destination in listOf(ExcerptDestination.Share, ExcerptDestination.Save)
+    val canChoose = controller.canConfigure && payload != null && !controller.busy && !controller.isStale && controller.validFileName
+
+    fun applyOutput() {
+        controller.apply(context) { request ->
+            shareRequestId = request.id
+            try { share.launch(request.chooser) }
+            catch (failure: Throwable) { shareRequestId = null; throw failure }
+        }
+    }
+    fun saveOutput() {
+        if (controller.usePreparedDestination(ExcerptDestination.Save) && controller.chooseSaveDestination()) {
+            try { destination.launch(ExcerptDestinationRequest(controller.fileName, controller.mimeType)) }
+            catch (_: Exception) { controller.destinationReturned(null) }
+        }
+    }
+    fun shareOutput() {
+        if (!controller.usePreparedDestination(ExcerptDestination.Share)) return
+        if (controller.isSharingSourceFile) {
+            controller.dismiss()
+            onShareSourceFile()
+        } else applyOutput()
+    }
+
+    if (!settingsVisible) DocumentSheet(controller::dismiss) {
+        LazyColumn(
+            Modifier.fillMaxWidth().weight(1f, fill = false),
+            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
             item {
-                Text(stringResource(R.string.excerpt_title), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-                Text(stringResource(R.string.excerpt_scope), style = MaterialTheme.typography.bodyMedium)
-            }
-            item {
-                Text(stringResource(R.string.excerpt_destination), style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ExcerptDestination.entries.forEach { choice ->
-                        FilterChip(controller.destination == choice, { controller.selectDestination(choice) }, enabled = canConfigure && (choice != ExcerptDestination.Nfc || nfcEnabled),
-                            label = { Text(stringResource(choice.label())) })
-                    }
-                }
-                Text(stringResource(R.string.excerpt_format), style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (controller.destination != ExcerptDestination.Print) {
-                        FilterChip(controller.format == ExcerptFormat.Text, { controller.selectFormat(ExcerptFormat.Text) }, enabled = canConfigure,
-                            label = { Text(stringResource(if (controller.capture?.exactSource == true) R.string.excerpt_exact else R.string.excerpt_text)) })
-                        if (controller.canFormat) FilterChip(controller.format == ExcerptFormat.Markdown, { controller.selectFormat(ExcerptFormat.Markdown) }, enabled = canConfigure,
-                            label = { Text(stringResource(R.string.excerpt_markdown)) })
-                    }
-                    if (controller.destination in listOf(ExcerptDestination.Share, ExcerptDestination.Save, ExcerptDestination.Print))
-                        FilterChip(controller.format == ExcerptFormat.Pdf, { controller.selectFormat(ExcerptFormat.Pdf) }, enabled = canConfigure,
-                            label = { Text(stringResource(R.string.excerpt_pdf)) })
-                }
-                if (!controller.canFormat && controller.capture?.exactSource == true)
-                    Text(stringResource(R.string.excerpt_format_unavailable), style = MaterialTheme.typography.bodySmall)
-            }
-            if (controller.destination == ExcerptDestination.Share && controller.format != ExcerptFormat.Pdf) item {
-                ExcerptToggle(stringResource(R.string.excerpt_share_file), controller.shareAsFile, canConfigure, controller::updateShareAsFile)
-            }
-            if (controller.requiresFileName) item {
-                OutlinedTextField(controller.fileName, controller::updateFileName, enabled = canConfigure, singleLine = true,
-                    isError = !controller.validFileName,
-                    supportingText = if (!controller.validFileName) ({ Text(stringResource(R.string.excerpt_invalid_filename)) }) else null,
-                    label = { Text(stringResource(R.string.excerpt_filename)) }, modifier = Modifier.fillMaxWidth())
-            }
-            if (controller.destination == ExcerptDestination.Nfc) item {
-                OutlinedTextField(controller.tagLabel, controller::updateTagLabel, enabled = canConfigure, singleLine = true,
-                    label = { Text(stringResource(R.string.excerpt_label)) }, modifier = Modifier.fillMaxWidth())
-            }
-            if (controller.format == ExcerptFormat.Pdf) item { ExcerptPrintSettings(controller) }
-            item {
-                if (controller.busy) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Text(stringResource(if (controller.canCancelSave) R.string.excerpt_saving else R.string.excerpt_prepare))
-                }
-                if (controller.isStale) {
-                    Text(stringResource(R.string.excerpt_stale), color = MaterialTheme.colorScheme.error)
-                    TextButton(controller::refresh, enabled = !immutable) { Text(stringResource(R.string.excerpt_refresh)) }
-                }
-                controller.outputBytes?.let { bytes ->
-                    Text(stringResource(R.string.excerpt_capacity, formatTransferByteCount(bytes), formatTransferByteCount(controller.maximumBytes)))
-                    if (!controller.fits) Text(stringResource(R.string.excerpt_over_limit), color = MaterialTheme.colorScheme.error)
-                }
-                controller.message?.let { Text(it.asString(), Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
-                if (controller.canRetryPreparation) TextButton(controller::retryPreparation) { Text(stringResource(R.string.excerpt_retry)) }
-                if (controller.canEndPreviousShares) TextButton(controller::endPreviousShares) { Text(stringResource(R.string.excerpt_end_shares)) }
-                if (controller.canCancelSave) TextButton(controller::cancelSave) { Text(stringResource(R.string.editor_cancel_save)) }
-                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TextButton(controller::dismiss, enabled = !immutable) { Text(stringResource(R.string.action_cancel)) }
-                    Button(enabled = controller.canApply, onClick = {
-                        if (controller.destination == ExcerptDestination.Save) {
-                            if (controller.chooseSaveDestination()) try { destination.launch(ExcerptDestinationRequest(controller.fileName, controller.mimeType)) }
-                            catch (_: Exception) { controller.destinationReturned(null) }
-                        } else controller.apply(context) { request ->
-                            shareRequestId = request.id
-                            try { share.launch(request.chooser) }
-                            catch (failure: Throwable) { shareRequestId = null; throw failure }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.editor_send_export), style = MaterialTheme.typography.headlineSmall,
+                            modifier = Modifier.semantics { heading() })
+                        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer) {
+                            Text(stringResource(if (controller.exportScope == ExportScope.Document)
+                                R.string.export_whole_document else R.string.excerpt_scope),
+                                Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelLarge)
                         }
-                    }) { Text(stringResource(when (controller.destination) {
-                        ExcerptDestination.Qr -> R.string.excerpt_show_qr
-                        ExcerptDestination.Nfc -> R.string.excerpt_write
-                        else -> controller.destination.label()
-                    })) }
+                    }
+                    Box {
+                        IconButton({ moreVisible = true }, enabled = controller.canConfigure) {
+                            Icon(painterResource(R.drawable.ic_more_vert), stringResource(R.string.export_more))
+                        }
+                        DropdownMenu(moreVisible, { moreVisible = false }) {
+                            listOf(ExcerptDestination.Copy, ExcerptDestination.Qr, ExcerptDestination.Nfc, ExcerptDestination.Print).forEach { choice ->
+                                DropdownMenuItem(text = { Text(stringResource(choice.label())) },
+                                    enabled = controller.canConfigure && (choice != ExcerptDestination.Nfc || nfcEnabled),
+                                    onClick = { moreVisible = false; controller.selectDestination(choice) })
+                            }
+                        }
+                    }
+                    IconButton(controller::dismiss, enabled = !controller.handingOff) {
+                        Icon(painterResource(R.drawable.ic_close), stringResource(R.string.action_close))
+                    }
                 }
             }
+            if (!ordinaryOutput) item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(controller.destination.label()), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    TextButton({ controller.selectDestination(ExcerptDestination.Share) }, enabled = controller.canConfigure) {
+                        Text(stringResource(R.string.export_share_or_save))
+                    }
+                }
+                if (controller.destination == ExcerptDestination.Print) {
+                    Text(stringResource(R.string.print_service_disclosure), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            item {
+                // Refresh temporarily releases the old capture; keep its disabled choice visible
+                // until the new capture determines which conversions are available.
+                val formats = (controller.formats + controller.format).distinct()
+                SingleChoiceButtons(formats.map { choice ->
+                    SingleChoiceOption(exportFormatLabel(controller, choice), controller.format == choice,
+                        { controller.selectFormat(choice) }, controller.canConfigure)
+                })
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(controller.fileName.ifEmpty { stringResource(R.string.excerpt_prepare) },
+                            style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        controller.outputBytes?.let { bytes ->
+                            Text(android.text.format.Formatter.formatShortFileSize(context, bytes),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    TextButton({ settingsVisible = true }, enabled = controller.canConfigure) {
+                        Text(stringResource(if (controller.format == ExcerptFormat.Pdf) R.string.excerpt_settings else R.string.export_options))
+                    }
+                }
+                if (controller.isSharingSourceFile && ordinaryOutput) {
+                    Text(stringResource(R.string.export_original_file), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            item { ExportFeedback(controller) }
             items(payload?.notices.orEmpty()) { notice ->
                 Text(stringResource(when (notice.kind) {
                     ExcerptNoticeKind.AddedHeaders -> R.string.excerpt_added_headers
@@ -156,14 +196,20 @@ internal fun ExcerptExportSheet(controller: ExcerptExportController, nfcEnabled:
                 }, notice.detail), style = MaterialTheme.typography.bodySmall)
             }
             item {
-                HorizontalDivider()
-                Text(stringResource(R.string.excerpt_preview), style = MaterialTheme.typography.titleMedium)
-                if (controller.format == ExcerptFormat.Markdown) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(rendered, { rendered = true }, label = { Text(stringResource(R.string.excerpt_rendered)) })
-                    FilterChip(!rendered, { rendered = false }, label = { Text(stringResource(R.string.excerpt_generated)) })
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.excerpt_preview), style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f).semantics { heading() })
+                    if (controller.format == ExcerptFormat.Markdown) TextButton({ rendered = !rendered }) {
+                        Text(stringResource(if (rendered) R.string.excerpt_generated else R.string.excerpt_rendered))
+                    }
                 }
             }
-            if (controller.format == ExcerptFormat.Pdf && payload != null) {
+            if (controller.busy) item {
+                Column(Modifier.fillMaxWidth().heightIn(min = 160.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(stringResource(if (controller.canCancelSave) R.string.excerpt_saving else R.string.excerpt_prepare))
+                }
+            } else if (controller.format == ExcerptFormat.Pdf && payload != null) {
                 item { ExcerptPdfPreview(payload) }
             } else if (controller.format == ExcerptFormat.Markdown && rendered && payload?.formatted != null) {
                 itemsIndexed(previewItems) { _, item ->
@@ -178,13 +224,20 @@ internal fun ExcerptExportSheet(controller: ExcerptExportController, nfcEnabled:
                     }
                 }
             } else {
-                if (controller.loadingTextPreview) item {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Text(stringResource(R.string.excerpt_preview_loading))
-                }
+                if (controller.loadingTextPreview) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
                 if (controller.textPreviewFailed) item {
                     Text(stringResource(R.string.excerpt_preview_failed), Modifier.semantics { liveRegion = LiveRegionMode.Polite })
                     TextButton(controller::retryTextPreview) { Text(stringResource(R.string.excerpt_retry_preview)) }
+                }
+                item {
+                    val text = controller.textPreview?.blocks.orEmpty().joinToString("") { block ->
+                        block.text + if (block.lineTerminatorUtf16Units > 0) "\n" else ""
+                    }
+                    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
+                        Text(text.ifEmpty { "\n" }, Modifier.fillMaxWidth().padding(16.dp),
+                            fontFamily = if (controller.capture?.exactSource == true && controller.format == ExcerptFormat.Text)
+                                FontFamily.Monospace else null, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
                 if (controller.canPreviousPreview || controller.textPreview?.next != null) item {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -192,19 +245,131 @@ internal fun ExcerptExportSheet(controller: ExcerptExportController, nfcEnabled:
                         TextButton({ controller.loadTextPreview(true) }, enabled = controller.textPreview?.next != null && !controller.loadingTextPreview) { Text(stringResource(R.string.excerpt_next)) }
                     }
                 }
-                item {
-                    val text = controller.textPreview?.blocks.orEmpty().joinToString("") { block ->
-                        block.text + if (block.lineTerminatorUtf16Units > 0) "\n" else ""
+            }
+            if (links.isNotEmpty()) {
+                item { Text(stringResource(R.string.excerpt_links), style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.semantics { heading() }) }
+                items(links) { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+        HorizontalDivider()
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)) {
+                val shareLabel = stringResource(if (controller.format == ExcerptFormat.Pdf) R.string.export_share_pdf
+                    else if (controller.shareAsFile) R.string.share_file else R.string.share_text)
+                val saveLabel = stringResource(if (controller.format == ExcerptFormat.Pdf) R.string.export_save_pdf else R.string.excerpt_save)
+                @Composable fun saveButton(modifier: Modifier = Modifier) {
+                    OutlinedButton(::saveOutput, modifier.heightIn(min = 48.dp), enabled = canChoose && controller.fitsDestination(ExcerptDestination.Save)) {
+                        Text(saveLabel)
                     }
-                    Text(text.ifEmpty { "\n" }, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyMedium)
+                }
+                @Composable fun shareButton(modifier: Modifier = Modifier) {
+                    Button(::shareOutput, modifier.heightIn(min = 48.dp), enabled = canChoose && controller.fitsDestination(ExcerptDestination.Share)) {
+                        Icon(painterResource(R.drawable.ic_share), null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(shareLabel)
+                    }
+                }
+                if (ordinaryOutput) {
+                    if (maxWidth < 300.dp * maxOf(1f, LocalDensity.current.fontScale)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            shareButton(Modifier.fillMaxWidth()); saveButton(Modifier.fillMaxWidth())
+                        }
+                    } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        saveButton(Modifier.weight(1f)); shareButton(Modifier.weight(1f))
+                    }
+                } else Button(::applyOutput, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = controller.canApply) {
+                    if (controller.destination == ExcerptDestination.Print) {
+                        Icon(painterResource(R.drawable.ic_print), null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(stringResource(when (controller.destination) {
+                        ExcerptDestination.Qr -> R.string.excerpt_show_qr
+                        ExcerptDestination.Nfc -> R.string.excerpt_write
+                        else -> controller.destination.label()
+                    }))
                 }
             }
-            val links = payload?.formatted?.blocks?.flatMap { it.spans }?.filter {
-                it.destinationKind == dev.soupslurpr.beautyxt.markdown.MarkdownInlineDestinationKind.Link
-            }?.mapNotNull { it.destination }?.distinct().orEmpty()
-            if (links.isNotEmpty()) {
-                item { Text(stringResource(R.string.excerpt_links), style = MaterialTheme.typography.titleSmall) }
-                items(links) { Text(it, style = MaterialTheme.typography.bodySmall) }
+        }
+    }
+    if (settingsVisible) ExportOptionsSheet(controller, ordinaryOutput) { settingsVisible = false }
+}
+
+/** Scrolls the complete form in short windows so the IME cannot consume its field area. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExportOptionsSheet(controller: ExcerptExportController, ordinaryOutput: Boolean, onDone: () -> Unit) {
+    val density = LocalDensity.current
+    val windowHeight = with(density) { LocalWindowInfo.current.containerSize.height.toDp() }
+    // Keep this decision independent of the animated IME inset, preserving field focus while it opens.
+    val scrollActions = windowHeight < 480.dp * density.fontScale.coerceAtLeast(1f)
+    val scroll = rememberScrollState()
+    ModalBottomSheet(
+        onDismissRequest = onDone,
+        sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden,
+            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
+        dragHandle = if (scrollActions) null else ({ BottomSheetDefaults.DragHandle() }),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(Modifier.fillMaxWidth().then(if (scrollActions) Modifier.verticalScroll(scroll) else Modifier)) {
+            Column(Modifier.then(if (scrollActions) Modifier else Modifier.weight(1f, fill = false).verticalScroll(scroll))
+                .fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                .padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(stringResource(if (controller.format == ExcerptFormat.Pdf) R.string.excerpt_settings else R.string.export_options),
+                    style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+                OutlinedTextField(controller.fileName, controller::updateFileName, enabled = controller.canConfigure,
+                    label = { Text(stringResource(R.string.export_filename)) }, singleLine = true,
+                    isError = !controller.validFileName, modifier = Modifier.fillMaxWidth())
+                if (!controller.validFileName) Text(stringResource(R.string.excerpt_invalid_filename))
+                if (ordinaryOutput && controller.format != ExcerptFormat.Pdf) {
+                    ExcerptToggle(stringResource(R.string.excerpt_share_file), controller.shareAsFile, controller.canConfigure, controller::updateShareAsFile)
+                }
+                if (controller.destination == ExcerptDestination.Nfc) {
+                    OutlinedTextField(controller.tagLabel, controller::updateTagLabel, enabled = controller.canConfigure, singleLine = true,
+                        label = { Text(stringResource(R.string.excerpt_label)) }, modifier = Modifier.fillMaxWidth())
+                }
+                if (controller.format == ExcerptFormat.Pdf) ExcerptPrintSettings(controller)
+            }
+            HorizontalDivider()
+            TextButton(onDone, Modifier.fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                .padding(horizontal = 24.dp, vertical = 12.dp).heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.export_done))
+            }
+        }
+    }
+}
+
+@Composable
+private fun exportFormatLabel(controller: ExcerptExportController, format: ExcerptFormat): String = stringResource(when (format) {
+    ExcerptFormat.Pdf -> R.string.excerpt_pdf
+    ExcerptFormat.Markdown -> R.string.export_markdown
+    ExcerptFormat.ReadingText -> R.string.excerpt_text
+    ExcerptFormat.Text -> when {
+        controller.capture?.textFormat == DocumentFormat.Markdown && controller.exportScope == ExportScope.Document -> R.string.export_markdown
+        controller.capture?.exactSource == true && controller.exportScope == ExportScope.Selection -> R.string.excerpt_exact
+        controller.canExportReadingText -> R.string.print_source_text
+        else -> R.string.excerpt_text
+    }
+})
+
+@Composable
+private fun ExportFeedback(controller: ExcerptExportController) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
+        if (controller.isStale) {
+            Text(stringResource(R.string.excerpt_stale), color = MaterialTheme.colorScheme.error)
+            TextButton(controller::refresh, enabled = !controller.handingOff) { Text(stringResource(R.string.excerpt_refresh)) }
+        }
+        controller.message?.let { Text(it.asString()) }
+        if (controller.canRetryPreparation) TextButton(controller::retryPreparation) { Text(stringResource(R.string.excerpt_retry)) }
+        if (controller.canEndPreviousShares) TextButton(controller::endPreviousShares) { Text(stringResource(R.string.excerpt_end_shares)) }
+        if (controller.canCancelSave) TextButton(controller::cancelSave) { Text(stringResource(R.string.editor_cancel_save)) }
+        if (controller.outputBytes != null && !controller.fits) {
+            Text(stringResource(R.string.excerpt_over_limit))
+            if (controller.destination == ExcerptDestination.Share && !controller.shareAsFile) {
+                TextButton({ controller.updateShareAsFile(true) }, enabled = controller.canConfigure) {
+                    Text(stringResource(R.string.excerpt_share_file))
+                }
             }
         }
     }
@@ -233,50 +398,73 @@ private fun ExcerptToggle(label: String, checked: Boolean, enabled: Boolean = tr
 @Composable
 private fun ExcerptPrintSettings(controller: ExcerptExportController) {
     val draft = controller.printDraft
+    val validation = validatePrintSetup(draft)
     val enabled = controller.canConfigure
-    var expanded by remember { mutableStateOf(false) }
-    Column {
-        if (controller.canFormat) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PrintContentMode.entries.forEach { mode ->
-                FilterChip(draft.contentMode == mode, { controller.updatePrintDraft(draft.copy(contentMode = mode)) }, enabled = enabled,
-                    label = { Text(stringResource(if (mode == PrintContentMode.Source) R.string.excerpt_pdf_source else R.string.excerpt_pdf_formatted)) })
-            }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (controller.canFormat) {
+            SingleChoiceButtons(PrintContentMode.entries.map { mode ->
+                SingleChoiceOption(
+                    stringResource(if (mode == PrintContentMode.Source) R.string.excerpt_pdf_source else R.string.excerpt_pdf_formatted),
+                    draft.contentMode == mode, { controller.updatePrintDraft(draft.copy(contentMode = mode)) }, enabled)
+            })
+            Text(stringResource(if (draft.contentMode == PrintContentMode.Source)
+                R.string.print_source_description else R.string.print_formatted_description),
+                style = MaterialTheme.typography.bodySmall)
         }
-        TextButton({ expanded = !expanded }) { Text(stringResource(R.string.excerpt_settings)) }
-        if (expanded) {
-            Text(stringResource(R.string.excerpt_paper), style = MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(!controller.paperLetter, { controller.updatePaperLetter(false) }, enabled = enabled, label = { Text(stringResource(R.string.excerpt_a4)) })
-                FilterChip(controller.paperLetter, { controller.updatePaperLetter(true) }, enabled = enabled, label = { Text(stringResource(R.string.excerpt_letter)) })
-                PrintFontFamily.entries.forEach { family ->
-                    FilterChip(draft.fontFamily == family, { controller.updatePrintDraft(draft.copy(fontFamily = family)) }, enabled = enabled,
-                        label = { Text(stringResource(when (family) {
-                            PrintFontFamily.SansSerif -> R.string.print_font_sans
-                            PrintFontFamily.Serif -> R.string.print_font_serif
-                            PrintFontFamily.Monospace -> R.string.print_font_mono
-                        })) })
-                }
-            }
-            OutlinedTextField(draft.fontSize, { controller.updatePrintDraft(draft.copy(fontSize = it)) }, enabled = enabled,
-                label = { Text(stringResource(R.string.print_text_size)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-            ExcerptToggle(stringResource(R.string.print_wrap_source_lines), draft.wrapLongLines, enabled) { controller.updatePrintDraft(draft.copy(wrapLongLines = it)) }
-            ExcerptToggle(stringResource(R.string.print_file_name_header), draft.showFileName, enabled) { controller.updatePrintDraft(draft.copy(showFileName = it)) }
-            ExcerptToggle(stringResource(R.string.print_page_numbers), draft.showPageNumbers, enabled) { controller.updatePrintDraft(draft.copy(showPageNumbers = it)) }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PrintMarginUnit.entries.forEach { unit ->
-                    FilterChip(draft.marginUnit == unit, { controller.updatePrintDraft(convertPrintMarginUnit(draft, unit)) }, enabled = enabled,
-                        label = { Text(stringResource(if (unit == PrintMarginUnit.Inches) R.string.print_inches else R.string.print_millimetres)) })
-                }
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(R.string.print_margin_top to draft.topMargin, R.string.print_margin_bottom to draft.bottomMargin,
-                    R.string.print_margin_left to draft.leftMargin, R.string.print_margin_right to draft.rightMargin).forEachIndexed { index, (label, value) ->
-                    OutlinedTextField(value, { value -> controller.updatePrintDraft(when (index) {
-                        0 -> draft.copy(topMargin = value); 1 -> draft.copy(bottomMargin = value)
-                        2 -> draft.copy(leftMargin = value); else -> draft.copy(rightMargin = value)
-                    }) }, enabled = enabled, label = { Text("${stringResource(label)} (${stringResource(if (draft.marginUnit == PrintMarginUnit.Inches) R.string.print_inch_unit else R.string.print_millimetre_unit)})") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.width(130.dp))
-                }
+        Text(stringResource(R.string.excerpt_paper), style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.semantics { heading() })
+        SingleChoiceButtons(listOf(
+            SingleChoiceOption(stringResource(R.string.excerpt_a4), !controller.paperLetter,
+                { controller.updatePaperLetter(false) }, enabled),
+            SingleChoiceOption(stringResource(R.string.excerpt_letter), controller.paperLetter,
+                { controller.updatePaperLetter(true) }, enabled)
+        ))
+        Text(stringResource(R.string.print_text), style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.semantics { heading() })
+        SingleChoiceButtons(PrintFontFamily.entries.map { family ->
+            SingleChoiceOption(stringResource(when (family) {
+                PrintFontFamily.SansSerif -> R.string.print_font_sans
+                PrintFontFamily.Serif -> R.string.print_font_serif
+                PrintFontFamily.Monospace -> R.string.print_font_mono
+            }), draft.fontFamily == family, { controller.updatePrintDraft(draft.copy(fontFamily = family)) }, enabled)
+        })
+        OutlinedTextField(draft.fontSize, { controller.updatePrintDraft(draft.copy(fontSize = it)) }, enabled = enabled,
+            label = { Text(stringResource(R.string.print_text_size)) }, suffix = { Text(stringResource(R.string.print_point_unit)) },
+            isError = validation.isFontSizeInvalid,
+            supportingText = if (validation.isFontSizeInvalid) ({ Text(stringResource(R.string.print_text_size_error)) }) else null,
+            singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        ExcerptToggle(stringResource(R.string.print_wrap_source_lines), draft.wrapLongLines, enabled) {
+            controller.updatePrintDraft(draft.copy(wrapLongLines = it))
+        }
+        ExcerptToggle(stringResource(R.string.print_file_name_header), draft.showFileName, enabled) {
+            controller.updatePrintDraft(draft.copy(showFileName = it))
+        }
+        ExcerptToggle(stringResource(R.string.print_page_numbers), draft.showPageNumbers, enabled) {
+            controller.updatePrintDraft(draft.copy(showPageNumbers = it))
+        }
+        Text(stringResource(R.string.print_margins), style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.semantics { heading() })
+        SingleChoiceButtons(PrintMarginUnit.entries.map { unit ->
+            SingleChoiceOption(stringResource(if (unit == PrintMarginUnit.Inches) R.string.print_inches else R.string.print_millimetres),
+                draft.marginUnit == unit, { controller.updatePrintDraft(convertPrintMarginUnit(draft, unit)) }, enabled)
+        })
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(Triple(PrintMarginField.Top, R.string.print_margin_top, draft.topMargin),
+                Triple(PrintMarginField.Bottom, R.string.print_margin_bottom, draft.bottomMargin),
+                Triple(PrintMarginField.Left, R.string.print_margin_left, draft.leftMargin),
+                Triple(PrintMarginField.Right, R.string.print_margin_right, draft.rightMargin)).forEach { (field, label, value) ->
+                val unit = stringResource(if (draft.marginUnit == PrintMarginUnit.Inches) R.string.print_inch_unit else R.string.print_millimetre_unit)
+                val invalid = field in validation.invalidMarginFields
+                OutlinedTextField(value, { value -> controller.updatePrintDraft(when (field) {
+                    PrintMarginField.Top -> draft.copy(topMargin = value)
+                    PrintMarginField.Bottom -> draft.copy(bottomMargin = value)
+                    PrintMarginField.Left -> draft.copy(leftMargin = value)
+                    PrintMarginField.Right -> draft.copy(rightMargin = value)
+                }) }, enabled = enabled, label = { Text(stringResource(label)) }, suffix = { Text(unit) }, singleLine = true,
+                    isError = invalid, supportingText = if (invalid) ({
+                        Text(stringResource(R.string.print_margin_error, maximumPrintMarginText(draft.marginUnit), unit))
+                    }) else null,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.width(130.dp))
             }
         }
     }

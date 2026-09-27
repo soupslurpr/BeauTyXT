@@ -464,7 +464,7 @@ android {
         applicationId = "dev.soupslurpr.beautyxt"
         minSdk = 37
         targetSdk = 37
-        versionCode = 84
+        versionCode = 85
         versionName = versionCode.toString()
         testInstrumentationRunner =
             "dev.soupslurpr.beautyxt.document.DocumentBridgeInstrumentation"

@@ -375,3 +375,14 @@ internal fun formatTransferByteCount(byteCount: Long): String {
         }
     }
 }
+
+/** Distinguishes the application payload bound from a physical tag's unknown capacity. */
+internal fun nfcWriteCapacityDescription(capacity: DocumentTransferCapacity): UiText =
+    if (capacity.fits == true) {
+        UiText.Resource(
+            R.string.nfc_write_capacity,
+            listOf(formatTransferByteCount(requireNotNull(capacity.textBytes)))
+        )
+    } else {
+        transferCapacityDescription(capacity)
+    }

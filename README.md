@@ -20,9 +20,10 @@ Requires **Android 17 / API 37**. The interface is currently English-only.
 - Edit with undo, redo, and automatic saving to compatible source files.
 - Share through Android, QR codes, or NFC tags. Save generated QR images as
   lossless WebP or PNG.
-- Print source text or formatted Markdown, or save a PDF through Android's
-  print dialog. Choose margins for each edge, font and size, a filename header,
-  and page numbers.
+- Preview and share or save a whole document or a selection from **Send & export**.
+  Share PDFs directly, save them to a chosen provider, or open Android's print
+  screen. Choose source or formatted output, paper size, margins, font and size,
+  a filename header, and page numbers.
 
 ## Files and privacy
 

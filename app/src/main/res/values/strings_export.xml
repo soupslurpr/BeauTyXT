@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="export_whole_document">Whole document</string>
+    <string name="export_more">More ways to send</string>
+    <string name="export_share_or_save">Share or save</string>
+    <string name="export_share_pdf">Share PDF</string>
+    <string name="export_save_pdf">Save PDF</string>
+    <string name="export_options">Options</string>
+    <string name="export_original_file">Sharing uses the saved file. Saving creates a separate copy.</string>
+    <string name="export_filename">File name</string>
+    <string name="export_done">Done</string>
+    <string name="export_markdown">Markdown</string>
+</resources>

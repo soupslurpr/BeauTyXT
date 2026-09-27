@@ -559,7 +559,7 @@ private fun writeMarkdownPrintFixture(
     }
 }
 
-/** Verifies rendered Markdown text and safe HTML without embedding link actions or source markup. */
+/** Verifies rendered Markdown, safe HTML, and link destinations without exposing source markup. */
 private fun verifyMarkdownTextLayer(context: Context, output: File) {
     val markdown = """
         # Reading, shared
@@ -603,11 +603,16 @@ private fun verifyMarkdownTextLayer(context: Context, output: File) {
         }
     }
     inspectTextPdf(output) { renderer ->
+        val destinations = mutableSetOf<String>()
         val text = (0 until renderer.pageCount).joinToString("\n") { index ->
             renderer.openPage(index).use { page ->
-                check(page.linkContents.isEmpty()) { "PDF introduced link actions" }
+                destinations += page.linkContents.map { it.uri.toString() }
+                check(page.gotoLinks.isEmpty()) { "PDF introduced unrequested internal links" }
                 page.textContents.joinToString("\n") { it.text }
             }
+        }
+        check(destinations == setOf("https://example.org/hidden-destination")) {
+            "Markdown PDF changed its explicit link destinations: $destinations"
         }
         Log.i(TAG, "Markdown extraction: " + text.replace('\n', ' ').replace('\r', ' '))
         for (term in listOf(

@@ -77,6 +77,8 @@ internal fun Instrumentation.verifyHomeDocumentNavigation() {
 
 /** Uses the actual editable semantics so checkpoints and dirty-close guards see the draft. */
 internal fun Instrumentation.enterHomeNavigationDraft(text: String) {
+    // Navigation can expose the new field before its focus and entry transition settle.
+    waitForAccessibilityIdle()
     check(
         waitForEditField().performAction(
             AccessibilityNodeInfo.ACTION_SET_TEXT,

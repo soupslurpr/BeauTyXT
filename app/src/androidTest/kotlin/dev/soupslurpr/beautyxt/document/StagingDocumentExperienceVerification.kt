@@ -15,6 +15,7 @@ import android.view.WindowInsets
 import android.view.accessibility.AccessibilityNodeInfo
 import dev.soupslurpr.beautyxt.HomeActivity
 import java.io.File
+import java.security.MessageDigest
 
 private const val EXPERIENCE_STAGING_PACKAGE = "dev.soupslurpr.beautyxt.staging"
 
@@ -151,6 +152,36 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
         requireActionableText("Return to document").performRequiredClick()
         requireActionableContentDescription("Close Find").performRequiredClick()
         requireActionableContentDescription("Preview Markdown").performRequiredClick()
+        requireActionableContentDescription("Send and export").performRequiredClick()
+        waitForAccessibilityNode("whole-document export scope") { it.text?.toString() == "Whole document" }
+        requireActionableText("Share file").performRequiredClick()
+        if (app == targetContext.packageName) {
+            requireActionableText("Excerpt test receiver").performRequiredClick()
+            requireActionableText("Read excerpt now").performRequiredClick()
+            val originalBytes = original.toByteArray()
+            val digest = MessageDigest.getInstance("SHA-256").digest(originalBytes).joinToString("") { "%02x".format(it) }
+            waitForAccessibilityNode("exact saved source in separate receiver") {
+                it.text?.toString()?.contains("Read ${originalBytes.size} bytes; SHA-256 $digest;") == true
+            }
+            requireActionableText("Finish excerpt receiver").performRequiredClick()
+        } else {
+            // Staging deliberately lacks the debug-only fixture permission. Verify its
+            // real chooser handoff; the debug journeys check separate-UID receipt above.
+            waitForAccessibilityNode("staging saved file in the system share chooser") {
+                it.packageName?.toString() != app && it.text?.toString() == name
+            }
+            key(KeyEvent.KEYCODE_BACK)
+        }
+        requireActionableContentDescription("Send and export").performRequiredClick()
+        requireActionableText("PDF").performRequiredClick()
+        scrollTo("whole-document PDF") {
+            it.contentDescription?.toString()?.let { text ->
+                "Staging review" in text && "Second silver cat" in text && "PRIVATE TAIL" in text
+            } == true
+        }
+        check(requireActionableText("Save PDF").isVisibleToUser)
+        check(requireActionableText("Share PDF").isVisibleToUser)
+        key(KeyEvent.KEYCODE_BACK)
         val passage = waitForAccessibilityNode("minified reading paragraph") { it.text?.toString() == paragraph }
         check(passage.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
@@ -159,7 +190,6 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
         requireActionableText("Send/export")
         capture("document-experience-reading-selection")
         requireActionableText("Send/export").performRequiredClick()
-        requireActionableText("Save file").performRequiredClick()
         requireActionableText("PDF").performRequiredClick()
         val page = scrollTo("minified selected PDF", { it.contentDescription?.toString()?.contains(paragraph) == true })
         val pageText = page.contentDescription.toString()

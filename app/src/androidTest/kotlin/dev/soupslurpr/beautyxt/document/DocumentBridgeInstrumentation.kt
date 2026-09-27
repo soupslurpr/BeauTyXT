@@ -185,7 +185,8 @@ private const val TEST_IMPORT_TIMEOUT_MILLIS = 10_000L
 private const val TEST_BIND_TIMEOUT_MILLIS = 10_000L
 private const val TEST_CALLBACK_TIMEOUT_MILLIS = 15_000L
 private const val TEST_PROFILE_VERIFICATION_TIMEOUT_MILLIS = 15_000L
-private const val TEST_SUITE_TIMEOUT_MILLIS = 240_000L
+private const val TEST_SUITE_TIMEOUT_MILLIS = 600_000L
+private const val TEST_PHASE_TIMEOUT_MILLIS = 240_000L
 private const val TEST_STATUS_STARTED = 1
 private const val TEST_STATUS_PASSED = 0
 private const val TEST_STATUS_FAILED = -2
@@ -386,6 +387,7 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 }
                 verifyOptInPhase("staging document experience") { verifyPackagedDocumentExperience() }
                 verifyPhase("excerpt preparation") { verifyExcerptPreparation(targetContext) }
+                verifyPhase("whole document export") { verifyWholeDocumentExport() }
                 verifyPhase("excerpt sharing") { verifyExcerptSharing() }
                 verifyPhase("Find continuation") { verifyFindContinuation() }
                 verifyOptInPhase("physical NFC excerpt") { verifyPhysicalNfcExcerpt() }
@@ -590,7 +592,10 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 }
             }
         try {
-            verification.get(TEST_SUITE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+            val timeoutMillis =
+                if (selectedVerificationPhase == null) TEST_SUITE_TIMEOUT_MILLIS
+                else TEST_PHASE_TIMEOUT_MILLIS
+            verification.get(timeoutMillis, TimeUnit.MILLISECONDS)
         } catch (failure: ExecutionException) {
             throw failure.cause ?: failure
         } catch (failure: TimeoutException) {

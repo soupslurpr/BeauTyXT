@@ -37,8 +37,7 @@ import androidx.compose.ui.unit.dp
 
 /** Identifies a transient document tool retained only across configuration changes. */
 internal enum class DocumentToolSheet {
-    Contents,
-    Send
+    Contents
 }
 
 /** Displays a bounded modal sheet without serializing document information. */
