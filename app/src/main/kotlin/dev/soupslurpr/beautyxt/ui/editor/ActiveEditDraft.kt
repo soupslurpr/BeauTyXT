@@ -335,9 +335,9 @@ internal class ActiveEditDraft(
             "history edit-window handoff must advance the revision"
         }
         require(!hasChanges) { "history edit-window handoff requires a clean draft" }
-        require(textFieldState.composition == null) {
-            "history edit-window handoff cannot replace composing text"
-        }
+        // The IME can mark unchanged text as composing while history work is in flight.
+        // Text edits remain blocked; finish that region before installing the new revision.
+        commitComposingText()
         val nextSelection = TextRange(
             start = Math.toIntExact(nextEdit.localSelection.start),
             end = Math.toIntExact(nextEdit.localSelection.end)
