@@ -5,7 +5,7 @@ import dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
-/** Owns the selected logical text and frozen context needed to generate a formatted excerpt. */
+/** Owns frozen source bytes and the context needed to format one export. */
 internal class ExcerptCapture(
     val revision: Long,
     val plain: CapturedDocumentRevision,
@@ -13,9 +13,14 @@ internal class ExcerptCapture(
     val textFormat: DocumentFormat,
     private val readingDocument: MarkdownPreviewDocument?,
     private val readingSelection: DocumentSelection.Reading?,
-    private val labelText: String? = null
+    private val labelText: String? = null,
+    val wholeDocument: Boolean = false,
+    private val formatWholeDocument: Boolean = false,
+    val preferFormattedPdf: Boolean = !exactSource
 ) : AutoCloseable {
-    val canFormat get() = readingSelection != null || labelText != null
+    val canFormat get() = formatWholeDocument || readingSelection != null || labelText != null
+    val canExportReadingText get() = wholeDocument && formatWholeDocument &&
+        (textFormat == DocumentFormat.Markdown || preferFormattedPdf)
     fun formatted(): FormattedExcerpt? = when {
         readingDocument != null && readingSelection != null -> selectedMarkdown(readingDocument, readingSelection)
         labelText != null -> FormattedExcerpt(excerptEscape(labelText), MarkdownPreviewDocument(

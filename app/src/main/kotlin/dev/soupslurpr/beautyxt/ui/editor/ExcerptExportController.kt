@@ -27,7 +27,8 @@ import dev.soupslurpr.beautyxt.ui.UiText
 import kotlinx.coroutines.*
 
 internal enum class ExcerptDestination { Copy, Share, Save, Qr, Nfc, Print }
-internal enum class ExcerptFormat { Text, Markdown, Pdf }
+internal enum class ExcerptFormat { Text, Markdown, Pdf, ReadingText }
+internal enum class ExportScope { Document, Selection }
 private val ExcerptViewportLimits = ViewportLimits(24, 4096, 16 * 1024)
 
 internal class PreparedExcerpt(
@@ -54,8 +55,11 @@ internal class ExcerptExportController(
     private val qrProcessor: QrTransferProcessor?,
     private val nfcProcessor: NfcTransferProcessor?,
     private val showQr: (QrCodeGrid, Long, DocumentFormat) -> Unit,
-    private val writeNfc: (NfcTransferEnvelope, Long, DocumentFormat, String?) -> Unit
+    private val writeNfc: (NfcTransferEnvelope, Long, DocumentFormat, String?) -> Unit,
+    private val captureDocument: (suspend () -> ExcerptCapture?)? = null
 ) : AutoCloseable {
+    var exportScope by mutableStateOf(ExportScope.Selection); private set
+    var sharesSourceFile by mutableStateOf(false); private set
     var visible by mutableStateOf(false); private set
     var busy by mutableStateOf(false); private set
     var handingOff by mutableStateOf(false); private set
@@ -84,9 +88,18 @@ internal class ExcerptExportController(
     private val shares = ExcerptShareCoordinator()
     private var activeShareId: String? = null
     val isStale get() = capture?.revision?.let { it != currentRevision() } == true
-    // Option changes can replace derived output only after the selection itself is captured.
+    // Option changes can replace derived output only after the source itself is captured.
     val canConfigure get() = visible && capture != null && !handingOff
     val canFormat get() = capture?.canFormat == true
+    val canGenerateMarkdown get() = canFormat && exportScope == ExportScope.Selection
+    val canExportReadingText get() = capture?.canExportReadingText == true
+    val formats get() = if (destination == ExcerptDestination.Print) listOf(ExcerptFormat.Pdf) else buildList {
+        add(ExcerptFormat.Text)
+        if (canGenerateMarkdown) add(ExcerptFormat.Markdown)
+        if (canExportReadingText) add(ExcerptFormat.ReadingText)
+        if (destination in listOf(ExcerptDestination.Share, ExcerptDestination.Save, ExcerptDestination.Print)) add(ExcerptFormat.Pdf)
+    }
+    val isSharingSourceFile get() = sharesSourceFile && format == ExcerptFormat.Text && shareAsFile
     val canPreviousPreview get() = previewCursors.size > 1
     val textBytes get() = prepared?.text?.metrics?.serializedByteLength
     val maximumBytes get() = when (destination) {
@@ -98,6 +111,10 @@ internal class ExcerptExportController(
     }
     val outputBytes get() = if (format == ExcerptFormat.Pdf) prepared?.pdf?.byteCount else textBytes
     val fits get() = outputBytes?.let { it <= maximumBytes } == true
+    fun fitsDestination(value: ExcerptDestination): Boolean = outputBytes?.let {
+        it <= if (value == ExcerptDestination.Share && !shareAsFile && format != ExcerptFormat.Pdf)
+            MAX_SHARED_TEXT_UTF8_BYTES else ExportProtocol.MAX_BYTE_LIMIT
+    } == true
     val requiresFileName get() = destination in listOf(ExcerptDestination.Save, ExcerptDestination.Print) ||
         destination == ExcerptDestination.Share && (shareAsFile || format == ExcerptFormat.Pdf)
     val validFileName get() = fileName.isNotBlank() && '/' !in fileName && '\\' !in fileName && !fileName.any { it.isISOControl() }
@@ -113,13 +130,16 @@ internal class ExcerptExportController(
         .setResolution(PrintAttributes.Resolution("excerpt", "PDF", 300, 300))
         .setColorMode(PrintAttributes.COLOR_MODE_COLOR).setMinMargins(PrintAttributes.Margins.NO_MARGINS).build()
 
-    fun open(context: Context, title: String) {
+    fun open(context: Context, title: String, exportScope: ExportScope = ExportScope.Selection,
+        sharesSourceFile: Boolean = false) {
         if (handingOff || !scope.isActive) return
         this.context = context.applicationContext
         this.title = title
+        this.exportScope = exportScope
+        this.sharesSourceFile = sharesSourceFile && exportScope == ExportScope.Document
         destination = ExcerptDestination.Share
         format = ExcerptFormat.Text
-        shareAsFile = false
+        shareAsFile = this.sharesSourceFile
         fileName = ""
         tagLabel = ""
         printDraft = defaultPrintSetupDraft(false)
@@ -146,14 +166,23 @@ internal class ExcerptExportController(
         val captureJob = scope.launch(start = CoroutineStart.LAZY) {
             var owned: ExcerptCapture? = null
             try {
-                owned = captureSelection() ?: error("Selection is unavailable")
+                owned = (if (exportScope == ExportScope.Document) captureDocument?.invoke()
+                    else captureSelection()) ?: error("Export content is unavailable")
                 ensureActive()
                 if (request != generation) return@launch
                 capture = owned; owned = null
                 if (resetOptions) {
                     format = defaultFormat(destination)
-                    printDraft = defaultPrintSetupDraft(canFormat && capture?.exactSource != true)
+                    printDraft = defaultPrintSetupDraft(canFormat && capture?.preferFormattedPdf == true)
                     updateSuggestedName()
+                } else {
+                    if (format !in formats) {
+                        format = defaultFormat(destination)
+                        updateSuggestedName()
+                    }
+                    if (!canFormat && printDraft.contentMode == PrintContentMode.FormattedMarkdown) {
+                        printDraft = printDraft.copy(contentMode = PrintContentMode.Source)
+                    }
                 }
                 busy = false
                 job = null
@@ -174,9 +203,16 @@ internal class ExcerptExportController(
         prepare()
     }
     fun selectFormat(value: ExcerptFormat) {
-        if (!canConfigure || format == value || value == ExcerptFormat.Markdown && !canFormat ||
-            value == ExcerptFormat.Pdf && destination in listOf(ExcerptDestination.Copy, ExcerptDestination.Qr, ExcerptDestination.Nfc)) return
+        if (!canConfigure || format == value || value !in formats) return
         format = value; updateSuggestedName(); prepare()
+    }
+
+    /** Share and Save use the same prepared bytes and never change the selected representation. */
+    fun usePreparedDestination(value: ExcerptDestination): Boolean {
+        require(value == ExcerptDestination.Share || value == ExcerptDestination.Save)
+        if (!canConfigure || prepared == null || isStale || busy || !validFileName || !fitsDestination(value)) return false
+        destination = value
+        return true
     }
     fun updateShareAsFile(value: Boolean) { if (canConfigure) { shareAsFile = value; prepare() } }
     fun updateFileName(value: String) {
@@ -190,7 +226,7 @@ internal class ExcerptExportController(
     fun updatePaperLetter(value: Boolean) { if (canConfigure) { paperLetter = value; prepare() } }
     private fun defaultFormat(destination: ExcerptDestination) = when {
         destination == ExcerptDestination.Print -> ExcerptFormat.Pdf
-        destination == ExcerptDestination.Save && canFormat && capture?.exactSource != true -> ExcerptFormat.Markdown
+        destination == ExcerptDestination.Save && canGenerateMarkdown && capture?.exactSource != true -> ExcerptFormat.Markdown
         else -> ExcerptFormat.Text
     }
     private fun updateSuggestedName() {
@@ -199,10 +235,11 @@ internal class ExcerptExportController(
         val extension = when (format) {
             ExcerptFormat.Pdf -> ".pdf"
             ExcerptFormat.Markdown -> ".md"
+            ExcerptFormat.ReadingText -> ".txt"
             ExcerptFormat.Text -> capture?.textFormat?.filenameExtension ?: ".txt"
         }
         val shortened = stem.take(200).let { if (it.lastOrNull()?.isHighSurrogate() == true) it.dropLast(1) else it }
-        fileName = shortened + " excerpt" + extension
+        fileName = shortened + (if (exportScope == ExportScope.Selection) " excerpt" else "") + extension
     }
 
     private fun prepare() {
@@ -226,14 +263,29 @@ internal class ExcerptExportController(
             var owned: PreparedExcerpt? = null
             try {
                 withContext(Dispatchers.Default) {
-                    val transformed = if (formatted) checkNotNull(captured.formatted()) else null
-                    ownedText = if (transformed != null) captureGeneratedExcerpt(transformed.markdown)
-                        else CapturedDocumentRevision(captured.plain.metrics, plain.duplicate())
+                    val transformed = if (formatted && !captured.wholeDocument) checkNotNull(captured.formatted()) else null
+                    val wholeModel = if (captured.wholeDocument && (formatted || outputFormat == ExcerptFormat.ReadingText))
+                        plain.duplicate().use { checkNotNull(renderer).render(it, captured.plain.metrics.serializedByteLength) }
+                        else null
+                    ownedText = when {
+                        outputFormat == ExcerptFormat.ReadingText -> {
+                            val model = checkNotNull(wholeModel)
+                            val last = model.blocks.indexOfLast { !it.illustrationContinuation && it.text.isNotEmpty() }
+                            val text = if (last < 0) "" else selectedReadingText(model,
+                                DocumentSelection.Reading(captured.revision,
+                                    ReadingPoint(0, -readingListPrefix(model.blocks[0]).length),
+                                    ReadingPoint(last, model.blocks[last].text.length)), MAX_EXCERPT_MARKDOWN_BYTES)
+                            captureGeneratedExcerpt(text)
+                        }
+                        transformed != null -> captureGeneratedExcerpt(transformed.markdown)
+                        else -> CapturedDocumentRevision(captured.plain.metrics, plain.duplicate())
+                    }
                     val text = checkNotNull(ownedText)
-                    val model = if (transformed != null) text.snapshot.duplicate().use {
+                    val model = if (formatted && wholeModel != null) wholeModel else if (transformed != null) text.snapshot.duplicate().use {
                         checkNotNull(renderer).render(it, text.metrics.serializedByteLength)
                     } else null
-                    owned = PreparedExcerpt(text, if (formatted) DocumentFormat.Markdown else captured.textFormat,
+                    owned = PreparedExcerpt(text, if (outputFormat == ExcerptFormat.ReadingText) DocumentFormat.PlainText
+                        else if (formatted) DocumentFormat.Markdown else captured.textFormat,
                         model, transformed?.notices.orEmpty(), printSettings)
                     ownedText = null
                     val payload = checkNotNull(owned)

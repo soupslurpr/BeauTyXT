@@ -59,6 +59,23 @@ internal fun verifyExcerptPreparation(context: Context) = runBlocking {
         }
     }
 
+    var formattingAvailable = true
+    exercise(captureSelection = {
+        if (formattingAvailable) capture() else ExcerptCapture(
+            7, captureGeneratedExcerpt("Exact source"), true, dev.soupslurpr.beautyxt.document.DocumentFormat.PlainText, null, null)
+    }) { controller ->
+        withContext(Dispatchers.Main) { controller.open(context, "Refresh.md") }
+        ready(controller)
+        withContext(Dispatchers.Main) { controller.selectFormat(ExcerptFormat.Markdown) }
+        ready(controller)
+        withContext(Dispatchers.Main) { formattingAvailable = false; controller.refresh() }
+        ready(controller)
+        withContext(Dispatchers.Main) {
+            check(controller.format == ExcerptFormat.Text && controller.format in controller.formats)
+            check(controller.printDraft.contentMode == dev.soupslurpr.beautyxt.printing.PrintContentMode.Source)
+        }
+    }
+
     var retainedCaptures = 0
     val preparationAttempts = java.util.concurrent.atomic.AtomicInteger()
     val retryRenderer = MarkdownRenderer { snapshot, bytes ->

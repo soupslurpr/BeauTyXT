@@ -189,10 +189,9 @@ internal fun DocumentEditor(
     }
     val requestSend = {
         if (sendEnabled) {
-            session.flushPendingEdit()
             focusManager.clearFocus(force = true)
             softwareKeyboardController?.hide()
-            activeSheet = DocumentToolSheet.Send
+            session.openDocumentExport(context)
         }
     }
     val accessibilityManager = LocalAccessibilityManager.current
@@ -212,12 +211,6 @@ internal fun DocumentEditor(
     }
     val requestSave = {
         if (session.showSaveFormatSelection()) {
-            focusManager.clearFocus(force = true)
-            softwareKeyboardController?.hide()
-        }
-    }
-    val requestSaveCopy = {
-        if (session.showSaveCopyFormatSelection()) {
             focusManager.clearFocus(force = true)
             softwareKeyboardController?.hide()
         }
@@ -260,24 +253,6 @@ internal fun DocumentEditor(
             softwareKeyboardController?.hide()
         }
     }
-    val requestPrint = {
-        if (session.showPrintSetup()) {
-            focusManager.clearFocus(force = true)
-            softwareKeyboardController?.hide()
-        }
-    }
-    val requestQrShare = {
-        if (session.requestQrShare()) {
-            focusManager.clearFocus(force = true)
-            softwareKeyboardController?.hide()
-        }
-    }
-    val requestNfcWrite = {
-        if (session.requestNfcWrite()) {
-            focusManager.clearFocus(force = true)
-            softwareKeyboardController?.hide()
-        }
-    }
     val requestTextEditor = {
         session.showTextEditor()
         focusManager.clearFocus(force = true)
@@ -292,6 +267,8 @@ internal fun DocumentEditor(
     }
     val requestBack = {
         when {
+            session.excerptExport.visible -> session.excerptExport.dismiss()
+
             activeSheet != null -> activeSheet = null
 
             isOverflowExpanded -> isOverflowExpanded = false
@@ -378,6 +355,7 @@ internal fun DocumentEditor(
             (!session.hasPendingEditWindowAction || session.canCancelPendingEditWindowAction)
     val backClosesDocument =
         when {
+            session.excerptExport.visible -> false
             activeSheet != null -> false
             isOverflowExpanded -> false
             session.isFileInfoVisible -> false
@@ -599,6 +577,7 @@ internal fun DocumentEditor(
         session.isDiscardConfirmationVisible,
         session.isFileInfoVisible,
         session.isPrintSetupVisible,
+        session.excerptExport.visible,
         session.sourceConflictResolution
     ) {
         if (
@@ -606,6 +585,7 @@ internal fun DocumentEditor(
             session.isDiscardConfirmationVisible ||
             session.isFileInfoVisible ||
             session.isPrintSetupVisible ||
+            session.excerptExport.visible ||
             session.sourceConflictResolution != null
         ) {
             softwareKeyboardController?.hide()
@@ -627,18 +607,6 @@ internal fun DocumentEditor(
     if (session.isFileInfoVisible) {
         FileInfoSheet(session = session, onDismiss = session::dismissFileInfo)
     }
-    if (activeSheet == DocumentToolSheet.Send) {
-        DocumentSendSheet(
-            session = session,
-            nfcAvailable = writeNfcEnabled,
-            onShare = requestShare,
-            onQrShare = requestQrShare,
-            onNfcWrite = requestNfcWrite,
-            onPrint = requestPrint,
-            onSaveCopy = requestSaveCopy,
-            onDismiss = { activeSheet = null }
-        )
-    }
     if (!wideTools && activeSheet == DocumentToolSheet.Contents && readyPreview != null) {
         DocumentOutlineSheet(
             title = session.title,
@@ -654,7 +622,7 @@ internal fun DocumentEditor(
     if (session.isPrintSetupVisible) {
         PrintSetupSheet(session)
     }
-    ExcerptExportSheet(session.excerptExport, writeNfcEnabled)
+    ExcerptExportSheet(session.excerptExport, writeNfcEnabled, onShareSourceFile = requestShare)
     session.sourceConflictResolution?.let { resolution ->
         SourceConflictConfirmationDialog(
             resolution = resolution,

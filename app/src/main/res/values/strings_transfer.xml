@@ -33,14 +33,6 @@
     <string name="line_number">Line number</string>
     <string name="share_file">Share file</string>
     <string name="share_text">Share text</string>
-    <string name="share_file_description">Send the saved file to another app</string>
-    <string name="share_text_description">Send the current text to another app</string>
-    <string name="share_qr">Show QR code</string>
-    <string name="share_nfc">Write NFC tag</string>
-    <string name="share_nfc_unavailable">NFC isn\'t available on this device</string>
-    <string name="share_print">Print or PDF</string>
-    <string name="share_print_description">Choose layout, margins, and page numbers</string>
-    <string name="share_copy_description">Keep the original file unchanged</string>
     <string name="transfer_checking">Checking current text size…</string>
     <string name="nfc_label_example" translatable="false">A27</string>
     <string name="qr_share_capacity">%1$s · %2$s of %3$s bytes</string>

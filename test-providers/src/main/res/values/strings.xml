@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">BeauTyXT test providers</string>
     <string name="excerpt_receiver">Excerpt test receiver</string>
-    <string name="excerpt_receiver_ready">Receiver ready; UID %1$d</string>
+    <string name="excerpt_receiver_ready">Receiver ready; UID %1$d; instance %2$d</string>
     <string name="excerpt_read">Read excerpt now</string>
     <string name="excerpt_recreate">Recreate excerpt receiver</string>
     <string name="excerpt_hold">Keep excerpt handle open</string>
@@ -10,5 +10,8 @@
     <string name="excerpt_read_held">Read held excerpt handle</string>
     <string name="excerpt_receiver_finish">Finish excerpt receiver</string>
     <string name="excerpt_read_denied">Excerpt read denied</string>
-    <string name="excerpt_read_result">Read %1$d bytes; SHA-256 %2$s; UID %3$d; %4$s</string>
+    <plurals name="excerpt_read_result">
+        <item quantity="one">Read %1$d byte; SHA-256 %2$s; UID %3$d; %4$s</item>
+        <item quantity="other">Read %1$d bytes; SHA-256 %2$s; UID %3$d; %4$s</item>
+    </plurals>
 </resources>

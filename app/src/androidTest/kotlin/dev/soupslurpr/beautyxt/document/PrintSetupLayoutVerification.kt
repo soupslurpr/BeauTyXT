@@ -97,16 +97,16 @@ private fun Instrumentation.verifyCompactPrintSetupAtScale(fontScale: Float) {
         awaitPrintLayoutCondition { session.canStartPrint }
         waitForEditField()
         requireActionableContentDescription("Send and export").performRequiredClick()
-        revealScrollableAction("Print or PDF").performRequiredClick()
-        awaitPrintLayoutCondition { session.printSetupDraft != null }
+        revealScrollableAction("PDF").performRequiredClick()
+        revealScrollableAction("Page settings").performRequiredClick()
+        awaitPrintLayoutCondition { session.excerptExport.visible }
         // A new modal can expose semantics while its entering animation still moves the viewport.
         SystemClock.sleep(500L)
         waitForAccessibilityIdle()
-        for ((section, label, value) in listOf(
-            Triple("Margins", "Top", "0.75"),
-            Triple("Text", "Text size", "14")
+        for ((label, value) in listOf(
+            "Text size" to "14",
+            "Top" to "0.75"
         )) {
-            revealScrollableAction(section).performRequiredClick()
             val field = revealScrollableNode("print $label at scale $fontScale") { root ->
                 root.findPrintField(label)
             }
@@ -140,8 +140,8 @@ private fun Instrumentation.verifyCompactPrintSetupAtScale(fontScale: Float) {
                 )
             ) { "print $label rejected input" }
             awaitPrintLayoutCondition {
-                val draft = session.printSetupDraft
-                if (label == "Top") draft?.topMargin == value else draft?.fontSize == value
+                val draft = session.excerptExport.printDraft
+                if (label == "Top") draft.topMargin == value else draft.fontSize == value
             }
             SystemClock.sleep(150L)
             waitForAccessibilityIdle()
@@ -150,15 +150,17 @@ private fun Instrumentation.verifyCompactPrintSetupAtScale(fontScale: Float) {
             awaitPrintLayoutCondition {
                 uiAutomation.windows.none { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
             }
-            check(session.printSetupDraft != null) { "keyboard dismissal closed print setup" }
+            check(session.excerptExport.visible) { "keyboard dismissal closed export" }
         }
-        val printAction = revealScrollableAction("Open print screen")
-        check(Rect().also(printAction::getBoundsInScreen).height() >= 48 * density - 1) {
-            "print action is clipped at scale $fontScale"
+        revealScrollableAction("Done").performRequiredClick()
+        waitForAccessibilityNode("full-size PDF action at scale $fontScale") { node ->
+            node.isVisibleToUser && node.isClickable &&
+                node.findNode { it.text?.toString() == "Save PDF" } != null &&
+                Rect().also(node::getBoundsInScreen).height() >= 48 * density - 1
         }
         capturePrintLayout("$fontScale-actions")
-        revealScrollableAction("Cancel").performRequiredClick()
-        awaitPrintLayoutCondition { session.printSetupDraft == null }
+        check(uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK))
+        awaitPrintLayoutCondition { !session.excerptExport.visible }
         check(!session.state.hasDocumentChanges) { "print setup changed the source" }
     } catch (failure: Throwable) {
         runCatching { capturePrintLayout("$fontScale-failure") }

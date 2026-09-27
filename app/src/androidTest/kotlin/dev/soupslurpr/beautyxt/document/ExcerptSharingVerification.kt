@@ -25,7 +25,7 @@ internal fun Instrumentation.verifyExcerptSharing() {
     fun shareAction() {
         waitForAccessibilityNode("share excerpt action") { node ->
             node.isEnabled && node.isClickable && !node.isCheckable &&
-                node.findNode { it.text?.toString() == "Android share" } != null
+                node.findNode { it.text?.toString() in setOf("Share text", "Share file", "Share PDF") } != null
         }.performRequiredClick()
     }
     fun openChooser() {

@@ -212,7 +212,11 @@ internal fun Instrumentation.verifyNoticeScrollInsets() {
         }
         waitForAccessibilityIdle()
         repeat(2) {
-            val body = waitForAccessibilityNode("license scroll viewport") { it.isScrollable }
+            val body = waitForAccessibilityNode("ready license scroll viewport") { node ->
+                node.isVisibleToUser && node.isScrollable && node.actionList.any { action ->
+                    action.id == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                }
+            }
             val back = waitForAccessibilityNode("license navigation") { node ->
                 node.contentDescription?.toString() == "Back"
             }
@@ -960,6 +964,9 @@ internal fun Instrumentation.verifyEditorToolbarInteractions() {
             )
         ) { "could not enter the toolbar draft" }
         waitForImeVisibility(activity, visible = true)
+        // IME visibility changes before the toolbar finishes changing its layout.
+        waitForAccessibilityIdle()
+        uiAutomation.clearCache()
         waitForAccessibilityNode("enabled toolbar Undo") { node ->
             node.contentDescription?.toString() == "Undo" && node.isEnabled
         }
@@ -1029,20 +1036,22 @@ internal fun Instrumentation.verifyEditorToolbarInteractions() {
         }
         requireActiveActivity(activity, "toolbar actions closed the unsaved document")
         requireActionableContentDescription("Send and export").performRequiredClick()
-        requireActionableText("Print or PDF").performRequiredClick()
+        requireActionableText("PDF").performRequiredClick()
+        requireActionableText("Page settings").performRequiredClick()
         waitForAccessibilityNode("source print explanation") { node ->
             node.text?.toString() == "Prints the text as written, including any Markdown syntax."
         }
-        requireActionableText("Formatted Markdown").performRequiredClick()
+        requireActionableText("Formatted PDF").performRequiredClick()
         waitForAccessibilityNode("formatted print explanation") { node ->
             node.text?.toString() == activity.getString(R.string.print_formatted_description)
         }
-        requireActionableText("Source text").performRequiredClick()
+        requireActionableText("Source-text PDF").performRequiredClick()
         waitForAccessibilityNode("restored source print explanation") { node ->
             node.text?.toString() == "Prints the text as written, including any Markdown syntax."
         }
-        check(requireActionableText("Open print screen").isVisibleToUser) {
-            "print action is not visible before scrolling setup"
+        requireActionableText("Done").performRequiredClick()
+        check(requireActionableText("Save PDF").isVisibleToUser) {
+            "PDF action is not visible before scrolling the preview"
         }
         val printOptions = uiAutomation.rootInActiveWindow?.findNode { node ->
             node.isScrollable && node.actionList.any { action ->
@@ -1055,10 +1064,10 @@ internal fun Instrumentation.verifyEditorToolbarInteractions() {
             }
         }
         waitForAccessibilityIdle()
-        check(requireActionableText("Open print screen").isVisibleToUser) {
-            "print action scrolled away with the options"
+        check(requireActionableText("Save PDF").isVisibleToUser) {
+            "PDF action scrolled away with the preview"
         }
-        requireActionableText("Cancel").performRequiredClick()
+        injectBackKey()
         requireActiveActivity(activity, "cancelling print setup closed the document")
     } finally {
         currentActivity?.let { activity ->

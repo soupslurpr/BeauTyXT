@@ -95,7 +95,7 @@ adb -s SERIAL install -r -t \
 adb -s SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
 adb -s SERIAL install -r -t \
     app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-adb -s SERIAL shell am instrument -w -r \
+adb -s SERIAL shell am instrument --user 0 -w -r \
     dev.soupslurpr.beautyxt.debug.test/dev.soupslurpr.beautyxt.document.DocumentBridgeInstrumentation
 ```
 
@@ -162,7 +162,15 @@ returning to Home in the same activity. The staging background-checkpoint
 phases also require a docked on-screen keyboard that resizes the editor; a
 floating or handwriting panel does not satisfy their keyboard-visibility check.
 The `excerpt sharing` phase uses the helper APK as a separate-UID receiver for
-grant, cancellation, delayed-read, and capacity-recovery checks. The opt-in
+grant, cancellation, delayed-read, and capacity-recovery checks.
+The `whole document export` phase checks the latest editor draft, unchanged
+selection boundaries, exact BOM and CRLF bytes, content beyond the editing
+window, destination size limits, and whole-document PDF links. It verifies that
+switching between Share and Save retains the previewed bytes and checks a PDF
+save against the separate-UID provider's digest. `compact print setup` exercises
+the export settings with a real landscape keyboard; repeat it in a fresh
+instrumentation process at enlarged system font sizes.
+The opt-in
 `physical NFC excerpt` phase requires NFC enabled and a writable spare tag. It
 writes only `BeauTyXT NFC excerpt test.` with label `TEST`, then waits for a
 second tap through the production reader and checks the exact selected text.
