@@ -3,10 +3,14 @@ package dev.soupslurpr.beautyxt.document
 
 import android.accessibilityservice.AccessibilityService
 import android.app.Instrumentation
+import android.app.UiAutomation
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Bundle
 import android.os.SystemClock
+import android.provider.Settings
+import android.view.WindowInsets
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -18,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.HomeActivity
@@ -25,6 +30,7 @@ import dev.soupslurpr.beautyxt.markdown.client.IsolatedMarkdownRenderer
 import dev.soupslurpr.beautyxt.ui.designsystem.BeauTyXTTheme
 import dev.soupslurpr.beautyxt.ui.editor.DocumentEditor
 import dev.soupslurpr.beautyxt.ui.editor.EditorDocumentState
+import dev.soupslurpr.beautyxt.ui.editor.EditorPresentation
 import dev.soupslurpr.beautyxt.ui.editor.EditorSession
 import dev.soupslurpr.beautyxt.ui.editor.FindStatus
 import kotlin.math.roundToInt
@@ -145,12 +151,12 @@ internal fun Instrumentation.verifyCompactEditorControls() {
             awaitCompactFindMatch(session, if (index == 0) 11L else 0L)
         }
         waitForAccessibilityIdle()
-        requireActionableText("Options and results").performRequiredClick()
-        awaitReadingCondition("compact options did not expand") { session.isFindResultsExpanded }
+        requireActionableContentDescription("Search options").performRequiredClick()
         val matchCase = requireActionableText("Match case")
         requireControlBounds(matchCase, minimumTouchPixels, (width.value.value * density).roundToInt())
         matchCase.performRequiredClick()
         awaitReadingCondition("Match case did not refresh") { session.isFindComplete && session.isFindCaseSensitive }
+        requireActionableText("Done").performRequiredClick()
         requireActionableContentDescription("Next match").performRequiredClick()
         awaitCompactFindMatch(session, 0L)
         requireActionableContentDescription("Clear search").performRequiredClick()
@@ -180,6 +186,58 @@ internal fun Instrumentation.verifyCompactEditorControls() {
             session.close()
         }
         waitForAccessibilityIdle()
+    }
+    verifyLandscapeFindInput()
+}
+
+/** Keeps both fields and match navigation fully above a real landscape keyboard. */
+private fun Instrumentation.verifyLandscapeFindInput() {
+    val resolver = targetContext.contentResolver
+    val rotation = Settings.System.getInt(resolver, Settings.System.USER_ROTATION, 0)
+    val automatic = Settings.System.getInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 1) != 0
+    try {
+        startActivitySync(Intent(targetContext, HomeActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        check(uiAutomation.setRotation(UiAutomation.ROTATION_FREEZE_90))
+        awaitReadingCondition("Find fixture did not rotate") {
+            targetContext.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        }
+        withReadingPage(COMPACT_EDITOR_TEXT, initialPresentation = EditorPresentation.Text) { activity, session ->
+            runOnMainSync {
+                session.showFind()
+                session.showReplace(showKeyboard = true)
+                session.updateFindFieldValue(TextFieldValue(COMPACT_EDITOR_QUERY))
+                session.updateReplacementFieldValue(TextFieldValue("new text"))
+            }
+            waitForImeVisibility(activity, visible = true)
+            awaitReadingCondition("landscape matches did not finish") { session.isFindComplete }
+            waitForAccessibilityIdle()
+            val decor = activity.window.decorView
+            val keyboardTop = decor.height - checkNotNull(decor.rootWindowInsets).getInsets(WindowInsets.Type.ime()).bottom
+            val density = activity.resources.displayMetrics.density
+            val minimum = (48 * density).roundToInt() - ACCESSIBILITY_BOUNDS_ROUNDING_PIXELS
+            val controls = listOf(waitForFindQuery(COMPACT_EDITOR_QUERY),
+                waitForAccessibilityNode("landscape replacement field") { it.isEditable && it.text?.toString() == "new text" },
+                requireActionableContentDescription("Search options"),
+                requireActionableContentDescription("More Find actions"),
+                requireActionableContentDescription("Results. 2 matches. Show all matches"),
+                requireActionableContentDescription("Previous match"),
+                requireActionableContentDescription("Next match"),
+                requireActionableText("Done"))
+            for (control in controls) {
+                val bounds = Rect().also(control::getBoundsInScreen)
+                check(bounds.width() >= minimum && bounds.height() >= minimum && bounds.bottom <= keyboardTop) {
+                    "Landscape Find control was clipped: $bounds; keyboard begins at $keyboardTop"
+                }
+            }
+            requireActionableText("Done").performRequiredClick()
+            waitForImeVisibility(activity, visible = false)
+            requireActionableText("Review all").performRequiredClick()
+            requireActionableText("Apply 2 replacements")
+        }
+    } finally {
+        check(uiAutomation.setRotation(rotation))
+        if (automatic) check(uiAutomation.setRotation(UiAutomation.ROTATION_UNFREEZE))
     }
 }
 

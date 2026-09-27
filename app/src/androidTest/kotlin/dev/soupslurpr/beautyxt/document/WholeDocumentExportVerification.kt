@@ -1,20 +1,26 @@
 package dev.soupslurpr.beautyxt.document
 
 import android.app.Instrumentation
+import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
+import android.os.Bundle
 import android.os.ParcelFileDescriptor
+import android.view.accessibility.AccessibilityNodeInfo
 import dev.soupslurpr.beautyxt.exporting.client.StatelessExportTestSinks
 import dev.soupslurpr.beautyxt.ipc.SealedInput
 import dev.soupslurpr.beautyxt.markdown.client.IsolatedMarkdownRenderer
 import dev.soupslurpr.beautyxt.sharing.readSharedTextSnapshot
 import dev.soupslurpr.beautyxt.ui.editor.*
+import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.*
 
 /** Uses the real editor, immutable native snapshots, PDF renderer, and a separate-UID save sink. */
 internal fun Instrumentation.verifyWholeDocumentExport() {
-    verifyWholeSourceBytes()
+    verifyNewDocumentMarkdownExport()
+    verifyWholeSourceBytes("Exact.md")
+    verifyWholeSourceBytes("Exact.txt")
     val markdown = "# Whole document\n\nBefore the selection.\n\n" +
         "Selected **passage** with [web](https://example.com/guide) and [heading](#whole-document).\n\n" +
         "After the selection."
@@ -127,13 +133,55 @@ internal fun Instrumentation.verifyWholeDocumentExport() {
     }
 }
 
-private fun Instrumentation.verifyWholeSourceBytes() {
+/** Starts from the actual Home action, without a filename or Markdown format hint. */
+private fun Instrumentation.verifyNewDocumentMarkdownExport() {
+    val source = "# Fresh note\n\nA **bold** start with a Unicode leaf: 🍃.\n"
+    val home = startHomeDestination("New document")
+    try {
+        check(waitForEditField().performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, source)
+        }))
+        waitForEditorText(source)
+        requireActionableContentDescription("Send and export").performRequiredClick()
+        requireActionableText("Markdown").performRequiredClick()
+        waitForAccessibilityNode("new Markdown filename") { it.text?.toString() == "New document.md" }
+        requireActionableText("Send as file").performRequiredClick()
+        waitForAccessibilityIdle()
+        val screenshot = checkNotNull(uiAutomation.takeScreenshot())
+        try {
+            File(targetContext.cacheDir, "new-document-markdown-export.png").outputStream().use {
+                check(screenshot.compress(Bitmap.CompressFormat.PNG, 100, it))
+            }
+        } finally { screenshot.recycle() }
+        requireActionableText("Share file").performRequiredClick()
+        requireActionableText("Excerpt test receiver").performRequiredClick()
+        requireActionableText("Read excerpt now").performRequiredClick()
+        val bytes = source.toByteArray()
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        waitForAccessibilityNode("new document shared as exact Markdown bytes") {
+            val text = it.text?.toString().orEmpty()
+            "Read ${bytes.size} bytes; SHA-256 $digest;" in text &&
+                "text/markdown / New document.md / read-only" in text
+        }
+        requireActionableText("Finish excerpt receiver").performRequiredClick()
+        requireActionableText("Plain text").performRequiredClick()
+        waitForAccessibilityNode("plain text choice remains available") { it.text?.toString() == "New document.txt" }
+        requireActionableContentDescription("Close").performRequiredClick()
+        waitForEditorText(source)
+        waitForAccessibilityNode("export did not require saving the new document") { it.text?.toString() == "Not saved" }
+    } finally {
+        runOnMainSync { home.finishAndRemoveTask() }
+        waitForAccessibilityIdle()
+    }
+}
+
+private fun Instrumentation.verifyWholeSourceBytes(title: String) {
     val original = "\uFEFF# Exact source\r\n\r\nA **bold** word.\r\n".toByteArray()
     val document = SealedInput.fromBytes(original, original.size.toLong()).use { input ->
         input.takeReader().use { RustDocument.openSource(it.fd, original.size.toLong()) }
     }
-    val session = EditorSession("Exact.md", EditorDocumentState(document),
-        markdownRenderer = IsolatedMarkdownRenderer(targetContext))
+    val session = EditorSession(title, EditorDocumentState(document),
+        markdownRenderer = if (title.endsWith(".md")) IsolatedMarkdownRenderer(targetContext) else null)
     try {
         runOnMainSync { session.openInitialEditor() }
         awaitReadingCondition("exact source did not open") { session.activeDraft != null }
@@ -141,9 +189,21 @@ private fun Instrumentation.verifyWholeSourceBytes() {
         val export = session.excerptExport
         awaitExport(export)
         check(export.preparedText().toByteArray().contentEquals(original)) { "Whole export changed the BOM or CRLF bytes" }
-        runOnMainSync { export.dismiss(); export.open(targetContext, "Exact.md", ExportScope.Document, sharesSourceFile = true) }
+        runOnMainSync { export.dismiss(); export.open(targetContext, title, ExportScope.Document, sharesSourceFile = true) }
         awaitExport(export)
         check(export.isSharingSourceFile && export.shareAsFile)
+        if (title.endsWith(".txt")) {
+            runOnMainSync { export.selectFormat(ExcerptFormat.Markdown) }
+            awaitExport(export)
+            check(export.format == ExcerptFormat.Markdown && export.mimeType == "text/markdown" && export.fileName == "Exact.md")
+            check(export.preparedText().toByteArray().contentEquals(original)) { "Markdown export rewrote the source bytes" }
+            check(!export.isSharingSourceFile && export.prepared?.formatted == null) {
+                "Explicit Markdown output tried to share the original text file or required rendering"
+            }
+            runOnMainSync { export.refresh() }
+            awaitExport(export)
+            check(export.format == ExcerptFormat.Markdown && export.fileName == "Exact.md")
+        }
         runOnMainSync { export.selectFormat(ExcerptFormat.Pdf) }
         awaitExport(export)
         check(!export.isSharingSourceFile && export.prepared?.pdf != null)

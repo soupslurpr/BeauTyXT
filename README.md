@@ -17,10 +17,17 @@ Requires **Android 17 / API 37**. The interface is currently English-only.
   browser or JavaScript.
 - Move between rendered Markdown and source editing while keeping your place.
   Navigate long documents with Contents, document-wide Find, and Go to line.
+- Keep Find and Replace above the document. Open Search options directly,
+  browse Results with surrounding text, and review or exclude replacements
+  before applying a batch. **Undo replacement** reverses the applied change.
 - Edit with undo, redo, and automatic saving to compatible source files.
 - Share through Android, QR codes, or NFC tags. Save generated QR images as
   lossless WebP or PNG.
 - Preview and share or save a whole document or a selection from **Send & export**.
+  Share comes first, with **Save a copy** underneath and visible QR code, NFC,
+  Copy, and Print actions. Selected text includes a short excerpt, and PDFs
+  show their page count and paper size. **Preview and settings** opens detailed
+  review; PDFs use **Preview and page settings**.
   Share PDFs directly, save them to a chosen provider, or open Android's print
   screen. Choose source or formatted output, paper size, margins, font and size,
   a filename header, and page numbers.

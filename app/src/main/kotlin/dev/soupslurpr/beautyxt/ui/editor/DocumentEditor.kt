@@ -62,6 +62,7 @@ import dev.soupslurpr.beautyxt.ui.rememberPredictiveBackMotionState
 import kotlinx.coroutines.delay
 
 private const val SAVE_SUCCESS_TIMEOUT_MILLIS = 3_000L
+private const val REPLACEMENT_UNDO_TIMEOUT_MILLIS = 4_000L
 
 /** Displays a virtualized, bidirectionally paginated document editor. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -141,6 +142,7 @@ internal fun DocumentEditor(
     val imeBackReservation = remember { ImeBackReservation() }
     var isOverflowExpanded by remember { mutableStateOf(false) }
     var activeSheet by retain(session) { mutableStateOf<DocumentToolSheet?>(null) }
+    var findOptionsVisible by retain(session) { mutableStateOf(false) }
     var contentsOpenedAtFindReveal by retain(session) { mutableLongStateOf(0L) }
     val requestContents = {
         contentsOpenedAtFindReveal = session.findRevealRequest
@@ -168,7 +170,32 @@ internal fun DocumentEditor(
     val useInlineFindStatus = session.isFindVisible && useLandscapeImeLayout
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    val windowInfo = LocalWindowInfo.current
     val documentFocus = remember(session) { DocumentFocus() }
+    val fullFindResults = session.isFindVisible && session.isFindResultsExpanded && !wideTools
+    val returnFromFindResults = {
+        focusManager.clearFocus(force = true)
+        softwareKeyboardController?.hide()
+        session.focusFindDocument()
+        session.updateFindResultsExpanded(false)
+    }
+    val editFindQuery = {
+        focusManager.clearFocus(force = true)
+        session.showFind()
+        Unit
+    }
+    val requestFindOptions = {
+        focusManager.clearFocus(force = true)
+        softwareKeyboardController?.hide()
+        findOptionsVisible = true
+    }
+    LaunchedEffect(session, session.findResultsPage, session.findInputFocus, session.findFocusRequest, windowInfo.isWindowFocused) {
+        if (session.isFindVisible && !session.isFindResultsExpanded && session.findInputFocus == FindInputFocus.Document &&
+            windowInfo.isWindowFocused) {
+            // Menus own a separate window until their exit animation finishes.
+            documentFocus.request { session.findInputFocus == FindInputFocus.Document && windowInfo.isWindowFocused }
+        }
+    }
     var restoreFocusAfterFind by remember(session) { mutableStateOf(false) }
     LaunchedEffect(session, session.isFindVisible) {
         val restore = restoreFocusAfterFind && !session.isFindVisible
@@ -260,6 +287,7 @@ internal fun DocumentEditor(
         Unit
     }
     val closeFind = {
+        findOptionsVisible = false
         session.closeFind()
         focusManager.clearFocus(force = true)
         softwareKeyboardController?.hide()
@@ -268,6 +296,11 @@ internal fun DocumentEditor(
     val requestBack = {
         when {
             session.excerptExport.visible -> session.excerptExport.dismiss()
+
+            findOptionsVisible -> {
+                findOptionsVisible = false
+                session.focusFindDocument()
+            }
 
             activeSheet != null -> activeSheet = null
 
@@ -291,6 +324,8 @@ internal fun DocumentEditor(
             session.isFileInfoVisible -> session.dismissFileInfo()
 
             session.isPrintSetupVisible -> session.dismissPrintSetup()
+
+            session.isFindVisible && session.isFindResultsExpanded -> returnFromFindResults()
 
             session.isFindVisible -> closeFind()
 
@@ -356,6 +391,7 @@ internal fun DocumentEditor(
     val backClosesDocument =
         when {
             session.excerptExport.visible -> false
+            findOptionsVisible -> false
             activeSheet != null -> false
             isOverflowExpanded -> false
             session.isFileInfoVisible -> false
@@ -434,6 +470,15 @@ internal fun DocumentEditor(
         delay(timeoutMillis)
         session.retireSaveSuccess(currentSuccess.request.generation)
     }
+    LaunchedEffect(session, session.replacementUndoNoticeRevision) {
+        val revision = session.replacementUndoNoticeRevision ?: return@LaunchedEffect
+        val timeout = accessibilityManager?.calculateRecommendedTimeoutMillis(
+            originalTimeoutMillis = REPLACEMENT_UNDO_TIMEOUT_MILLIS,
+            containsIcons = false, containsText = true, containsControls = false
+        ) ?: REPLACEMENT_UNDO_TIMEOUT_MILLIS
+        delay(timeout)
+        session.retireReplacementUndoNotice(revision)
+    }
     Surface(
         modifier =
             modifier
@@ -452,7 +497,7 @@ internal fun DocumentEditor(
                         event.key == Key.F3 -> {
                             if (event.isShiftPressed) session.findPrevious() else session.findNext(); true
                         }
-                        event.key == Key.Escape && session.isFindVisible -> { closeFind(); true }
+                        event.key == Key.Escape && session.isFindVisible -> { requestBack(); true }
                         event.key == Key.Escape && session.documentSelection != null -> { session.clearDocumentSelection(); true }
                         else -> false
                     }
@@ -488,13 +533,14 @@ internal fun DocumentEditor(
                     )
                     .imePadding()
         ) {
-            if (!useImeFocusLayout) {
+            if (!useImeFocusLayout && !fullFindResults) {
                 EditorChromeSurface {
                     if (session.isFindVisible) {
                         EditorFindChrome(
                             session = session,
                             useInlineStatus = useInlineFindStatus,
-                            onClose = closeFind
+                            onClose = closeFind,
+                            onOptions = requestFindOptions
                         )
                     } else {
                         EditorTopBar(
@@ -523,7 +569,7 @@ internal fun DocumentEditor(
                     }
                 }
             }
-            EditorLocationControls(session)
+            if (!session.isFindVisible) EditorLocationFeedback(session)
             BoxWithConstraints(Modifier.weight(1f)) {
                 val wideFind = maxWidth >= 840.dp
                 val contentsPane = activeSheet == DocumentToolSheet.Contents && readyPreview != null
@@ -546,19 +592,16 @@ internal fun DocumentEditor(
                                 }
                                 if (contentsPane) DocumentOutlineContent(session.title, readyPreview.layout.outline,
                                     session.markdownPreviewListState, { session.navigateToHeading(readyPreview.revision, it) }, Modifier.weight(1f))
-                                else EditorFindResults(session, wide = true, Modifier.weight(1f))
+                                else EditorFindResults(session, wide = true, Modifier.weight(1f),
+                                    onReturn = returnFromFindResults, onEditSearch = editFindQuery)
                             }
                         }
                 } else if (session.isFindVisible && session.isFindResultsExpanded) {
-                    if (!session.isReplaceVisible && maxHeight >= 500.dp) {
-                        Column(Modifier.fillMaxSize()) {
-                            EditorBody(session, activeDraft, requestSave, restartExplicitSave, Modifier.weight(0.4f), documentFocus)
-                            EditorFindResults(session, wide = false, Modifier.weight(0.6f))
-                        }
-                    } else EditorFindResults(session, wide = false, Modifier.fillMaxSize())
+                    EditorFindResults(session, wide = false, Modifier.fillMaxSize(),
+                        onReturn = returnFromFindResults, onEditSearch = editFindQuery)
                 } else EditorBody(session, activeDraft, requestSave, restartExplicitSave, Modifier.fillMaxSize(), documentFocus)
             }
-            if (session.documentSelection != null) DocumentSelectionActions(session)
+            if (session.documentSelection != null && !fullFindResults) DocumentSelectionActions(session)
             else if (!useImeFocusLayout && !session.isFindVisible && state.metrics != null) {
                 EditorActionBar(
                     session = session,
@@ -606,6 +649,12 @@ internal fun DocumentEditor(
     }
     if (session.isFileInfoVisible) {
         FileInfoSheet(session = session, onDismiss = session::dismissFileInfo)
+    }
+    if (session.isFindVisible && findOptionsVisible) {
+        EditorFindOptions(session) {
+            findOptionsVisible = false
+            session.focusFindDocument()
+        }
     }
     if (!wideTools && activeSheet == DocumentToolSheet.Contents && readyPreview != null) {
         DocumentOutlineSheet(

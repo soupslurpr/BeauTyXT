@@ -26,7 +26,7 @@ internal fun Instrumentation.verifyReplacementReview() {
         fun awaitFrames() = runBlocking { repeat(2) { awaitFrame() } }
         awaitFrames()
         documentKey(KeyEvent.KEYCODE_H, KeyEvent.META_CTRL_ON)
-        awaitReadingCondition("Ctrl+H did not open replacement review") { session.isReplaceVisible && session.isFindResultsExpanded }
+        awaitReadingCondition("Ctrl+H did not open replacement input") { session.isReplaceVisible && !session.isFindResultsExpanded }
         runOnMainSync {
             session.updateFindFieldValue(TextFieldValue("cat"))
             session.updateReplacementFieldValue(TextFieldValue("dog"))
@@ -35,8 +35,12 @@ internal fun Instrumentation.verifyReplacementReview() {
         val replacement = waitForAccessibilityNode("replacement input") { it.isEditable && it.text?.toString() == "dog" }
         check(replacement.performAction(AccessibilityNodeInfo.ACTION_FOCUS))
         waitForAccessibilityNode("focused replacement input") { it.isEditable && it.isFocused && it.text?.toString() == "dog" }
+        requireActionableText("Review all").performRequiredClick()
+        awaitReadingCondition("Review all did not leave the input fields") { session.isFindResultsExpanded }
         requireActionableText("Apply 2 replacements").performRequiredClick()
-        awaitReadingCondition("Apply did not publish its batch") { source() == "dog dog dog" && session.canUndo && session.isFindComplete }
+        awaitReadingCondition("Apply did not publish its batch and return to the document") {
+            source() == "dog dog dog" && session.canUndo && session.isFindComplete && !session.isFindResultsExpanded
+        }
         awaitFrames()
         documentKey(KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON)
         awaitReadingCondition("Ctrl+Z could not undo the batch from replacement review") { source() == original && session.canRedo }
@@ -44,9 +48,13 @@ internal fun Instrumentation.verifyReplacementReview() {
         awaitFrames()
         documentKey(KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON or KeyEvent.META_SHIFT_ON)
         awaitReadingCondition("Ctrl+Shift+Z did not redo the batch") { source() == "dog dog dog" && session.canUndo }
+        requireActionableContentDescription("More Find actions").performRequiredClick()
         requireActionableText("Undo").performRequiredClick()
         awaitReadingCondition("review Undo button did not undo the batch") { source() == original && session.canRedo }
-        awaitFrames()
+        awaitReadingCondition("Find menu did not return command focus after Undo") {
+            activity.window.decorView.hasWindowFocus() &&
+                hasComposeKeyboardFocus(activity.window.decorView, documentOnly = true)
+        }
         documentKey(KeyEvent.KEYCODE_Y, KeyEvent.META_CTRL_ON)
         awaitReadingCondition("Ctrl+Y lost focus after the Undo button") { source() == "dog dog dog" && session.canUndo }
         runOnMainSync {
@@ -77,10 +85,11 @@ internal fun Instrumentation.verifyReplacementReview() {
         documentKey(KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON)
         awaitReadingCondition("replacement input lost its own Undo") { session.replacementFieldValue.text == "dog" }
         check(session.state.metrics!!.revision == revision && source() == original) { "input Undo changed the document" }
-        requireActionableText("Return to document").performRequiredClick()
+        requireActionableText("Review all").performRequiredClick()
+        requireActionableContentDescription("Return to document").performRequiredClick()
         awaitFrames()
-        awaitReadingCondition("closing review did not restore the Find query") {
-            !session.isFindResultsExpanded && hasComposeKeyboardFocus(activity.window.decorView, editableText = "cat")
+        awaitReadingCondition("closing review did not restore document command focus") {
+            !session.isFindResultsExpanded && hasComposeKeyboardFocus(activity.window.decorView, documentOnly = true)
         }
         check(activity.window.decorView.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) != true) {
             "applying replacement opened the software keyboard"
@@ -102,6 +111,7 @@ internal fun Instrumentation.verifyReplacementReview() {
         awaitReadingCondition("mixed replacement review did not count its actual changes") {
             session.isFindComplete && session.includedReplacementCount == 2 && session.unchangedReplacementCount == 1
         }
+        requireActionableText("Review all").performRequiredClick()
         waitForAccessibilityNode("unchanged match explanation") { it.text?.toString() == "1 match already has the replacement text." }
         waitForAccessibilityIdle()
         val screenshot = checkNotNull(uiAutomation.takeScreenshot())
@@ -141,10 +151,9 @@ internal fun Instrumentation.verifyReplacementProgress() {
             val initialRevision = session.state.metrics!!.revision
             for (step in 1..3) {
                 runBlocking { repeat(2) { awaitFrame() } }
-                runOnMainSync { session.updateFindResultsExpanded(true) }
                 runBlocking { repeat(2) { awaitFrame() } }
                 waitForAccessibilityIdle()
-                // Compact navigation recreates the pane; discard Android's old virtual-node ids.
+                // Match navigation can recompose the controls; discard old virtual-node ids.
                 check(uiAutomation.clearCache())
                 check(requireActionableText("Replace current").performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                     "Replace current click failed at step $step (zero width: $zeroWidth), enabled=${session.canReplaceCurrent}, expanded=${session.isFindResultsExpanded}"

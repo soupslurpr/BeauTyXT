@@ -78,6 +78,7 @@ internal fun ExcerptExportSheet(
     }
     if (!controller.visible) return
     var settingsVisible by retain(controller) { mutableStateOf(false) }
+    var previewVisible by retain(controller) { mutableStateOf(false) }
     var moreVisible by remember(controller) { mutableStateOf(false) }
     var rendered by retain(controller) { mutableStateOf(true) }
     val payload = controller.prepared
@@ -110,6 +111,15 @@ internal fun ExcerptExportSheet(
             controller.dismiss()
             onShareSourceFile()
         } else applyOutput()
+    }
+
+    if (!previewVisible && !settingsVisible && ordinaryOutput) {
+        DocumentExportSummary(controller, canChoose, nfcEnabled, onShare = ::shareOutput, onSave = ::saveOutput,
+            onPreview = { previewVisible = true }, onDestination = { choice ->
+                controller.selectDestination(choice)
+                previewVisible = true
+            })
+        return
     }
 
     if (!settingsVisible) DocumentSheet(controller::dismiss) {
@@ -187,14 +197,7 @@ internal fun ExcerptExportSheet(
                 }
             }
             item { ExportFeedback(controller) }
-            items(payload?.notices.orEmpty()) { notice ->
-                Text(stringResource(when (notice.kind) {
-                    ExcerptNoticeKind.AddedHeaders -> R.string.excerpt_added_headers
-                    ExcerptNoticeKind.AddedNote -> R.string.excerpt_added_note
-                    ExcerptNoticeKind.RemovedLink -> R.string.excerpt_removed_link
-                    ExcerptNoticeKind.MissingNote -> R.string.excerpt_missing_note
-                }, notice.detail), style = MaterialTheme.typography.bodySmall)
-            }
+            items(payload?.notices.orEmpty()) { ExportNotice(it) }
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.excerpt_preview), style = MaterialTheme.typography.titleMedium,
@@ -278,7 +281,8 @@ internal fun ExcerptExportSheet(
                     } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         saveButton(Modifier.weight(1f)); shareButton(Modifier.weight(1f))
                     }
-                } else Button(::applyOutput, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = controller.canApply) {
+                } else Button(::applyOutput, Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    enabled = controller.canApply && (controller.destination != ExcerptDestination.Nfc || nfcEnabled)) {
                     if (controller.destination == ExcerptDestination.Print) {
                         Icon(painterResource(R.drawable.ic_print), null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
@@ -341,7 +345,7 @@ private fun ExportOptionsSheet(controller: ExcerptExportController, ordinaryOutp
 }
 
 @Composable
-private fun exportFormatLabel(controller: ExcerptExportController, format: ExcerptFormat): String = stringResource(when (format) {
+internal fun exportFormatLabel(controller: ExcerptExportController, format: ExcerptFormat): String = stringResource(when (format) {
     ExcerptFormat.Pdf -> R.string.excerpt_pdf
     ExcerptFormat.Markdown -> R.string.export_markdown
     ExcerptFormat.ReadingText -> R.string.excerpt_text
@@ -354,7 +358,17 @@ private fun exportFormatLabel(controller: ExcerptExportController, format: Excer
 })
 
 @Composable
-private fun ExportFeedback(controller: ExcerptExportController) {
+internal fun ExportNotice(notice: ExcerptNotice) {
+    Text(stringResource(when (notice.kind) {
+        ExcerptNoticeKind.AddedHeaders -> R.string.excerpt_added_headers
+        ExcerptNoticeKind.AddedNote -> R.string.excerpt_added_note
+        ExcerptNoticeKind.RemovedLink -> R.string.excerpt_removed_link
+        ExcerptNoticeKind.MissingNote -> R.string.excerpt_missing_note
+    }, notice.detail), style = MaterialTheme.typography.bodySmall)
+}
+
+@Composable
+internal fun ExportFeedback(controller: ExcerptExportController) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
         if (controller.isStale) {
             Text(stringResource(R.string.excerpt_stale), color = MaterialTheme.colorScheme.error)

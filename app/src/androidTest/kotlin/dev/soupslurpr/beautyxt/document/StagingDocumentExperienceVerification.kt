@@ -79,7 +79,7 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
     }
     fun count(expected: Int) {
         waitForAccessibilityNode("$expected staging matches") {
-            it.text?.toString()?.lineSequence()?.any { line -> line == "$expected matches" } == true
+            it.contentDescription?.toString() == "Results. $expected matches. Show all matches"
         }
     }
     fun scrollTo(description: String, predicate: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo {
@@ -135,25 +135,33 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
         key(KeyEvent.KEYCODE_H, KeyEvent.META_CTRL_ON)
         query("cat")
         count(3)
+        requireActionableContentDescription("Search options").performRequiredClick()
         requireActionableText("Whole word").performRequiredClick()
+        requireActionableText("Done").performRequiredClick()
         count(2)
+        requireActionableContentDescription("Search options").performRequiredClick()
         requireActionableText("Regex").performRequiredClick()
+        requireActionableText("Done").performRequiredClick()
         query("silver (cat)")
         count(2)
         setText(editableAncestor(waitForAccessibilityNode("staging replacement input") {
             it.text?.toString() == "Replace with"
         }), "golden ${'$'}1")
+        requireActionableText("Review all").performRequiredClick()
         requireActionableText("Apply 2 replacements")
         capture("document-experience-replacements")
         requireActionableText("Apply 2 replacements").performRequiredClick()
         awaitSaved(original.replace("silver cat", "golden cat"))
-        requireActionableText("Undo").performRequiredClick()
+        requireActionableText("Undo replacement").performRequiredClick()
         awaitSaved(original)
-        requireActionableText("Return to document").performRequiredClick()
         requireActionableContentDescription("Close Find").performRequiredClick()
         requireActionableContentDescription("Preview Markdown").performRequiredClick()
         requireActionableContentDescription("Send and export").performRequiredClick()
         waitForAccessibilityNode("whole-document export scope") { it.text?.toString() == "Whole document" }
+        for (label in listOf("QR code", "Write NFC tag", "Copy text", "Print")) {
+            waitForAccessibilityNode("visible destination $label") { it.text?.toString() == label && it.isVisibleToUser }
+        }
+        capture("export-staging-document")
         requireActionableText("Share file").performRequiredClick()
         if (app == targetContext.packageName) {
             requireActionableText("Excerpt test receiver").performRequiredClick()
@@ -174,6 +182,9 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
         }
         requireActionableContentDescription("Send and export").performRequiredClick()
         requireActionableText("PDF").performRequiredClick()
+        requireActionableText("Share PDF")
+        capture("export-staging-pdf")
+        requireActionableText("Preview and page settings").performRequiredClick()
         scrollTo("whole-document PDF") {
             it.contentDescription?.toString()?.let { text ->
                 "Staging review" in text && "Second silver cat" in text && "PRIVATE TAIL" in text
@@ -190,7 +201,11 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
         requireActionableText("Send/export")
         capture("document-experience-reading-selection")
         requireActionableText("Send/export").performRequiredClick()
+        waitForAccessibilityNode("selected output scope") { it.text?.toString() == "Selected text only" }
+        requireActionableText("Share text")
+        capture("export-staging-selection")
         requireActionableText("PDF").performRequiredClick()
+        requireActionableText("Preview and page settings").performRequiredClick()
         val page = scrollTo("minified selected PDF", { it.contentDescription?.toString()?.contains(paragraph) == true })
         val pageText = page.contentDescription.toString()
         check("PRIVATE TAIL" !in pageText && "Second silver cat" !in pageText && "Staging review" !in pageText)

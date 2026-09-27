@@ -75,6 +75,7 @@ internal fun Instrumentation.verifyDocumentSelectionControls() {
         }
         selectionControl("Send/export").performRequiredClick()
         awaitReadingCondition("excerpt preview did not prepare") { session.excerptExport.prepared != null && !session.excerptExport.busy }
+        selectionControl("Preview and settings").performRequiredClick()
         selectionControl("Options").performRequiredClick()
         waitForAccessibilityNode("export options dialog") { it.text?.toString() == "Share as a file" }
         val shareSwitch = scrollToExcerptSwitch("Share as a file")
@@ -192,6 +193,7 @@ internal fun Instrumentation.verifyExcerptPdfPages() {
         awaitReadingCondition("two-page excerpt PDF did not prepare") {
             session.excerptExport.format == ExcerptFormat.Pdf && session.excerptExport.prepared?.pdfPages == 2 && !session.excerptExport.busy
         }
+        selectionControl("Preview and page settings").performRequiredClick()
         val expected = checkNotNull(session.excerptExport.prepared?.pdf).openReadOnly(targetContext).use { input ->
             PdfRenderer(input).use { reader ->
                 (0 until reader.pageCount).map { index -> reader.openPage(index).use { page ->
@@ -265,7 +267,7 @@ internal fun Instrumentation.verifyWideDocumentTools() {
         awaitReadingCondition("Contents jump did not create return history") { session.hasPreviousLocation }
         // The wide pane remains open after choosing a heading.
         selectionControl("Overview")
-        selectionControl("Options and results").performRequiredClick()
+        selectionControl("Results").performRequiredClick()
         awaitReadingCondition("wide Find did not open") { session.isFindVisible && session.isFindResultsExpanded }
         awaitReadingCondition("hardware-style Find opened the software keyboard") {
             activity.window.decorView.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) != true

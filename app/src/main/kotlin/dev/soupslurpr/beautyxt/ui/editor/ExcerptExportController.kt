@@ -95,7 +95,8 @@ internal class ExcerptExportController(
     val canExportReadingText get() = capture?.canExportReadingText == true
     val formats get() = if (destination == ExcerptDestination.Print) listOf(ExcerptFormat.Pdf) else buildList {
         add(ExcerptFormat.Text)
-        if (canGenerateMarkdown) add(ExcerptFormat.Markdown)
+        if (canGenerateMarkdown || exportScope == ExportScope.Document &&
+            capture?.textFormat == DocumentFormat.PlainText) add(ExcerptFormat.Markdown)
         if (canExportReadingText) add(ExcerptFormat.ReadingText)
         if (destination in listOf(ExcerptDestination.Share, ExcerptDestination.Save, ExcerptDestination.Print)) add(ExcerptFormat.Pdf)
     }
@@ -254,7 +255,10 @@ internal class ExcerptExportController(
         val outputTagLabel = canonicalNfcTagLabelOrNull(tagLabel)
         val printSettings = validatePrintSetup(if (outputFormat == ExcerptFormat.Pdf) printDraft else defaultPrintSetupDraft(false)).settings
             ?: run { fail(R.string.excerpt_invalid_print); return }
-        val formatted = outputFormat == ExcerptFormat.Markdown || outputFormat == ExcerptFormat.Pdf && printSettings.contentMode == PrintContentMode.FormattedMarkdown
+        // Whole-document Markdown exports the source verbatim with a Markdown type.
+        // Only reading selections need generated markup; source export needs no renderer.
+        val formatted = outputFormat == ExcerptFormat.Markdown && !captured.wholeDocument ||
+            outputFormat == ExcerptFormat.Pdf && printSettings.contentMode == PrintContentMode.FormattedMarkdown
         // Claim the immutable source before dispatch so dismissing the sheet cannot close work in progress.
         val plain = captured.plain.snapshot.duplicate()
         busy = true
@@ -285,7 +289,7 @@ internal class ExcerptExportController(
                         checkNotNull(renderer).render(it, text.metrics.serializedByteLength)
                     } else null
                     owned = PreparedExcerpt(text, if (outputFormat == ExcerptFormat.ReadingText) DocumentFormat.PlainText
-                        else if (formatted) DocumentFormat.Markdown else captured.textFormat,
+                        else if (outputFormat == ExcerptFormat.Markdown || formatted) DocumentFormat.Markdown else captured.textFormat,
                         model, transformed?.notices.orEmpty(), printSettings)
                     ownedText = null
                     val payload = checkNotNull(owned)

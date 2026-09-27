@@ -1026,10 +1026,25 @@ internal constructor(
         private set
     var excludedFindResults by mutableStateOf<Set<Int>>(emptySet())
         private set
-    var isFindResultsExpanded by mutableStateOf(false)
+    var findResultsPage by mutableStateOf<FindResultsPage?>(null)
         private set
+    val isFindResultsExpanded get() = findResultsPage != null
     var findActionMessage by mutableStateOf<UiText?>(null)
         private set
+    private var undoableFindReplacementRevision by mutableStateOf<Long?>(null)
+    var replacementUndoNoticeRevision by mutableStateOf<Long?>(null)
+        private set
+
+    fun retireReplacementUndoNotice(revision: Long) {
+        if (replacementUndoNoticeRevision == revision) replacementUndoNoticeRevision = null
+    }
+
+    /** The contextual action must never fall through to typing or another document edit. */
+    val canUndoFindReplacement: Boolean
+        get() = undoableFindReplacementRevision?.let { revision ->
+            isReplaceVisible && canUndo && activeDraft?.hasChanges == false &&
+                state.metrics?.revision == revision && history.undoEntry?.revisionAfter == revision
+        } == true
     private var compiledFind: DocumentSearch? = null
     private var advancedFindGeneration = 0L
     private var reviewedFindRevision: Long? = null
@@ -1793,6 +1808,7 @@ internal constructor(
 
     /** Opens retained Find now or after synchronizing one active edit field. */
     fun showFind(showKeyboard: Boolean = true): Boolean {
+        findResultsPage = null
         findInputFocus = FindInputFocus.Query
         findFocusIntentVersion++
         findRequestsKeyboard = showKeyboard
@@ -2201,12 +2217,14 @@ internal constructor(
         findResults = emptyList()
         findResultIndex = -1
         excludedFindResults = emptySet()
-        isFindResultsExpanded = false
+        findResultsPage = null
         isFindComplete = false
         findCoverageMessage = null
         findActionMessage = null
         findStatus = FindStatus.Idle
+        undoableFindReplacementRevision = null
         findMatch = null
+        replacementUndoNoticeRevision = null
         pendingFindDirection = null
         locations.endFindExcursion()
     }
@@ -2250,10 +2268,14 @@ internal constructor(
         if (changed) refreshAdvancedFind(retainExclusions = true)
     }
 
-    fun showReplace() {
+    fun showReplace(showKeyboard: Boolean = findRequestsKeyboard) {
         if (isViewOnly) return
         isReplaceVisible = true
-        updateFindResultsExpanded(true)
+        findResultsPage = null
+        findInputFocus = FindInputFocus.Replacement
+        findRequestsKeyboard = showKeyboard
+        findFocusIntentVersion++
+        findFocusRequest++
         if (presentation == EditorPresentation.MarkdownPreview) {
             if (capturedReadingFindScope != null && capturedFindScope == null) isFindScopePaused = true
             showTextEditor()
@@ -2262,13 +2284,21 @@ internal constructor(
 
     fun hideReplace() {
         isReplaceVisible = false
+        if (findResultsPage == FindResultsPage.Replacements) findResultsPage = FindResultsPage.Matches
         if (findInputFocus == FindInputFocus.Replacement) focusFindQueryWithoutKeyboard()
         refreshAdvancedFind()
     }
-    fun updateFindResultsExpanded(expanded: Boolean) {
-        if (expanded) findResultsOpenedAtReveal = findRevealRequest
+    fun updateFindResultsExpanded(expanded: Boolean, reviewReplacements: Boolean = isReplaceVisible) {
+        if (expanded) {
+            findResultsOpenedAtReveal = findRevealRequest
+            findInputFocus = FindInputFocus.Results
+            findFocusIntentVersion++
+            findRequestsKeyboard = false
+            findFocusRequest++
+        }
         else if (findInputFocus == FindInputFocus.Replacement || findInputFocus == FindInputFocus.Results) focusFindQueryWithoutKeyboard()
-        isFindResultsExpanded = expanded
+        findResultsPage = if (!expanded) null else if (reviewReplacements && isReplaceVisible)
+            FindResultsPage.Replacements else FindResultsPage.Matches
     }
 
     fun recordFindInputFocus(target: FindInputFocus) {
@@ -2276,6 +2306,15 @@ internal constructor(
             target == FindInputFocus.Results && !isFindResultsExpanded || findInputFocus == target) return
         findInputFocus = target
         findFocusIntentVersion++
+    }
+
+    /** Restores document commands after a popup releases its separate focus owner. */
+    fun focusFindDocument() {
+        if (!isFindVisible) return
+        findInputFocus = FindInputFocus.Document
+        findFocusIntentVersion++
+        findRequestsKeyboard = false
+        findFocusRequest++
     }
 
     private fun focusFindQueryWithoutKeyboard() {
@@ -2295,7 +2334,7 @@ internal constructor(
     }
 
     fun collapseFindResultsForNavigation() {
-        if (findResultsOpenedAtReveal < findRevealRequest) isFindResultsExpanded = false
+        if (findResultsOpenedAtReveal < findRevealRequest) findResultsPage = null
     }
     fun toggleFindResultIncluded(index: Int) {
         if (index in findResults.indices) excludedFindResults =
@@ -2601,6 +2640,9 @@ internal constructor(
         return requestEditWindowAction(draft = draft, action = EditWindowAction.Undo)
     }
 
+    /** Undoes only the replacement advertised by Find, including repeated or stale taps. */
+    fun requestUndoFindReplacement(): Boolean = canUndoFindReplacement && requestUndo()
+
     /** Queues one session-wide redo after synchronizing the active bounded field. */
     fun requestRedo(): Boolean {
         val draft = activeDraft ?: return false
@@ -2839,6 +2881,8 @@ internal constructor(
         entry: CommittedEditDelta,
         revision: Long
     ) {
+        val undidReplacement = action == EditWindowAction.Undo &&
+            undoableFindReplacementRevision == history.headRevision
         onDocumentPatchesApplied(checkNotNull(history.headRevision), revision,
             if (action == EditWindowAction.Undo) inversePatches(entry.patches) else entry.patches)
         when (action) {
@@ -2847,6 +2891,7 @@ internal constructor(
             else -> error("history stack move requires undo or redo")
         }
         historyVersion = Math.incrementExact(historyVersion)
+        if (undidReplacement && isFindVisible) replacementUndoNoticeRevision = revision
     }
 
     /** Records one verified edit and publishes the journal's new availability. */
@@ -2859,6 +2904,8 @@ internal constructor(
     private fun onDocumentPatchesApplied(before: Long, after: Long, patches: List<DocumentPatch>,
         scopedReplacement: Boolean = false) {
         findActionMessage = null
+        undoableFindReplacementRevision = null
+        replacementUndoNoticeRevision = null
         documentSelection = (documentSelection as? DocumentSelection.Source)?.let { selected ->
             rebaseCapturedRange(selected.range, patches, scopedReplacement = false)?.let { range ->
                 DocumentSelection.Source(after, range.start, range.end)
@@ -2883,6 +2930,8 @@ internal constructor(
     /** Releases session history and publishes its new revision boundary. */
     private fun clearSessionHistory(revision: Long? = state.metrics?.revision) {
         history.clear(revision)
+        undoableFindReplacementRevision = null
+        replacementUndoNoticeRevision = null
         historyVersion = Math.incrementExact(historyVersion)
     }
 
@@ -4921,9 +4970,12 @@ internal constructor(
                 throw cancellation
             } catch (_: Exception) {
                 if (owned()) {
-                    findStatus = FindStatus.Failed(UiText.Resource(
-                        if (replacement != null && search != null) R.string.find_invalid_replacement
-                        else R.string.find_invalid_query))
+                    findStatus = FindStatus.Failed(UiText.Resource(when {
+                        !options.regex -> R.string.find_failed
+                        replacement != null && search != null -> R.string.find_invalid_replacement
+                        search == null -> R.string.find_invalid_query
+                        else -> R.string.find_failed
+                    }))
                     findCoverageMessage = UiText.Resource(R.string.find_incomplete)
                 }
             } finally {
@@ -5145,8 +5197,17 @@ internal constructor(
                     // A committed edit survives a new query, but its automatic jump does not.
                     val advance = currentOnly && isFindVisible && isReplaceVisible &&
                         advancedFindGeneration == findGenerationAtApply && findFocusIntentVersion == focusIntentAtApply
+                    // Return only the review that committed this batch to the document.
+                    // A newer query or navigation choice must keep its own destination.
+                    if (!currentOnly && findResultsPage == FindResultsPage.Replacements &&
+                        advancedFindGeneration == findGenerationAtApply && findFocusIntentVersion == focusIntentAtApply) {
+                        findResultsPage = null
+                        findInputFocus = FindInputFocus.Document
+                        findRequestsKeyboard = false
+                    }
                     recordCommittedEdit(CommittedEditDelta(revision, result.revision, first.range.start,
                         first.removed, first.inserted, Utf16Range(before, before), selectionAfter, patches), scopedReplacement = true)
+                    undoableFindReplacementRevision = result.revision.takeIf { isFindVisible && isReplaceVisible }
                     invalidateMarkdownPreview()
                     recordSourceSaveRequest()
                     findActionMessage = UiText.Quantity(R.plurals.replace_applied, patches.size, listOf(patches.size))
