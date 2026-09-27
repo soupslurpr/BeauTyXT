@@ -87,13 +87,13 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
         while (SystemClock.uptimeMillis() < deadline) {
             waitForAccessibilityIdle()
             uiAutomation.clearCache()
-            val root = checkNotNull(uiAutomation.rootInActiveWindow)
-            root.findNode { it.isVisibleToUser && predicate(it) }?.let { return it }
-            val scroll = root.findNode { it.isVisibleToUser && it.isScrollable && it.actionList.any { action ->
+            val root = uiAutomation.rootInActiveWindow
+            root?.findNode { it.isVisibleToUser && predicate(it) }?.let { return it }
+            val scroll = root?.findNode { it.isVisibleToUser && it.isScrollable && it.actionList.any { action ->
                 action.id == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
             } }
             scroll?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
-            // The page can still be rendering, before the preview makes the list scrollable.
+            // The sheet can still be changing windows or rendering its scrollable preview.
             SystemClock.sleep(50)
         }
         error("Did not reveal $description")
@@ -156,6 +156,9 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
         awaitSaved(original)
         requireActionableContentDescription("Close Find").performRequiredClick()
         requireActionableContentDescription("Preview Markdown").performRequiredClick()
+        waitForAccessibilityNode("rendered reading paragraph before export") {
+            it.isVisibleToUser && it.text?.toString() == paragraph
+        }
         requireActionableContentDescription("Send and export").performRequiredClick()
         waitForAccessibilityNode("whole-document export scope") { it.text?.toString() == "Whole document" }
         for (label in listOf("QR code", "Write NFC tag", "Copy text", "Print")) {

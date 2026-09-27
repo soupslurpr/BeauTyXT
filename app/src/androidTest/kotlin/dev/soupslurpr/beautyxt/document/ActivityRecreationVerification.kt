@@ -212,6 +212,7 @@ internal fun Instrumentation.verifyNoticeScrollInsets() {
         }
         waitForAccessibilityIdle()
         repeat(2) {
+            uiAutomation.clearCache()
             val body = waitForAccessibilityNode("ready license scroll viewport") { node ->
                 node.isVisibleToUser && node.isScrollable && node.actionList.any { action ->
                     action.id == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
@@ -1037,6 +1038,7 @@ internal fun Instrumentation.verifyEditorToolbarInteractions() {
         requireActiveActivity(activity, "toolbar actions closed the unsaved document")
         requireActionableContentDescription("Send and export").performRequiredClick()
         requireActionableText("PDF").performRequiredClick()
+        requireActionableText("Preview and page settings").performRequiredClick()
         requireActionableText("Page settings").performRequiredClick()
         waitForAccessibilityNode("source print explanation") { node ->
             node.text?.toString() == "Prints the text as written, including any Markdown syntax."
@@ -1460,7 +1462,9 @@ internal fun Instrumentation.verifyEditorActivityRecreation() {
         waitForAccessibilityNode("focused new-document input") { node ->
             node.className?.toString() == TEST_EDIT_FIELD_CLASS_NAME && node.isFocused
         }
+        waitForImeVisibility(activity, visible = true)
         waitForAccessibilityIdle()
+        uiAutomation.clearCache()
         val setTextArguments =
             Bundle().apply {
                 putCharSequence(
@@ -2159,8 +2163,10 @@ private fun requireActiveActivity(activity: Activity, message: String) {
     check(!activity.isFinishing && !activity.isDestroyed) { message }
 }
 
-/** Returns one exact text node with a clickable ancestor. */
+/** Returns a fresh click target for exact text after pending UI changes settle. */
 internal fun Instrumentation.requireActionableText(text: String): AccessibilityNodeInfo {
+    waitForAccessibilityIdle()
+    uiAutomation.clearCache()
     val textNode = waitForAccessibilityNode("actionable text '$text'") { node ->
         node.text?.toString() == text && node.enabledClickableAncestor() != null
     }
@@ -2169,11 +2175,13 @@ internal fun Instrumentation.requireActionableText(text: String): AccessibilityN
     }
 }
 
-/** Returns one exact content-description node with a clickable ancestor. */
+/** Returns a fresh click target for an exact description after pending UI changes settle. */
 internal fun Instrumentation.requireActionableContentDescription(
     description: String
 ): AccessibilityNodeInfo {
     require(description.isNotBlank()) { "actionable description must not be blank" }
+    waitForAccessibilityIdle()
+    uiAutomation.clearCache()
     val descriptionNode =
         waitForAccessibilityNode("actionable description '$description'") { node ->
             node.contentDescription?.toString() == description &&

@@ -78,11 +78,11 @@ internal fun Instrumentation.verifyKeyboardPrivacy() {
         waitForAccessibilityIdle()
         input { check(it.setComposingText("private", 1)) }
         waitForAccessibilityNode("private-keyboard Find matches composing input") {
-            it.text?.toString() == "1 match"
+            it.contentDescription?.toString() == "Results. 1 match. Show all matches"
         }
         requireActionableContentDescription("Next match").performRequiredClick()
         waitForAccessibilityNode("explicit private-keyboard Find navigation") {
-            it.text?.toString() == "1 of 1 match"
+            it.contentDescription?.toString() == "Results. 1 of 1 match. Show all matches"
         }
         requireActionableContentDescription("Close Find").performRequiredClick()
         waitForEditorText("private example")
