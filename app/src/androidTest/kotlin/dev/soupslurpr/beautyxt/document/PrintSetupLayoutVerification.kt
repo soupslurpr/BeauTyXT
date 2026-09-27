@@ -98,6 +98,7 @@ private fun Instrumentation.verifyCompactPrintSetupAtScale(fontScale: Float) {
         waitForEditField()
         requireActionableContentDescription("Send and export").performRequiredClick()
         revealScrollableAction("PDF").performRequiredClick()
+        revealScrollableAction("Preview and page settings").performRequiredClick()
         revealScrollableAction("Page settings").performRequiredClick()
         awaitPrintLayoutCondition { session.excerptExport.visible }
         // A new modal can expose semantics while its entering animation still moves the viewport.

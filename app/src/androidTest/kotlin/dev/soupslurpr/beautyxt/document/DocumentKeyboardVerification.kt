@@ -7,6 +7,7 @@ import android.view.WindowInsets
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.ui.platform.ViewRootForTest
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getAllSemanticsNodes
 import androidx.compose.ui.semantics.getOrNull
@@ -157,10 +158,12 @@ internal fun Instrumentation.verifyDocumentKeyboardJourney() {
     }
 }
 
+/** A focused toolbar button is not the document command target restored after a popup. */
 internal fun hasComposeKeyboardFocus(view: View, documentOnly: Boolean = false, editableText: String? = null): Boolean =
     (view is ViewRootForTest && view.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false).any {
         it.config.getOrNull(SemanticsProperties.Focused) == true &&
-            (!documentOnly || it.config.getOrNull(SemanticsProperties.EditableText) == null) &&
+            (!documentOnly || it.config.getOrNull(SemanticsProperties.EditableText) == null &&
+                it.config.getOrNull(SemanticsActions.OnClick) == null) &&
             (editableText == null || it.config.getOrNull(SemanticsProperties.EditableText)?.text == editableText)
     }) || (view is ViewGroup && (0 until view.childCount).any { hasComposeKeyboardFocus(view.getChildAt(it), documentOnly, editableText) })
 
