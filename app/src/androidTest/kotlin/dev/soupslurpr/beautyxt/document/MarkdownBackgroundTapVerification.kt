@@ -219,6 +219,8 @@ internal fun Instrumentation.withReadingPage(
     viewOnly: Boolean = false,
     initialPresentation: EditorPresentation = EditorPresentation.MarkdownPreview,
     nfcProcessor: dev.soupslurpr.beautyxt.transfer.client.NfcTransferProcessor? = null,
+    qrProcessor: dev.soupslurpr.beautyxt.transfer.client.QrTransferProcessor? = null,
+    writeNfcEnabled: Boolean = false,
     verify: (HomeActivity, EditorSession) -> Unit
 ) {
     val document = RustDocument.createEmpty()
@@ -238,7 +240,8 @@ internal fun Instrumentation.withReadingPage(
         documentSource = source,
         initialPresentation = initialPresentation,
         markdownRenderer = IsolatedMarkdownRenderer(targetContext),
-        nfcTransferProcessor = nfcProcessor
+        nfcTransferProcessor = nfcProcessor,
+        qrTransferProcessor = qrProcessor
     )
     val activity = startActivitySync(
         Intent(targetContext, HomeActivity::class.java)
@@ -248,7 +251,7 @@ internal fun Instrumentation.withReadingPage(
         runOnMainSync {
             activity.setContent {
                 BeauTyXTTheme {
-                    DocumentEditor(session, activity::finish, closesDocumentTask = false)
+                    DocumentEditor(session, activity::finish, closesDocumentTask = false, writeNfcEnabled = writeNfcEnabled)
                 }
             }
             session.openInitialEditor()

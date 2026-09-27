@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="export_whole_document">Whole document</string>
+    <string name="export_selected_text">Selected text only</string>
+    <string name="export_more_ways">More ways</string>
+    <string name="export_write_nfc">Write NFC tag</string>
+    <string name="export_copy_text">Copy text</string>
     <string name="export_more">More ways to send</string>
     <string name="export_share_or_save">Share or save</string>
     <string name="export_share_pdf">Share PDF</string>
@@ -10,4 +14,13 @@
     <string name="export_filename">File name</string>
     <string name="export_done">Done</string>
     <string name="export_markdown">Markdown</string>
+    <string name="export_preview_options">Preview and settings</string>
+    <string name="export_preview_page_settings">Preview and page settings</string>
+    <plurals name="export_pdf_summary">
+        <item quantity="one">%1$d page · %2$s</item>
+        <item quantity="other">%1$d pages · %2$s</item>
+    </plurals>
+    <string name="export_send_file">Send as file</string>
+    <string name="export_send_text">Send as text</string>
+    <string name="export_save_copy">Save a copy</string>
 </resources>

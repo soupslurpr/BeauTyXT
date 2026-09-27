@@ -6363,10 +6363,11 @@ Google Material Symbols
 Material Symbols Rounded (24px)
 Source: https://github.com/google/material-design-icons/tree/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android
 
-Icons: arrow_back, check, close, description, edit, file_open,
+Icons: arrow_back, check, close, content_copy, description, edit,
+file_open,
 format_list_bulleted, info, keyboard_arrow_down, keyboard_arrow_up, more_vert,
-nfc, note_add, open_in_new, print, qr_code_2, redo, save, search, share, undo,
-zoom_in, zoom_out.
+nfc, note_add, open_in_new, print, qr_code_2, redo, save, search, share, tune,
+undo, zoom_in, zoom_out.
 
 Adapted for BeauTyXT by removing the Android theme-attribute tint so Compose
 supplies the color, and adding provenance comments. Vector paths, dimensions,

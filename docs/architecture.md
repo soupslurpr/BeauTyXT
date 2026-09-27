@@ -638,9 +638,13 @@ selection actions open the same review, with an explicit scope label. Whole
 document capture synchronizes the latest IME draft, preserves exact source
 bytes, and leaves the retained selection unchanged. Whole Markdown offers its
 original source, displayed plain text, or PDF; selected content can additionally
-generate independent Markdown. Share and Save use the same prepared output,
-with PDF options behind Page settings and the actions outside the preview's
-scroll container. Generated Markdown is
+generate independent Markdown. New and plain-text documents can export exact
+source bytes with a Markdown filename and MIME type before their first save.
+The initial summary keeps Share and Save a copy above visible QR, NFC, Copy,
+and Print actions. Selected text includes a short excerpt; PDFs show their page
+count and paper size. Explicit preview and settings entries open detailed
+review. Share and Save use the same prepared output; the detailed preview keeps
+its output actions outside the preview's scroll container. Generated Markdown is
 complete syntax for selected structure, including retained table columns/headers, list numbering,
 footnote closure and renumbering, and safe link destinations. Explicit inline
 HTML styles preserve clipped whitespace and adjacent runs. Unselected body text

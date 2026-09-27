@@ -16,6 +16,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReplacementAdvanceTest {
+    @Test fun aCommittedBatchDoesNotDismissANewerResultsView() {
+        Fixture().use { fixture ->
+            val session = fixture.session
+            session.updateFindResultsExpanded(true, reviewReplacements = true)
+            assertTrue(session.applyFindReplacements())
+            session.showFind(false)
+            session.updateFindResultsExpanded(true, reviewReplacements = false)
+            fixture.drain()
+            assertEquals("dog dog other", fixture.document.text)
+            assertEquals(FindResultsPage.Matches, session.findResultsPage)
+            assertEquals(FindInputFocus.Results, session.findInputFocus)
+        }
+    }
+
     @Test fun aNewQueryDoesNotInheritReplacementNavigation() {
         for (committed in listOf(false, true)) {
             Fixture().use { fixture ->

@@ -34,8 +34,9 @@
     <string name="find_select_scope_first">Select a passage in the document first.</string>
     <string name="find_scope_lost">Selection scope paused: its passage changed. Capture a new selection or choose Document.</string>
     <string name="find_incomplete">Search is incomplete. Verified matches remain available. Retry, narrow the selection, or search source. Replace all needs complete coverage.</string>
-    <string name="find_invalid_query">Search could not finish. Check the Rust regex syntax and query size, or retry. Look-around and pattern backreferences are unsupported.</string>
-    <string name="find_invalid_replacement">Check replacement syntax and size. Regex accepts $0, $1, ${1}, ${name}, $$, \\n, \\t, and \\\\. Capture names and numbers must exist.</string>
+    <string name="find_failed">Search could not finish. Try again.</string>
+    <string name="find_invalid_query">Search could not finish. Check the regex or try again.</string>
+    <string name="find_invalid_replacement">Could not prepare replacements. Check capture names, numbers, and escapes.</string>
     <string name="find_only_match">Only match</string>
     <string name="find_wrapped_top">Wrapped to the top</string>
     <string name="find_wrapped_bottom">Wrapped to the bottom</string>
@@ -51,7 +52,18 @@
         <item quantity="one">%1$d match found · coverage incomplete</item>
         <item quantity="other">%1$d matches found · coverage incomplete</item>
     </plurals>
-    <string name="find_results">Options and results</string>
+    <string name="find_results">Results</string>
+    <string name="find_results_description">Results. %1$s. Show all matches</string>
+    <string name="find_options">Search options</string>
+    <string name="find_more">More Find actions</string>
+    <string name="find_scope_title">Search scope</string>
+    <string name="find_in_reading">Find in reading</string>
+    <string name="find_in_source">Find in source</string>
+    <string name="find_search_source">Search source</string>
+    <string name="find_read_formatted">Read formatted text</string>
+    <string name="find_edit_search">Edit search</string>
+    <string name="find_enter_query">Enter a search to see matches.</string>
+    <string name="find_result_representation">%1$d · %2$s</string>
     <string name="find_retry">Retry search</string>
     <string name="find_continue">Continue search</string>
     <string name="find_restart">Restart search</string>
@@ -61,7 +73,8 @@
     <string name="find_later_results_end">Reached the end of the scope. Only the latest result batch is shown. Restart search to return to earlier matches. For Replace all, narrow the selection or query until every change fits one review.</string>
     <string name="find_hide_results">Return to document</string>
     <string name="find_insert_line_break">Insert line break</string>
-    <string name="find_regex_help">Rust regex · captures and multiline · inline flags override Match case · Whole word applies in literal mode</string>
+    <string name="find_regex_help">Regex supports captures and multiline patterns. Inline flags override Match case. Look-around and pattern backreferences are unsupported.</string>
+    <string name="replace_regex_help">Replacement text accepts $0, $1, ${1}, ${name}, $$, \\n, \\t, and \\\\. Capture names and numbers must exist.</string>
     <string name="find_formula_source">Formula source</string>
     <string name="find_diagram_source">Diagram source</string>
     <string name="find_formula_run">Formula</string>
@@ -71,6 +84,14 @@
     <string name="replace_in_source">Replace in source</string>
     <string name="replace_with">Replace with</string>
     <string name="replace_current">Replace current</string>
+    <string name="replace_hide">Hide replace</string>
+    <string name="replace_review_all">Review all</string>
+    <string name="replace_review_title">Review changes</string>
+    <string name="replace_review_query">%1$s → %2$s</string>
+    <string name="replace_result_description">Before: %1$s. After: %2$s.</string>
+    <string name="replace_first_match">Go to first match</string>
+    <string name="replace_delete">Delete</string>
+    <string name="replace_excluded">Excluded</string>
     <plurals name="replace_apply">
         <item quantity="one">Apply %1$d replacement</item>
         <item quantity="other">Apply %1$d replacements</item>
@@ -84,10 +105,11 @@
     <string name="replace_no_further_verified_match">No further verified match. Search is incomplete.</string>
     <string name="replace_undo_limit">This batch exceeds the Undo budget. Narrow the selection or exclude matches; no text was changed.</string>
     <plurals name="replace_applied">
-        <item quantity="one">Applied %1$d replacement · one Undo</item>
-        <item quantity="other">Applied %1$d replacements · one Undo</item>
+        <item quantity="one">Applied %1$d replacement</item>
+        <item quantity="other">Applied %1$d replacements</item>
     </plurals>
-    <string name="replace_after">After</string>
+    <string name="replace_undo">Undo replacement</string>
+    <string name="replace_undone">Replacement undone</string>
     <string name="replace_include_match">Include replacement %1$d</string>
     <string name="location_previous">Previous location</string>
     <string name="location_next">Next location</string>

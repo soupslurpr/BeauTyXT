@@ -388,15 +388,19 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 verifyOptInPhase("staging document experience") { verifyPackagedDocumentExperience() }
                 verifyPhase("excerpt preparation") { verifyExcerptPreparation(targetContext) }
                 verifyPhase("whole document export") { verifyWholeDocumentExport() }
+                verifyPhase("export destination controls") { verifyExportDestinationControls() }
                 verifyPhase("excerpt sharing") { verifyExcerptSharing() }
                 verifyPhase("Find continuation") { verifyFindContinuation() }
                 verifyOptInPhase("physical NFC excerpt") { verifyPhysicalNfcExcerpt() }
                 verifyPhase("excerpt save recovery") { verifyExcerptSave(targetContext, context.packageName) }
+                verifyPhase("export recovery controls") { verifyExportRecoveryControls() }
                 verifyPhase("excerpt PDF pages") { verifyExcerptPdfPages() }
                 verifyPhase("document selection controls") { verifyDocumentSelectionControls() }
                 verifyPhase("document keyboard journey") { verifyDocumentKeyboardJourney() }
                 verifyPhase("replacement review") { verifyReplacementReview() }
                 verifyPhase("replacement progress") { verifyReplacementProgress() }
+                verifyPhase("new document replacement") { verifyNewDocumentReplacement() }
+                verifyPhase("navigation history controls") { verifyNavigationHistoryControls() }
                 verifyPhase("reading match visibility") { verifyReadingMatchVisibility() }
                 verifyPhase("selection mode editing") { verifySelectionModeEditing() }
                 verifyOptInPhase("wide document tools") { verifyWideDocumentTools() }

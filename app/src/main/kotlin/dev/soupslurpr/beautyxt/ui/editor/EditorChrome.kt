@@ -33,6 +33,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -234,6 +235,23 @@ internal fun EditorTopBar(
                             },
                             enabled = session.canShowFileInfo
                         )
+                        if (session.hasPreviousLocation || session.hasNextLocation) {
+                            ActionMenuItem(
+                                shape = MenuDefaults.middleItemShape,
+                                label = stringResource(R.string.location_previous),
+                                leadingIcon = { Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = null) },
+                                enabled = session.hasPreviousLocation,
+                                onClick = { onOverflowExpandedChange(false); session.returnToDocumentLocation(false) }
+                            )
+                            ActionMenuItem(
+                                shape = MenuDefaults.middleItemShape,
+                                label = stringResource(R.string.location_next),
+                                leadingIcon = { Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = null,
+                                    modifier = Modifier.rotate(180f)) },
+                                enabled = session.hasNextLocation,
+                                onClick = { onOverflowExpandedChange(false); session.returnToDocumentLocation(true) }
+                            )
+                        }
                         HorizontalDivider(
                             modifier = Modifier.padding(MenuDefaults.HorizontalDividerPadding)
                         )

@@ -49,10 +49,10 @@ internal fun Instrumentation.verifyDocumentKeyboardJourney() {
         runOnMainSync { session.updateFindFieldValue(TextFieldValue("silver lining")) }
         awaitReadingCondition("reading matches did not complete") { session.isFindComplete && session.findResults.size == 24 }
         waitForAccessibilityIdle()
-        requireActionableText("Options and results").performRequiredClick()
-        awaitReadingCondition("Find options did not open") { session.isFindResultsExpanded }
+        openFindResults()
+        awaitReadingCondition("Find results did not open") { session.isFindResultsExpanded }
         waitForAccessibilityIdle()
-        requireActionableContentDescription("Next match").performRequiredClick()
+        requireActionableText("1 · Reading").performRequiredClick()
         try { awaitReadingCondition("first reading match was not revealed") {
             session.findResultIndex >= 0 && !session.isFindResultsExpanded &&
                 (session.markdownPreviewStatus as? MarkdownPreviewStatus.Ready)?.scrollRestoration == null
@@ -137,7 +137,7 @@ internal fun Instrumentation.verifyDocumentKeyboardJourney() {
         awaitReadingCondition("F3 lost focus after source match navigation") { session.findResultIndex == (previous + 1) % 24 }
         awaitKeyFocus()
         documentKey(KeyEvent.KEYCODE_H, KeyEvent.META_CTRL_ON)
-        awaitReadingCondition("Ctrl+H did not open Replace") { session.isReplaceVisible && session.isFindResultsExpanded }
+        awaitReadingCondition("Ctrl+H did not open Replace") { session.isReplaceVisible && !session.isFindResultsExpanded }
         awaitKeyFocus()
         runOnMainSync { session.updateReplacementFieldValue(TextFieldValue("silver light")) }
         val replacement = waitForAccessibilityNode("replacement field") { it.isEditable && it.text?.toString() == "silver light" }
@@ -168,4 +168,12 @@ internal fun Instrumentation.documentKey(code: Int, modifiers: Int = 0) {
     val down = SystemClock.uptimeMillis()
     sendKeySync(KeyEvent(down, down, KeyEvent.ACTION_DOWN, code, 0, modifiers))
     sendKeySync(KeyEvent(down, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, code, 0, modifiers))
+}
+
+/** Opens the count button through its combined action and match-count label. */
+internal fun Instrumentation.openFindResults() {
+    val label = waitForAccessibilityNode("labeled Results button") {
+        it.contentDescription?.toString()?.startsWith("Results.") == true
+    }
+    requireActionableContentDescription(checkNotNull(label.contentDescription).toString()).performRequiredClick()
 }
