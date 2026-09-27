@@ -11,6 +11,11 @@ for document processing and native services. Java is not accepted. Android
 Views should only be introduced when a required behavior cannot be implemented
 accessibly and efficiently with Compose.
 
+Follow Material 3 Expressive for new and revised UI. Reuse BeauTyXT's
+shared theme, motion scheme, and existing UI components. See the
+[architecture](docs/architecture.md#dependency-policy) for integration
+guidance.
+
 Keep unsafe Rust confined to small platform interop modules. Every unsafe block
 must state and enforce its safety invariants. Core document and parsing crates
 must forbid unsafe code.
