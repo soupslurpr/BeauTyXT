@@ -185,7 +185,8 @@ private const val TEST_IMPORT_TIMEOUT_MILLIS = 10_000L
 private const val TEST_BIND_TIMEOUT_MILLIS = 10_000L
 private const val TEST_CALLBACK_TIMEOUT_MILLIS = 15_000L
 private const val TEST_PROFILE_VERIFICATION_TIMEOUT_MILLIS = 15_000L
-private const val TEST_SUITE_TIMEOUT_MILLIS = 600_000L
+// The complete debug-native suite needs more time on physical arm64 devices.
+private const val TEST_SUITE_TIMEOUT_MILLIS = 1_200_000L
 private const val TEST_PHASE_TIMEOUT_MILLIS = 240_000L
 private const val TEST_STATUS_STARTED = 1
 private const val TEST_STATUS_PASSED = 0
