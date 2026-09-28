@@ -152,7 +152,14 @@ internal fun Instrumentation.verifyCompactEditorControls() {
         }
         waitForAccessibilityIdle()
         requireActionableContentDescription("Search options").performRequiredClick()
-        val matchCase = requireActionableText("Match case")
+        // Sheet semantics can appear while its opening animation still clips the row.
+        val matchCaseLabel = waitForAccessibilityNode("fully visible Match case control") { node ->
+            node.text?.toString() == "Match case" && node.enabledClickableAncestor()?.let { action ->
+                val bounds = Rect().also(action::getBoundsInScreen)
+                bounds.width() >= minimumTouchPixels && bounds.height() >= minimumTouchPixels
+            } == true
+        }
+        val matchCase = checkNotNull(matchCaseLabel.enabledClickableAncestor())
         requireControlBounds(matchCase, minimumTouchPixels, (width.value.value * density).roundToInt())
         matchCase.performRequiredClick()
         awaitReadingCondition("Match case did not refresh") { session.isFindComplete && session.isFindCaseSensitive }
