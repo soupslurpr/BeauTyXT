@@ -38,6 +38,10 @@ internal fun Instrumentation.verifyNewDocumentReplacement() {
         val home = startHomeDestination("New document")
         try {
             waitForEditField().performRequiredClick()
+            settle()
+            waitForAccessibilityNode("focused new-document editor") {
+                it.isEditable && it.isFocused
+            }
             sendStringSync(original)
             waitForEditorText(original)
             clickIcon("Find in document")
@@ -95,6 +99,7 @@ internal fun Instrumentation.verifyNewDocumentReplacement() {
             waitForEditorText(original)
             if (scenario == "current") capture("navigation-history")
         } catch (failure: Throwable) {
+            runCatching { capture("$scenario-failure") }
             throw AssertionError("new document replacement ($scenario): ${failure.stackTraceToString()}", failure)
         } finally {
             runOnMainSync { home.finishAndRemoveTask() }

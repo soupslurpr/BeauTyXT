@@ -2193,7 +2193,7 @@ internal fun Instrumentation.requireActionableContentDescription(
 }
 
 /** Returns a currently visible, enabled click target for this node. */
-private fun AccessibilityNodeInfo.enabledClickableAncestor(): AccessibilityNodeInfo? {
+internal fun AccessibilityNodeInfo.enabledClickableAncestor(): AccessibilityNodeInfo? {
     var actionableNode: AccessibilityNodeInfo? = this
     while (actionableNode != null && !actionableNode.isClickable) {
         actionableNode = actionableNode.parent
@@ -2265,6 +2265,7 @@ internal fun Instrumentation.waitForAccessibilityNode(
     require(description.isNotBlank()) { "accessibility node description must not be blank" }
     val deadline = SystemClock.uptimeMillis() + TEST_ACTIVITY_TIMEOUT_MILLIS
     while (SystemClock.uptimeMillis() < deadline) {
+        uiAutomation.clearCache()
         val root = uiAutomation.rootInActiveWindow
         if (root != null) {
             val match = root.findNode(predicate)

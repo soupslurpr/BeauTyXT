@@ -175,8 +175,12 @@ internal fun Instrumentation.documentKey(code: Int, modifiers: Int = 0) {
 
 /** Opens the count button through its combined action and match-count label. */
 internal fun Instrumentation.openFindResults() {
-    val label = waitForAccessibilityNode("labeled Results button") {
-        it.contentDescription?.toString()?.startsWith("Results.") == true
+    waitForAccessibilityIdle()
+    uiAutomation.clearCache()
+    // The count can change between accessibility snapshots as Find completes.
+    val label = waitForAccessibilityNode("actionable Results button") {
+        it.contentDescription?.toString()?.startsWith("Results.") == true &&
+            it.enabledClickableAncestor() != null
     }
-    requireActionableContentDescription(checkNotNull(label.contentDescription).toString()).performRequiredClick()
+    checkNotNull(label.enabledClickableAncestor()).performRequiredClick()
 }

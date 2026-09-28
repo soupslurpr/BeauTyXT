@@ -274,7 +274,9 @@ internal fun Instrumentation.withReadingPage(
 
 /** Uses real on-screen controls to keep taps between chrome and the bottom toolbar. */
 private fun Instrumentation.readingPageBounds(): Rect {
-    val root = checkNotNull(uiAutomation.rootInActiveWindow)
+    val root = waitForAccessibilityNode("reading page window") {
+        it.parent == null && it.packageName?.toString() == targetContext.packageName
+    }
     val bounds = Rect().also(root::getBoundsInScreen)
     val title = requireActionableContentDescription("More options")
     val mode = requireActionableContentDescription("Show source text")

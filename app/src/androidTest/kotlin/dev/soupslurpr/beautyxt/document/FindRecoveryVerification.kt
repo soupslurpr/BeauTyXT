@@ -141,7 +141,11 @@ private fun Instrumentation.assertFindRecoveryReachable(activity: Activity, quer
         it.isEditable && it.text?.toString() == "alpha beta alpha\n"
     }
     val bounds = Rect().also(source::getBoundsInScreen)
-    check(bounds.top + 56 * activity.resources.displayMetrics.density <= keyboardTop) {
+    // Keyboard heights vary; retain a full document touch target above the IME.
+    val minimumDocumentHeight = 48 * activity.resources.displayMetrics.density
+    check(bounds.height() >= minimumDocumentHeight &&
+        bounds.top + minimumDocumentHeight <= keyboardTop
+    ) {
         "Find failure covered the document above the keyboard: $bounds; keyboard begins at $keyboardTop"
     }
 }
