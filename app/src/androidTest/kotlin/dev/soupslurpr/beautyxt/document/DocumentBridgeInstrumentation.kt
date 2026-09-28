@@ -4576,6 +4576,17 @@ internal class AnonymousTestBuffer private constructor(
     }
 }
 
+/** Awaits asynchronous editor retirement without weakening descriptor ownership checks. */
+internal fun awaitImportedDocumentRetirement() {
+    val startedAt = SystemClock.uptimeMillis()
+    val deadline = startedAt + TEST_CALLBACK_TIMEOUT_MILLIS
+    while (targetImportBufferDescriptorCount() != 0 && SystemClock.uptimeMillis() < deadline) {
+        SystemClock.sleep(10L)
+    }
+    requireTargetImportBufferDescriptorCount(0)
+    Log.i(TAG, "retired imported documents in ${SystemClock.uptimeMillis() - startedAt} ms")
+}
+
 /** Requires the target process to own exactly the expected anonymous buffers. */
 private fun requireTargetImportBufferDescriptorCount(expectedCount: Int) {
     val actualCount = targetImportBufferDescriptorCount()

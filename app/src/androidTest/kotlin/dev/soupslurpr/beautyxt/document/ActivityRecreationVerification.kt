@@ -1280,6 +1280,9 @@ internal fun Instrumentation.verifyBackgroundSourceCheckpoint() {
             try {
                 runOnMainSync(activityToFinish::finishAndRemoveTask)
                 waitForAccessibilityIdle()
+                // Retirement finishes any in-flight source save asynchronously.
+                // Keep its fixture alive until the document really releases it.
+                awaitImportedDocumentRetirement()
             } catch (cleanupFailure: Throwable) {
                 if (primaryFailure == null) {
                     primaryFailure = cleanupFailure
