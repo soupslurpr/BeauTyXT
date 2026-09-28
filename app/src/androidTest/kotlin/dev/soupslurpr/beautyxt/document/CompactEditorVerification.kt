@@ -151,7 +151,7 @@ internal fun Instrumentation.verifyCompactEditorControls() {
             awaitCompactFindMatch(session, if (index == 0) 11L else 0L)
         }
         waitForAccessibilityIdle()
-        requireActionableContentDescription("Search options").performRequiredClick()
+        clickCompactActionAfterReflow("Search options")
         // Sheet semantics can appear while its opening animation still clips the row.
         val matchCaseLabel = waitForAccessibilityNode("fully visible Match case control") { node ->
             node.text?.toString() == "Match case" && node.enabledClickableAncestor()?.let { action ->
