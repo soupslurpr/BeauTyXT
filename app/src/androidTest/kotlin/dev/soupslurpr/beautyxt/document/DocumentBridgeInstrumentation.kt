@@ -346,6 +346,7 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 Activity.RESULT_OK
             } catch (throwable: Throwable) {
                 val report = failureReport(throwable)
+                Log.e(TAG, report, throwable)
                 results.putString(REPORT_STREAM_KEY, report)
                 status.putString("stack", report)
                 sendStatus(TEST_STATUS_FAILED, status)

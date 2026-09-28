@@ -83,7 +83,12 @@ internal fun Instrumentation.verifyReplacementReview() {
         awaitReadingCondition("hardware typing did not reach replacement input") { session.replacementFieldValue.text == "dogx" }
         awaitFrames()
         documentKey(KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON)
-        awaitReadingCondition("replacement input lost its own Undo") { session.replacementFieldValue.text == "dog" }
+        try {
+            awaitReadingCondition("replacement input lost its own Undo") { session.replacementFieldValue.text == "dog" }
+        } catch (failure: AssertionError) {
+            error("${failure.message}; replacement=${session.replacementFieldValue}, " +
+                "source=${source()}, focus=${session.findInputFocus}, revision=${session.state.metrics?.revision}")
+        }
         check(session.state.metrics!!.revision == revision && source() == original) { "input Undo changed the document" }
         requireActionableText("Review all").performRequiredClick()
         requireActionableContentDescription("Return to document").performRequiredClick()
