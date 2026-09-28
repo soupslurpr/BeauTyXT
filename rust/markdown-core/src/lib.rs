@@ -7,6 +7,7 @@ mod block_buffer;
 mod bracket_math;
 mod html;
 
+use std::borrow::Cow;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::ops::Range;
@@ -483,8 +484,20 @@ impl<'a> SourceOffsetIndex<'a> {
         if range.start > range.end || range.end > self.source.len() {
             return Err(RenderError::State);
         }
+        // The parser can emit only the LF of a CRLF pair, notably in code
+        // blocks. Either byte belongs to the same logical newline. Round a
+        // nonempty range's start outward so that LF retains that provenance;
+        // empty ranges must still map to an empty logical range.
+        let start = if !range.is_empty()
+            && range.start > 0
+            && self.source.as_bytes()[range.start - 1..=range.start] == *b"\r\n"
+        {
+            range.start - 1
+        } else {
+            range.start
+        };
         Ok(SourceRange::new(
-            self.logical_utf16_at(range.start)?,
+            self.logical_utf16_at(start)?,
             self.logical_utf16_at(range.end)?,
         ))
     }
@@ -1538,9 +1551,9 @@ pub fn render_markdown_with_control(
 ) -> Result<RenderPacket, RenderError> {
     validate_markdown_input(markdown, control)?;
     let options = markdown_options();
-    let parser_input = markdown.strip_prefix('\u{feff}').unwrap_or(markdown);
-    let source_offsets = SourceOffsetIndex::new(parser_input)?;
-    let bracket_math = bracket_math::BracketMath::prepare(parser_input, options, control)?;
+    let parser_input = parser_line_endings(markdown.strip_prefix('\u{feff}').unwrap_or(markdown));
+    let source_offsets = SourceOffsetIndex::new(&parser_input)?;
+    let bracket_math = bracket_math::BracketMath::prepare(&parser_input, options, control)?;
     let prepared_input = bracket_math.input.as_ref();
     let render_safe_inline_html = validate_safe_inline_html(prepared_input, options, control)?;
     control.checkpoint()?;
@@ -1626,6 +1639,33 @@ pub fn render_markdown_with_control(
         markdown.len(),
         source_offsets.logical_utf16_units,
         control,
+    )
+}
+
+/// Makes standalone CR line endings parse like LF without shifting any byte offsets.
+/// CRLF remains intact so ordinary LF/CRLF documents need no additional input copy.
+fn parser_line_endings(source: &str) -> Cow<'_, str> {
+    let is_standalone_cr = |offset: usize, byte: u8| {
+        byte == b'\r' && source.as_bytes().get(offset + 1) != Some(&b'\n')
+    };
+    if !source
+        .bytes()
+        .enumerate()
+        .any(|(offset, byte)| is_standalone_cr(offset, byte))
+    {
+        return Cow::Borrowed(source);
+    }
+    Cow::Owned(
+        source
+            .char_indices()
+            .map(|(offset, character)| {
+                if character == '\r' && is_standalone_cr(offset, b'\r') {
+                    '\n'
+                } else {
+                    character
+                }
+            })
+            .collect(),
     )
 }
 
@@ -3810,6 +3850,56 @@ mod tests {
     }
 
     #[test]
+    fn maps_either_half_of_crlf_to_the_logical_newline() {
+        let source = "😀\r\nend";
+        let offsets = super::SourceOffsetIndex::new(source).unwrap();
+        for range in [4..5, 5..6, 4..6] {
+            assert_eq!(offsets.source_range(range).unwrap(), SourceRange::new(2, 3));
+        }
+        assert_eq!(offsets.source_range(5..5).unwrap(), SourceRange::new(3, 3));
+        assert_eq!(offsets.source_range(6..9).unwrap(), SourceRange::new(3, 6));
+    }
+
+    #[test]
+    fn preserves_rendered_text_and_source_maps_across_line_endings() {
+        let long_line = "😀é東京".repeat(MAX_BLOCK_TEXT_BYTES);
+        for source in [
+            "# 😀é東京\n\n**text**  \nnext\n".to_owned(),
+            "\\[x^2+y^2=z^2\\]\n\nInline \\(x^2\\).\n".to_owned(),
+            "```\ntext\n```\n".to_owned(),
+            "\u{feff}```mermaid\nflowchart TD\n  A --> B\n\n```\n".to_owned(),
+            "```\n\n😀é東京\n\n```".to_owned(),
+            "    text\n\n    😀é東京\n".to_owned(),
+            "> ```\n> text\n> \n> 😀é東京\n> ```\n".to_owned(),
+            "- ```rust\n  text\n\n  😀é東京\n  ```\n".to_owned(),
+            format!("```\n{long_line}\n\nend\n```\n"),
+        ] {
+            let expected = decode_blocks(render_markdown(&source).unwrap().as_bytes());
+            for newline in ["\r\n", "\r"] {
+                let serialized = source.replace('\n', newline);
+                let packet = render_markdown(&serialized).expect("Markdown should render");
+                assert_eq!(decode_blocks(packet.as_bytes()), expected);
+            }
+            let mut newline_index = 0;
+            let mixed: String = source
+                .chars()
+                .map(|character| {
+                    if character == '\n' {
+                        newline_index += 1;
+                        ["\r", "\r\n", "\n"][newline_index % 3].to_owned()
+                    } else {
+                        character.to_string()
+                    }
+                })
+                .collect();
+            assert_eq!(
+                decode_blocks(render_markdown(&mixed).unwrap().as_bytes()),
+                expected
+            );
+        }
+    }
+
+    #[test]
     fn preserves_invisible_markdown_syntax_in_block_source_ranges() {
         let packet = render_markdown("**bold**").expect("styled Markdown should render");
         let decoded = decode_blocks(packet.as_bytes());
@@ -3841,7 +3931,7 @@ mod tests {
         );
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Eq, PartialEq)]
     struct DecodedBlock {
         kind: u32,
         flags: u32,
