@@ -85,7 +85,7 @@ under test. Only the fixture protocol constants are shared with the tests.
 For manual `adb shell am instrument` runs, build `:test-providers:assembleDebug`
 and install `test-providers/build/outputs/apk/debug/test-providers-debug.apk`
 with `adb -s SERIAL install -r -t`, alongside the debug and instrumentation
-APKs. Always select the intended emulator or explicitly authorized device.
+APKs. Always select the intended device with `adb -s SERIAL`.
 The helper has no release variant or launcher activity. Access requires a
 signature permission, and its providers also validate the caller package.
 Neither the helper nor its access permission ships in staging or production.
