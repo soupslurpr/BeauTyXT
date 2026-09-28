@@ -541,8 +541,15 @@ internal fun Instrumentation.verifyShortDocumentEditRecovery(capturePreviews: Bo
             )
             if (capturePreviews) captureStartupPreview("edit-recovery-$unverifiedResult")
             recoveryAction.performRequiredClick()
+            // Reload returns to source blocks, whose labels omit line endings.
+            val expectedVisibleText = if (unverifiedResult) {
+                TEST_EDIT_RECOVERY_REPLACEMENT.removeSuffix("\n")
+            } else {
+                TEST_EDIT_RECOVERY_REPLACEMENT
+            }
             waitForAccessibilityNode("recovered document text") { node ->
-                node.text?.toString() == TEST_EDIT_RECOVERY_REPLACEMENT &&
+                node.text?.toString() == expectedVisibleText &&
+                    (!unverifiedResult || !node.isEditable) &&
                     session.state.status == EditorDocumentStatus.Ready &&
                     session.state.editorMessage == null
             }
