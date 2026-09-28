@@ -168,13 +168,10 @@ internal fun EditorFindChrome(
                 }
                 if (!compact || useInlineStatus) tools()
                 if (useInlineStatus) {
-                    if (failure != null) Column(Modifier.width(inlineFailureWidth)) {
-                        if (activeOptions.isNotEmpty()) optionsLabel()
-                        EditorFindFailure(failure, onRetry = session::retryFind)
-                    } else if (activeOptions.isNotEmpty()) Column(Modifier.width(248.dp)) {
-                        optionsLabel(Modifier.padding(horizontal = 12.dp))
-                        EditorMatchNavigation(session, onResults = { openResults(false) })
-                    } else EditorMatchNavigation(session, onResults = { openResults(false) })
+                    if (failure != null) EditorFindFailure(failure, Modifier.width(inlineFailureWidth),
+                        onRetry = session::retryFind, options = activeOptions.joinToString(" · "))
+                    else EditorMatchNavigation(session, onResults = { openResults(false) },
+                        options = activeOptions.joinToString(" · "))
                     TextButton(onClick = { focusDocument() }, modifier = Modifier.heightIn(min = 48.dp)) {
                         Text(stringResource(R.string.export_done))
                     }
@@ -263,10 +260,11 @@ private fun EditorFindActions(
 
 /** Shares match navigation with the single-row landscape typing layout. */
 @Composable
-private fun EditorMatchNavigation(session: EditorSession, onResults: () -> Unit) {
+private fun EditorMatchNavigation(session: EditorSession, onResults: () -> Unit, options: String = "") {
     Row(verticalAlignment = Alignment.CenterVertically) {
         val count = findCountText(session)
-        val description = stringResource(R.string.find_results_description, count)
+        val description = listOf(stringResource(R.string.find_results_description, count), options)
+            .filter(String::isNotEmpty).joinToString(" ")
         TextButton(onResults, enabled = session.findFieldValue.text.isNotEmpty(),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
             modifier = Modifier.widthIn(min = 88.dp, max = 144.dp).heightIn(min = 48.dp).semantics {
@@ -274,7 +272,8 @@ private fun EditorMatchNavigation(session: EditorSession, onResults: () -> Unit)
                 liveRegion = LiveRegionMode.Polite
             }) {
             Column(Modifier.clearAndSetSemantics { }, horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(stringResource(R.string.find_results), style = MaterialTheme.typography.labelLarge)
+                Text(listOf(stringResource(R.string.find_results), options).filter(String::isNotEmpty).joinToString(" · "),
+                    style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(count, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }

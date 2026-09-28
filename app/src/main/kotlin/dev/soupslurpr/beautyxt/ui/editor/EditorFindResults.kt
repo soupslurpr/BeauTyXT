@@ -201,11 +201,19 @@ internal fun EditorFindFeedback(session: EditorSession, modifier: Modifier = Mod
 
 /** Can share the query row when the landscape keyboard leaves little vertical space. */
 @Composable
-internal fun EditorFindFailure(failure: FindStatus.Failed, modifier: Modifier = Modifier, onRetry: () -> Unit) {
+internal fun EditorFindFailure(failure: FindStatus.Failed, modifier: Modifier = Modifier,
+    onRetry: () -> Unit, options: String = "") {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(failure.message.asString(), Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+        Text(buildAnnotatedString {
+            if (options.isNotEmpty()) withStyle(SpanStyle(
+                color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium
+            )) { append(options); append(" · ") }
+            append(failure.message.asString())
+        }, Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        TextButton(onRetry) { Text(stringResource(R.string.find_retry)) }
+        TextButton(onRetry, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.find_retry))
+        }
     }
 }
 
