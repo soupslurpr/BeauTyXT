@@ -15,6 +15,8 @@ import dev.soupslurpr.beautyxt.ui.editor.EditorPresentation
 import dev.soupslurpr.beautyxt.ui.editor.ExcerptFormat
 import dev.soupslurpr.beautyxt.ui.editor.ReadingPoint
 import java.io.File
+import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.runBlocking
 
 /** Exercises the production accessibility actions, keyboard routing, and frozen output chooser. */
 internal fun Instrumentation.verifyDocumentSelectionControls() {
@@ -60,18 +62,29 @@ internal fun Instrumentation.verifyDocumentSelectionControls() {
         awaitReadingCondition("selection did not cross paragraphs") {
             (session.documentSelection as? DocumentSelection.Reading)?.end == ReadingPoint(1, 17)
         }
-        val end = waitForAccessibilityNode("selection end handle") { it.contentDescription?.toString() == "Selection end" }
-        check(end.performAction(AccessibilityNodeInfo.ACTION_FOCUS))
-        waitForAccessibilityNode("focused selection handle") { it.contentDescription?.toString() == "Selection end" && it.isFocused }
+        // Extending the selection updates state before its popup relinquishes input focus.
+        waitForActivityWindowFocus(activity)
         waitForAccessibilityIdle()
+        runBlocking { repeat(2) { awaitFrame() } }
+        val end = waitForAccessibilityNode("selection end handle") { it.contentDescription?.toString() == "Selection end" }
+        check(end.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) {
+            "selection handle rejected input focus after its popup closed"
+        }
+        waitForAccessibilityIdle()
+        waitForAccessibilityNode("focused selection handle") { it.contentDescription?.toString() == "Selection end" && it.isFocused }
         val time = SystemClock.uptimeMillis()
         sendKeySync(KeyEvent(time, time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_C, 0, KeyEvent.META_CTRL_ON))
         sendKeySync(KeyEvent(time, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, KeyEvent.KEYCODE_C, 0, KeyEvent.META_CTRL_ON))
         val clipboard = checkNotNull(activity.getSystemService(ClipboardManager::class.java))
-        try { awaitReadingCondition("keyboard Copy lost displayed text or paragraph boundaries") {
-            clipboard.primaryClip?.getItemAt(0)?.text?.toString() == "Alpha 👩‍🔬 é text.\n\nSecond paragraph."
-        } } catch (failure: AssertionError) {
-            error("${failure.message}; clipboard=${clipboard.primaryClip?.getItemAt(0)?.text}; selection=${session.documentSelection}")
+        try {
+            awaitReadingCondition("keyboard Copy lost displayed text or paragraph boundaries") {
+                clipboard.primaryClip?.getItemAt(0)?.text?.toString() == "Alpha 👩‍🔬 é text.\n\nSecond paragraph."
+            }
+        } catch (failure: AssertionError) {
+            runCatching { captureRecoveryScreen("reading-selection-copy-failure") }
+            error("${failure.message}; clipboard=${clipboard.primaryClip?.getItemAt(0)?.text}; " +
+                "selection=${session.documentSelection}; message=${session.selectionMessage}; " +
+                "windowFocus=${activity.hasWindowFocus()}, documentFocus=${hasComposeKeyboardFocus(activity.window.decorView, documentOnly = true)}")
         }
         selectionControl("Send/export").performRequiredClick()
         awaitReadingCondition("excerpt preview did not prepare") { session.excerptExport.prepared != null && !session.excerptExport.busy }
@@ -83,8 +96,7 @@ internal fun Instrumentation.verifyDocumentSelectionControls() {
         check(shareSwitch.checked == CHECKED_STATE_FALSE)
         shareSwitch.performRequiredClick()
         awaitReadingCondition("accessible share switch did not select file output") { session.excerptExport.shareAsFile && !session.excerptExport.busy }
-        val checkedShareSwitch = scrollToExcerptSwitch("Share as a file")
-        check(checkedShareSwitch.checked == CHECKED_STATE_TRUE)
+        val checkedShareSwitch = waitForExcerptSwitchState("Share as a file", checked = true)
         checkedShareSwitch.performRequiredClick()
         awaitReadingCondition("accessible share switch did not restore text output") { !session.excerptExport.shareAsFile && !session.excerptExport.busy }
         selectionControl("Done").performRequiredClick()
@@ -117,7 +129,7 @@ internal fun Instrumentation.verifyDocumentSelectionControls() {
             awaitReadingCondition("accessible $label switch did not update the PDF") {
                 value() != before && !session.excerptExport.busy && session.excerptExport.prepared?.pdfPages == 1
             }
-            check(scrollToExcerptSwitch(label).checked == if (before) CHECKED_STATE_FALSE else CHECKED_STATE_TRUE)
+            waitForExcerptSwitchState(label, checked = !before)
         }
         runOnMainSync {
             check(session.excerptExport.usePreparedDestination(dev.soupslurpr.beautyxt.ui.editor.ExcerptDestination.Save))
@@ -201,17 +213,8 @@ internal fun Instrumentation.verifyExcerptPdfPages() {
                 } }
             }
         }
-        repeat(6) {
-            waitForAccessibilityIdle()
-            uiAutomation.clearCache()
-            val root = checkNotNull(uiAutomation.rootInActiveWindow)
-            if (root.findNode { it.isVisibleToUser && it.text?.toString() == "Next preview page" } == null) {
-                val scroll = root.findNode { it.isVisibleToUser && it.isScrollable && it.actionList.any { action ->
-                    action.id == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-                } }
-                check(scroll?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) == true)
-            }
-        }
+        // The sheet may expose content before its scroll viewport finishes opening.
+        revealScrollableAction("Next preview page")
         fun requirePage(index: Int) {
             waitForAccessibilityNode("PDF preview page ${index + 1}") {
                 it.isVisibleToUser && it.contentDescription?.toString() == expected[index]
@@ -256,6 +259,16 @@ private fun Instrumentation.scrollToExcerptSwitch(label: String): AccessibilityN
         }
     }
     error("Export sheet did not expose its named $label switch")
+}
+
+/** State updates can precede the matching Compose accessibility semantics. */
+private fun Instrumentation.waitForExcerptSwitchState(label: String, checked: Boolean): AccessibilityNodeInfo {
+    scrollToExcerptSwitch(label)
+    return waitForAccessibilityNode("$label switch checked=$checked") { node ->
+        node.isVisibleToUser && node.isCheckable &&
+            node.checked == (if (checked) CHECKED_STATE_TRUE else CHECKED_STATE_FALSE) &&
+            node.findNode { it.text?.toString() == label } != null
+    }
 }
 
 /** Run on a wide emulator window; one pane switches tools without hiding the passage. */

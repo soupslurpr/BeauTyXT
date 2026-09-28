@@ -2102,7 +2102,7 @@ private fun Instrumentation.injectHistoryShortcut(keyCode: Int, modifiers: Int) 
 }
 
 /** Waits until the editor window can receive input after an Activity or dialog transition. */
-private fun Instrumentation.waitForActivityWindowFocus(activity: Activity) {
+internal fun Instrumentation.waitForActivityWindowFocus(activity: Activity) {
     val deadline = SystemClock.uptimeMillis() + TEST_ACTIVITY_TIMEOUT_MILLIS
     val focused = AtomicBoolean()
     while (SystemClock.uptimeMillis() < deadline) {
