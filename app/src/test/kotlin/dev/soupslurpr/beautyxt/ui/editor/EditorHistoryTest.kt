@@ -7,7 +7,7 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
-/** Verifies journal ownership, native revision boundaries, and combined memory limits. */
+/** Verifies metadata ownership, native revision boundaries, and native eviction. */
 class EditorHistoryTest {
     @Test
     fun startsEmpty() {
@@ -15,26 +15,22 @@ class EditorHistoryTest {
         assertNull(history.undoEntry)
         assertNull(history.redoEntry)
         assertNull(history.headRevision)
-        assertEquals(0, history.retainedUtf16Units)
     }
 
     @Test
-    fun movesEntriesWithoutDuplicatingText() {
+    fun movesMetadataAfterNativeRevisionCommits() {
         val history = EditorHistory()
         val first = delta(0, "old", "new")
         val second = delta(1, "", "😀")
         history.record(first)
         history.record(second)
-        assertEquals(8, history.retainedUtf16Units)
         history.completeUndo(second, revision = 3)
         assertSame(first, history.undoEntry)
         assertSame(second, history.redoEntry)
-        assertEquals(8, history.retainedUtf16Units)
         history.completeRedo(second, revision = 4)
         assertSame(second, history.undoEntry)
         assertNull(history.redoEntry)
         assertEquals(4L, history.headRevision)
-        assertEquals(8, history.retainedUtf16Units)
     }
 
     @Test
@@ -45,27 +41,26 @@ class EditorHistoryTest {
         history.record(delta(0, "", "a"))
         history.record(second)
         history.record(third)
-        assertEquals(2, history.retainedUtf16Units)
         history.completeUndo(third, revision = 4)
         history.completeUndo(second, revision = 5)
         assertNull(history.undoEntry)
     }
 
     @Test
-    fun dropsOldestEntriesAtTheTextLimit() {
-        val history = EditorHistory(maxRetainedUtf16Units = 6)
+    fun followsNativeMemoryEvictionAndKeepsTheLatestEntry() {
+        val history = EditorHistory()
         history.record(delta(0, "", "abc"))
         history.record(delta(1, "", "def"))
         val newest = delta(2, "", "ghij")
-        history.record(newest)
-        assertEquals(4, history.retainedUtf16Units)
+        history.record(newest, oldestNativeUndo = 3)
         history.completeUndo(newest, revision = 4)
         assertNull(history.undoEntry)
+        assertSame(newest, history.redoEntry)
     }
 
     @Test
-    fun releasesRedoBeforeBudgetingANewBranch() {
-        val history = EditorHistory(maxRetainedUtf16Units = 6)
+    fun discardsRedoOnANewBranch() {
+        val history = EditorHistory()
         val first = delta(0, "", "a")
         val abandoned = delta(1, "", "12345")
         history.record(first)
@@ -74,20 +69,8 @@ class EditorHistoryTest {
         val branch = delta(3, "", "bcde")
         history.record(branch)
         assertNull(history.redoEntry)
-        assertEquals(5, history.retainedUtf16Units)
         history.completeUndo(branch, revision = 5)
         assertSame(first, history.undoEntry)
-    }
-
-    @Test
-    fun discardsHistoryAcrossAnUnrecordableEdit() {
-        val history = EditorHistory(maxRetainedUtf16Units = 3)
-        history.record(delta(0, "", "a"))
-        history.record(delta(1, "a", "abcd"))
-        assertNull(history.undoEntry)
-        assertNull(history.redoEntry)
-        assertEquals(0, history.retainedUtf16Units)
-        assertEquals(2L, history.headRevision)
     }
 
     @Test
@@ -101,7 +84,6 @@ class EditorHistoryTest {
         history.record(external)
         assertSame(external, history.undoEntry)
         assertNull(history.redoEntry)
-        assertEquals(1, history.retainedUtf16Units)
         assertEquals(10L, history.headRevision)
     }
 
@@ -140,16 +122,12 @@ class EditorHistoryTest {
         history.clear(revision = 7)
         assertNull(history.undoEntry)
         assertNull(history.redoEntry)
-        assertEquals(0, history.retainedUtf16Units)
         assertEquals(7L, history.headRevision)
     }
 
     @Test
     fun requiresPositiveBudgetsAndNonnegativeRevisions() {
         assertThrows(IllegalArgumentException::class.java) { EditorHistory(maxEntries = 0) }
-        assertThrows(IllegalArgumentException::class.java) {
-            EditorHistory(maxRetainedUtf16Units = 0)
-        }
         assertThrows(IllegalArgumentException::class.java) { EditorHistory().clear(revision = -1) }
     }
 

@@ -338,7 +338,8 @@ dismissal and document-navigation behavior. Returns restore presentation and
 source caret; an unavailable reading render falls back to source with a notice.
 
 Replacement batches validate ordering, expected text, revision, output size,
-and the existing Undo budget before publishing one persistent-tree revision.
+the bounded review packet, and native history memory before publishing one
+persistent-tree revision.
 BEBT version 1 carries at most 4,096 patches. The commit and its returned metrics
 are a non-cancellable publication boundary; a committed batch retains one Undo
 and Redo even if preparation was canceled concurrently. Autosave sees the final
@@ -357,9 +358,13 @@ The ordinary target is 16 Ki UTF-16 code units, and both the native protocol
 and Compose draft enforce a 32 Ki hard ceiling. Window edges prefer extended
 grapheme boundaries and always fall back to valid Unicode scalar boundaries.
 `ActiveEditDraft` owns each bounded `TextFieldState`, its selection, and scroll
-positions. `EditorHistory` owns the user-visible undo and redo stacks under one
-128-entry / 256 Ki UTF-16-unit budget. Both belong to the retained in-memory
-editor session. Those objects never use a `Saver`, `rememberSaveable`,
+positions. Native `Document` history owns before/after persistent tree roots
+under a combined 128-entry / 64 MiB changed-allocation budget. `EditorHistory`
+retains only revision tokens, edit ranges, inserted lengths, and selections; it
+mirrors native eviction after successful publication. Neither removed nor
+inserted document strings remain in the Kotlin journal. Both belong to the
+retained in-memory editor session. Those objects never use a `Saver`,
+`rememberSaveable`,
 `SavedStateHandle`, or serialization,
 so BeauTyXT does not serialize document content or retained editor state into
 Android instance state. Transfer metadata drafts, including an optional NFC
@@ -376,12 +381,41 @@ worker responses are discarded. Active IME composition is allowed to finish
 before applying or moving the window. Explicit Undo and Redo first commit the
 visible composing word without changing its characters, selection, or focus.
 
-Bulk paste is independent of the small input-method window. An insertion of up
-to 128 Ki UTF-16 units is committed as one undoable native edit, then the same
-focused field shows a bounded window around the result. Pending typing is
-settled first, accepted bulk input cannot be discarded by an immediate Back,
-and oversized input is rejected without copying only a prefix. Pasted CRLF and
-bare-CR line endings are normalized to the editor's logical LF representation.
+Bulk paste is independent of the small input-method window. The content
+receiver takes a single large plain-text clipboard item before Compose builds
+an oversized field buffer. Large IME and accessibility input also routes out
+of the field before publication or layout. One immutable input string is kept;
+a worker normalizes CRLF and bare CR to LF and validates Unicode while sending
+at most 8 Ki UTF-16 units per chunk (the JNI boundary independently enforces
+64 KiB UTF-8). The native builder coalesces transfers into scalar-aligned
+64 KiB storage chunks and accounts chunk/node overhead during preparation.
+It checks no-op equality as chunks arrive, keeping long comparisons outside
+the final publication call. The unpublished tree belongs to one document and
+revision. Cancellation, invalid Unicode, stale revisions, and resource
+rejections discard the builder and preserve both history stacks. Commit checks
+the editable offset space, the 256 MiB serialized-document limit, and the native
+history budget before publishing one revision and its Undo together. Pending
+typing settles first, and an accepted insertion cannot be discarded by Back.
+The same focused field then shows a bounded window around the result.
+
+Native Undo/Redo restores exact tree roots, preserving original source bytes,
+BOM, and mixed line endings, while advancing the revision monotonically. It
+never sends inverse document text across JNI. Each history entry tracks the
+allocation identities present on only one side of its tree change. Reference
+counts charge shared changed nodes and entire edited-text backings once across
+both stacks, including new text still present in the live document. Original
+source bytes are not duplicated; history can keep that document's
+immutable source descriptor alive even after the live tree deletes its last
+source piece. The original source's separate 256 MiB bound still applies.
+Oldest-first eviction makes room for an admissible new entry; an entry that
+cannot fit alone rejects the edit before discarding Redo or evicting anything.
+Dropping history releases its roots without invalidating independently owned
+save/preview snapshots. The allocation budget excludes allocator bookkeeping
+and the bounded journal/map containers; construction can temporarily retain the
+old journal plus one prepared insertion. A separate 64 Mi UTF-16 platform-input
+ceiling bounds copies on the fallback field-input path. Neither limit promises
+that every paste below that text length fits: UTF-8 size, preserved source
+format, tree overhead, and retained removed allocations also matter.
 
 The document host wraps Compose text-input requests with a stable interceptor
 that adds Android's

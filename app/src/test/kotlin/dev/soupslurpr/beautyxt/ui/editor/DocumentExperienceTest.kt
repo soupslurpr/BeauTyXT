@@ -4,7 +4,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import dev.soupslurpr.beautyxt.document.DocumentPatch
 import dev.soupslurpr.beautyxt.document.Utf16Range
-import dev.soupslurpr.beautyxt.document.inversePatches
+import dev.soupslurpr.beautyxt.document.inverseChanges
 import dev.soupslurpr.beautyxt.markdown.MarkdownBlockKind
 import dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument
 import dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock
@@ -441,10 +441,11 @@ class DocumentExperienceTest {
         assertEquals(points[0].copy(revision = 1), locations.move(false).first)
     }
 
-    @Test fun adjacentDeletionUndoUsesOneUnambiguousInsertion() {
-        val inverse = inversePatches(listOf(DocumentPatch(Utf16Range(0, 1), "a", ""),
+    @Test fun adjacentDeletionUndoRebasesAnchorsWithoutInverseText() {
+        val inverse = inverseChanges(listOf(DocumentPatch(Utf16Range(0, 1), "a", ""),
             DocumentPatch(Utf16Range(1, 2), "b", "")))
-        assertEquals(listOf(DocumentPatch(Utf16Range(0, 0), "", "ab")), inverse)
+        assertEquals(2L, rebaseDocumentPoint(0, inverse))
+        assertEquals(Utf16Range(2, 4), rebaseCapturedRange(Utf16Range(0, 2), inverse))
     }
 
     @Test fun readingJoinsParagraphsAndChunksButKeepsCellsSeparate() {

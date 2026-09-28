@@ -22,6 +22,14 @@ internal object NativeDocument {
     @JvmStatic external fun positionAt(handle: Long, revision: Long, offset: Long): LongArray
     @JvmStatic external fun replaceBatch(handle: Long, revision: Long, packet: ByteArray): ByteArray
 
+    @JvmStatic external fun beginInsertion(handle: Long, revision: Long, start: Long, end: Long)
+    @JvmStatic external fun appendInsertion(handle: Long, revision: Long, chunk: ByteArray)
+    @JvmStatic external fun cancelInsertion(handle: Long)
+    @JvmStatic external fun finishInsertion(handle: Long, revision: Long): ByteArray
+    @JvmStatic external fun restoreHistory(handle: Long, revision: Long, token: Long, undo: Boolean): ByteArray
+    @JvmStatic external fun historyState(handle: Long): LongArray
+    @JvmStatic external fun clearHistory(handle: Long)
+
     /** Opens format-preserving UTF-8 from a descriptor and returns its native handle. */
     @JvmStatic
     external fun openSource(rawFileDescriptor: Int, expectedBytes: Long): Long

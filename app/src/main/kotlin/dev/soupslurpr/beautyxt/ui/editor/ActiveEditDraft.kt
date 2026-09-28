@@ -327,11 +327,12 @@ internal class ActiveEditDraft(
     }
 
     /** Applies one committed history revision without replacing the focused field or IME. */
-    fun reconcileHistoryEditWindow(nextEdit: ActiveEditWindow) {
+    fun reconcileHistoryEditWindow(nextEdit: ActiveEditWindow, allowUnchangedRevision: Boolean = false) {
         require(nextEdit.generation != edit.generation) {
             "history edit-window handoff must advance the generation"
         }
-        require(nextEdit.snapshot.metrics.revision > edit.snapshot.metrics.revision) {
+        require(nextEdit.snapshot.metrics.revision > edit.snapshot.metrics.revision ||
+            (allowUnchangedRevision && nextEdit.snapshot.metrics.revision == edit.snapshot.metrics.revision)) {
             "history edit-window handoff must advance the revision"
         }
         require(!hasChanges) { "history edit-window handoff requires a clean draft" }

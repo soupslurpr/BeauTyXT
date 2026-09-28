@@ -382,12 +382,15 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 }
                 verifyPhase("license scroll insets", ::verifyNoticeScrollInsets)
                 verifyPhase("document bridge", ::verifyDocumentBridge)
+                verifyPhase("native paste history") { verifyNativeHistory() }
+                verifyOptInPhase("native insertion memory") { verifyNativeInsertionMemory() }
                 verifyPhase("document experience") { verifyDocumentExperience(targetContext) }
                 verifyPhase("document experience controls") { verifyPackagedDocumentExperience(targetContext.packageName) }
                 verifyPhase("Home document experience") {
                     verifyPackagedDocumentExperience(targetContext.packageName, fromHome = true)
                 }
                 verifyOptInPhase("staging document experience") { verifyPackagedDocumentExperience() }
+                verifyOptInPhase("staging large paste") { verifyPackagedDocumentExperience(largePaste = true) }
                 verifyPhase("excerpt preparation") { verifyExcerptPreparation(targetContext) }
                 verifyPhase("whole document export") { verifyWholeDocumentExport() }
                 verifyPhase("export destination controls") { verifyExportDestinationControls() }
@@ -4459,7 +4462,7 @@ class DocumentBridgeInstrumentation : Instrumentation() {
 }
 
 /** Owns one unlinked memfd used by direct service instrumentation. */
-private class AnonymousTestBuffer private constructor(
+internal class AnonymousTestBuffer private constructor(
     private val device: Long,
     private val inode: Long,
     private var descriptor: ParcelFileDescriptor?

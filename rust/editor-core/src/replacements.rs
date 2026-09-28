@@ -3,14 +3,14 @@
 use beautyxt_source_save_core::MAX_OUTPUT_BYTES;
 
 use crate::{
-    Document, DocumentError, DocumentMetrics, DocumentSnapshot, MAX_EDITABLE_UTF16_UNITS,
-    MAX_INLINE_REPLACEMENT_BYTES, Utf16Range, piece_tree::ReplaceOutcome, read_find_text,
+    Document, DocumentError, DocumentMetrics, DocumentSnapshot, MAX_INLINE_REPLACEMENT_BYTES,
+    Utf16Range, piece_tree::ReplaceOutcome, read_find_text,
 };
 
 /// Bounds the number of patches in one atomic, undoable transaction.
 pub const MAX_BATCH_EDITS: usize = 4096;
-/// Bounds the combined removed and inserted UTF-16 retained for one Undo.
-pub const MAX_BATCH_HISTORY_UTF16_UNITS: usize = 256 * 1024;
+/// Bounds temporary removed and inserted UTF-16 in one reviewed batch.
+pub const MAX_BATCH_TEXT_UTF16_UNITS: usize = 256 * 1024;
 
 /// Describes an exact patch in the original revision's coordinates.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -28,13 +28,13 @@ impl Document {
     ///
     /// All validation and tree construction precede publication. Rejected
     /// transactions leave both the current document and snapshots unchanged.
-    /// The history bound is checked here as well as in the platform journal;
-    /// callers can always retain the inverse without copying untouched text.
+    /// The review packet and native persistent-history budgets are independent;
+    /// Undo retains tree roots without retaining these temporary patch strings.
     ///
     /// # Errors
     ///
     /// Rejects stale revisions, mismatched or overlapping patches, invalid
-    /// UTF-16 boundaries, and history, edit-count, or document-size overflow.
+    /// UTF-16 boundaries, and review-text, history-memory, edit-count, or document-size overflow.
     pub fn replace_batch(
         &mut self,
         expected_revision: u64,
@@ -82,9 +82,9 @@ impl Document {
             retained_units = retained_units
                 .checked_add(edit.expected.encode_utf16().count())
                 .and_then(|units| units.checked_add(edit.replacement.encode_utf16().count()))
-                .filter(|units| *units <= MAX_BATCH_HISTORY_UTF16_UNITS)
+                .filter(|units| *units <= MAX_BATCH_TEXT_UTF16_UNITS)
                 .ok_or(DocumentError::InvalidReplacement(
-                    "batch exceeds Undo text limit",
+                    "batch exceeds review text limit",
                 ))?;
             if edit.expected.encode_utf16().count() != edit.range.len()
                 || read_find_text(&mut reader, edit.range)? != edit.expected
@@ -108,29 +108,7 @@ impl Document {
         if !changed {
             return Ok(self.metrics());
         }
-        let units = next_tree.summary().utf16_units;
-        if units > MAX_EDITABLE_UTF16_UNITS {
-            return Err(DocumentError::DocumentTooLargeForEditing {
-                utf16_units: units,
-                max_utf16_units: MAX_EDITABLE_UTF16_UNITS,
-            });
-        }
-        let bytes = next_tree.serialized_bytes();
-        if bytes > self.tree.serialized_bytes()
-            && u64::try_from(bytes).unwrap_or(u64::MAX) > save_limit
-        {
-            return Err(DocumentError::DocumentTooLargeForSaving {
-                bytes,
-                max_bytes: save_limit,
-            });
-        }
-        let next_revision = self
-            .revision
-            .checked_add(1)
-            .ok_or(DocumentError::RevisionExhausted)?;
-        self.tree = next_tree;
-        self.revision = next_revision;
-        Ok(self.metrics())
+        self.commit_tree(next_tree, save_limit)
     }
 }
 
@@ -155,9 +133,9 @@ impl DocumentSnapshot {
     ///
     /// # Errors
     ///
-    /// Rejects invalid or misaligned ranges and reads larger than the Undo budget.
+    /// Rejects invalid or misaligned ranges and reads larger than the bounded text budget.
     pub fn read_range(&self, range: Utf16Range) -> Result<String, DocumentError> {
-        if range.start > range.end || range.len() > MAX_BATCH_HISTORY_UTF16_UNITS {
+        if range.start > range.end || range.len() > MAX_BATCH_TEXT_UTF16_UNITS {
             return Err(DocumentError::InvalidReplacement(
                 "source range exceeds text limit",
             ));
@@ -230,7 +208,7 @@ mod tests {
                 0,
                 3,
                 "cat",
-                "x".repeat(MAX_BATCH_HISTORY_UTF16_UNITS).as_str(),
+                "x".repeat(MAX_BATCH_TEXT_UTF16_UNITS).as_str(),
             )],
         ] {
             assert!(document.replace_batch(0, &edits).is_err());

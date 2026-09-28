@@ -3,6 +3,8 @@ package dev.soupslurpr.beautyxt.document
 import android.app.Activity
 import android.app.ActivityManager
 import android.app.Instrumentation
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
@@ -22,13 +24,14 @@ private const val EXPERIENCE_STAGING_PACKAGE = "dev.soupslurpr.beautyxt.staging"
 /** Drives a packaged app without accessing its session state or native handles. */
 internal fun Instrumentation.verifyPackagedDocumentExperience(
     app: String = EXPERIENCE_STAGING_PACKAGE,
-    fromHome: Boolean = false
+    fromHome: Boolean = false,
+    largePaste: Boolean = false
 ) {
     require(!fromHome || app == targetContext.packageName)
     val resolver = targetContext.contentResolver
     val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
     val paragraph = "A silver cat meets silver concatenate."
-    val original = "# Staging review\n\n$paragraph\n\nSecond silver cat.\n\nPRIVATE TAIL\n"
+    val original = if (largePaste) "\uFEFFseed\r\n" else "# Staging review\n\n$paragraph\n\nSecond silver cat.\n\nPRIVATE TAIL\n"
     val name = "beautyxt-staging-experience-${SystemClock.uptimeMillis()}.md"
     var localActivity: Activity? = null
 
@@ -110,7 +113,9 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
             if (resolver.openInputStream(source)?.use { it.readBytes().contentEquals(expected.toByteArray()) } == true) return
             SystemClock.sleep(20)
         }
-        error("Staging did not save the exact expected bytes")
+        val actual = resolver.openInputStream(source)?.use { it.readBytes() } ?: byteArrayOf()
+        fun digest(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        error("Staging save differs: expected ${expected.toByteArray().size} bytes / ${digest(expected.toByteArray())}, actual ${actual.size} bytes / ${digest(actual)}")
     }
     try {
         checkNotNull(resolver.openOutputStream(source, "wt")).use { it.write(original.toByteArray()) }
@@ -129,7 +134,66 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
             if (app == targetContext.packageName) localActivity = startActivitySync(intent)
             else targetContext.startActivity(intent)
         }
-        waitForAccessibilityNode("minified source editor") { it.isEditable && it.text?.toString() == original }
+        waitForAccessibilityNode("minified source editor") {
+            it.isEditable && it.text?.toString() == if (largePaste) "seed\n" else original
+        }
+        if (largePaste) {
+            val clipboard = checkNotNull(targetContext.getSystemService(ClipboardManager::class.java))
+            val raw = "line α😀\r\nother\r".repeat(12_000)
+            val normalized = raw.replace("\r\n", "\n").replace('\r', '\n')
+            val expected = original + normalized.replace("\n", "\r\n")
+            fun paste(text: String, keyboard: Boolean = false) {
+                runOnMainSync { clipboard.setPrimaryClip(ClipData.newPlainText("Native history test", text)) }
+                if (keyboard) key(KeyEvent.KEYCODE_V, KeyEvent.META_CTRL_ON)
+                else check(waitForAccessibilityNode("large paste target") { it.isEditable && it.isEnabled }
+                    .performAction(AccessibilityNodeInfo.ACTION_PASTE))
+            }
+            val field = waitForAccessibilityNode("source caret") { it.isEditable && it.isEnabled }
+            check(field.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+            waitForAccessibilityIdle()
+            uiAutomation.clearCache()
+            val focusedField = waitForAccessibilityNode("focused source caret") { it.isEditable && it.isEnabled && it.isFocused }
+            check(focusedField.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 5)
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, 5)
+            }))
+            paste(raw)
+            awaitSaved(expected)
+            check(waitForAccessibilityNode("bounded source field") { it.isEditable && it.isEnabled }.text.length <= 32 * 1024)
+            capture("large-paste-staging")
+            requireActionableContentDescription("Undo").performRequiredClick()
+            awaitSaved(original)
+            requireActionableContentDescription("Redo").performRequiredClick()
+            awaitSaved(expected)
+            // Select all from the document controls, which include text outside
+            // the input method's currently visible field window.
+            val selectionField = waitForAccessibilityNode("source selection target") { it.isEditable && it.isEnabled }
+            check(selectionField.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, 1)
+            }))
+            requireActionableText("Selection actions").performRequiredClick()
+            requireActionableText("Select all").performRequiredClick()
+            runOnMainSync { clipboard.setPrimaryClip(ClipData.newPlainText("Replacement test", "replacement\r\n")) }
+            requireActionableText("Selection actions").performRequiredClick()
+            requireActionableText("Paste").performRequiredClick()
+            awaitSaved("\uFEFFreplacement\r\n")
+            requireActionableContentDescription("Undo").performRequiredClick()
+            awaitSaved(expected)
+            // Reopening must use the exact autosaved bytes, not retained session state.
+            if (app != targetContext.packageName) {
+                shell("am force-stop $app")
+                targetContext.startActivity(Intent(Intent.ACTION_EDIT)
+                    .setClassName(app, "dev.soupslurpr.beautyxt.MainActivity")
+                    .setDataAndType(source, "text/markdown")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or flags))
+                waitForAccessibilityNode("reopened large source") {
+                    it.isEditable && it.isEnabled && it.text?.toString()?.startsWith("seed\nline α😀\n") == true
+                }
+                awaitSaved(expected)
+            }
+            return
+        }
         waitForAccessibilityIdle()
         uiAutomation.clearCache()
         key(KeyEvent.KEYCODE_H, KeyEvent.META_CTRL_ON)
@@ -248,7 +312,7 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
         }
         val nodes = StringBuilder()
         uiAutomation.rootInActiveWindow?.findNode {
-            nodes.appendLine("${it.className}: text=${it.text}; description=${it.contentDescription}; editable=${it.isEditable}; visible=${it.isVisibleToUser}")
+            nodes.appendLine("${it.className}: text=${it.text?.take(500)}; description=${it.contentDescription?.take(500)}; editable=${it.isEditable}; visible=${it.isVisibleToUser}")
             false
         }
         File(targetContext.cacheDir, "staging-document-experience-failure.txt").writeText(nodes.toString())

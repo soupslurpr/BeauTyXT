@@ -796,6 +796,88 @@ impl PieceTree {
         }))
     }
 
+    /// Starts an insertion using this document's preferred source encoding.
+    pub(crate) fn empty_insertion(&self) -> Self {
+        Self {
+            root: None,
+            has_utf8_bom: false,
+            inserted_line_ending: self.inserted_line_ending,
+        }
+    }
+
+    /// Appends a bounded normalized chunk without flattening earlier chunks.
+    pub(crate) fn append_chunk(&mut self, text: &str) -> Result<(), DocumentError> {
+        self.root = concatenate_trees(
+            self.root.clone(),
+            edit_tree(text, self.inserted_line_ending),
+        )?;
+        Ok(())
+    }
+
+    /// Bounds a builder's owned chunks and nodes, including scalar-aligned splits.
+    pub(crate) fn insertion_allocation_bound(bytes: usize) -> usize {
+        let pieces = bytes.div_ceil(MAX_PIECE_BYTES - 3);
+        let per_piece = 2 * (size_of::<Node>() + 2 * size_of::<usize>()) + 2 * size_of::<usize>();
+        bytes.saturating_add(pieces.saturating_mul(per_piece))
+    }
+
+    /// Inserts a validated, changed prepared tree without rescanning its text.
+    pub(crate) fn replace_tree(
+        &self,
+        range: Utf16Range,
+        replacement: &Self,
+    ) -> Result<Self, DocumentError> {
+        self.validate_range(range)?;
+        let mut cache = PieceReadCache::new();
+        let start = self.position_at_utf16(range.start, &mut cache)?;
+        let end = self.position_at_utf16(range.end, &mut cache)?;
+        let (prefix, remainder) = split_tree(self.root.clone(), start.bytes, &mut cache)?;
+        let (_, suffix) = split_tree(remainder, end.bytes - start.bytes, &mut cache)?;
+        let root = compact_concatenate_trees(prefix, replacement.root.clone(), &mut cache)?;
+        let root = compact_concatenate_trees(root, suffix, &mut cache)?;
+        Ok(Self {
+            root,
+            has_utf8_bom: self.has_utf8_bom,
+            inserted_line_ending: self.inserted_line_ending,
+        })
+    }
+
+    /// Enumerates owned allocations by identity, not logical substring length.
+    /// Source bytes remain in the document's immutable file and are not copied.
+    pub(crate) fn allocations(&self) -> std::collections::BTreeMap<AllocationId, usize> {
+        fn visit(
+            node: &Arc<Node>,
+            allocations: &mut std::collections::BTreeMap<AllocationId, usize>,
+        ) {
+            const ARC_HEADER: usize = 2 * size_of::<usize>();
+            allocations.insert(
+                AllocationId::Node(Arc::as_ptr(node) as usize),
+                size_of::<Node>() + ARC_HEADER,
+            );
+            match node.as_ref() {
+                Node::Leaf(Piece {
+                    backing: PieceBacking::Edit { text, .. },
+                    ..
+                }) => {
+                    allocations.insert(
+                        AllocationId::Text(text.as_ptr() as usize),
+                        text.len() + ARC_HEADER,
+                    );
+                }
+                Node::Leaf(_) => (),
+                Node::Branch { left, right, .. } => {
+                    visit(left, allocations);
+                    visit(right, allocations);
+                }
+            }
+        }
+        let mut allocations = std::collections::BTreeMap::new();
+        if let Some(root) = &self.root {
+            visit(root, &mut allocations);
+        }
+        allocations
+    }
+
     /// Streams the complete serialized document through a bounded buffer.
     ///
     /// # Errors
@@ -4407,4 +4489,11 @@ mod tests {
             Ok(returned_bytes)
         }
     }
+}
+
+/// Stable identity while an owning history entry retains its tree roots.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum AllocationId {
+    Node(usize),
+    Text(usize),
 }

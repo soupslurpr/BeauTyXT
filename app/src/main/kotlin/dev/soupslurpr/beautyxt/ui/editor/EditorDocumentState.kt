@@ -7,12 +7,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.document.DocumentMetrics
+import dev.soupslurpr.beautyxt.document.DocumentEditShape
+import dev.soupslurpr.beautyxt.document.DocumentInsertion
+import dev.soupslurpr.beautyxt.document.DocumentHistoryLimitException
 import dev.soupslurpr.beautyxt.document.DocumentPatch
 import dev.soupslurpr.beautyxt.document.DocumentSearch
 import dev.soupslurpr.beautyxt.document.SearchOptions
 import dev.soupslurpr.beautyxt.document.SearchCursor
 import dev.soupslurpr.beautyxt.document.SearchPage
-import dev.soupslurpr.beautyxt.document.MAX_REPLACEMENT_HISTORY_UNITS
+import dev.soupslurpr.beautyxt.document.MAX_REPLACEMENT_REVIEW_UNITS
 import dev.soupslurpr.beautyxt.document.DocumentSizeLimitException
 import dev.soupslurpr.beautyxt.document.EditWindowLimits
 import dev.soupslurpr.beautyxt.document.EditWindowSnapshot
@@ -131,69 +134,33 @@ internal data class ActiveEditWindow(val generation: Long, val snapshot: EditWin
         )
 }
 
-/** Records one verified logical edit for bounded live-session history. */
+/** Text-free platform metadata for one native persistent history entry. */
 internal data class CommittedEditDelta(
     val revisionBefore: Long,
     val revisionAfter: Long,
-    val rangeStart: Long,
-    val removedText: String,
-    val insertedText: String,
+    val changes: List<DocumentEditShape>,
     val selectionBefore: Utf16Range,
-    val selectionAfter: Utf16Range,
-    val patches: List<DocumentPatch> = listOf(DocumentPatch(
-        Utf16Range(rangeStart, Math.addExact(rangeStart, removedText.length.toLong())),
-        removedText, insertedText
-    ))
-) {
-    init {
-        require(revisionBefore >= INITIAL_DOCUMENT_REVISION) {
-            "edit-delta initial revision must be nonnegative"
-        }
-        require(revisionAfter == Math.incrementExact(revisionBefore)) {
-            "edit-delta revision must advance exactly once"
-        }
-        require(rangeStart >= 0L) { "edit-delta range start must be nonnegative" }
-        require(removedText.hasWellFormedUtf16()) {
-            "edit-delta removed text contains invalid Unicode"
-        }
-        require(insertedText.hasWellFormedUtf16()) {
-            "edit-delta inserted text contains invalid Unicode"
-        }
-    }
-
-    /** Returns the retained UTF-16 memory cost of this history entry. */
-    val retainedUtf16Units: Int
-        get() = Math.toIntExact(patches.sumOf { it.retainedUnits.toLong() })
-}
-
-/** Describes one revision-bound replacement for history or bulk input. */
-internal data class DocumentReplacementRequest(
-    val expectedRevision: Long,
-    val range: Utf16Range,
-    val expectedRemovedText: String,
-    val replacement: String,
     val selectionAfter: Utf16Range
 ) {
     init {
-        require(expectedRevision >= INITIAL_DOCUMENT_REVISION) {
-            "replacement revision must be nonnegative"
-        }
-        require(range.end - range.start == expectedRemovedText.length.toLong()) {
-            "replacement range conflicts with its expected text"
-        }
-        require(expectedRemovedText.hasWellFormedUtf16()) {
-            "replacement expected text contains invalid Unicode"
-        }
-        require(replacement.hasWellFormedUtf16()) {
-            "replacement text contains invalid Unicode"
-        }
+        require(revisionBefore >= INITIAL_DOCUMENT_REVISION)
+        require(revisionAfter == Math.incrementExact(revisionBefore))
+        require(changes.isNotEmpty())
     }
+
+    /** Consumes temporary bounded patch text without retaining it in history. */
+    constructor(revisionBefore: Long, revisionAfter: Long, rangeStart: Long,
+        removedText: String, insertedText: String, selectionBefore: Utf16Range,
+        selectionAfter: Utf16Range, patches: List<DocumentPatch> = listOf(DocumentPatch(
+            Utf16Range(rangeStart, Math.addExact(rangeStart, removedText.length.toLong())), removedText, insertedText
+        ))) : this(revisionBefore, revisionAfter,
+            patches.map { DocumentEditShape(it.range, it.insertedLength) }, selectionBefore, selectionAfter)
 }
 
 /** Describes one attempt to apply a revision-bound document replacement. */
 internal sealed interface DocumentReplacementResult {
     /** Reports the verified revision produced by the replacement. */
-    data class Applied(val revision: Long) : DocumentReplacementResult
+    data class Applied(val revision: Long, val delta: CommittedEditDelta? = null) : DocumentReplacementResult
 
     /** Indicates that the active generation no longer accepts the request. */
     data object Unavailable : DocumentReplacementResult
@@ -382,6 +349,13 @@ internal constructor(
     private val initialRevision: Long = INITIAL_DOCUMENT_REVISION,
     private val initialUnsavedContent: Boolean = false
 ) : AutoCloseable {
+    init { document.clearHistory() }
+
+    val oldestUndoRevision: Long get() = document.historyState().oldestUndo
+
+    private var replacingDocumentTree by mutableStateOf(false)
+    val isReplacingDocumentTree: Boolean get() = replacingDocumentTree
+
     private val operations = Mutex()
     private val closeStarted = AtomicBoolean(false)
     private val viewportLimits =
@@ -747,39 +721,47 @@ internal constructor(
         if (status != EditorDocumentStatus.Ready || hasActiveDraftChanges ||
             revision != currentRevision || previous.revision != revision || closeStarted.get() ||
             patches.isEmpty() || patches.any { it.range.end > previous.utf16Length } ||
-            patches.sumOf { it.retainedUnits.toLong() } > MAX_REPLACEMENT_HISTORY_UNITS
+            patches.sumOf { it.retainedUnits.toLong() } > MAX_REPLACEMENT_REVIEW_UNITS
         ) return@withLock DocumentReplacementResult.Unavailable
         val removed = patches.joinToString("") { it.removed }
         val inserted = patches.joinToString("") { it.inserted }
         if (selectionAfter.end > previous.utf16Length - removed.length + inserted.length)
             return@withLock DocumentReplacementResult.Unavailable
-        withContext(NonCancellable) commit@ {
-            status = EditorDocumentStatus.ApplyingEdit
-            editorMessage = null
-            val result = try {
-                withContext(workerDispatcher) { document.replaceBatch(revision, patches) }
-            } catch (failure: Exception) {
-                if (!handleStaleRevision(failure)) status = EditorDocumentStatus.Ready
-                return@commit if (failure is DocumentSizeLimitException)
-                    DocumentReplacementResult.RejectedBySizeLimit else DocumentReplacementResult.Failed
+        withDocumentTreeChange {
+            withContext(NonCancellable) commit@ {
+                status = EditorDocumentStatus.ApplyingEdit
+                editorMessage = null
+                val result = try {
+                    withContext(workerDispatcher) { document.replaceBatch(revision, patches) }
+                } catch (failure: Exception) {
+                    if (closeStarted.get()) return@commit DocumentReplacementResult.Unavailable
+                    if (!handleStaleRevision(failure)) {
+                        status = EditorDocumentStatus.Ready
+                        if (failure is DocumentHistoryLimitException)
+                            editorMessage = UiText.Resource(R.string.editor_input_history_size)
+                    }
+                    return@commit if (failure is DocumentSizeLimitException)
+                        DocumentReplacementResult.RejectedBySizeLimit else DocumentReplacementResult.Failed
+                }
+                if (closeStarted.get()) return@commit DocumentReplacementResult.Unavailable
+                try {
+                    validateReplacementMetrics(previous, result, removed, inserted)
+                } catch (_: Exception) {
+                    recoverUnverifiedAppliedEdit(result.revision)
+                    return@commit DocumentReplacementResult.Failed
+                }
+                currentRevision = result.revision
+                clearRevisionBoundViewport()
+                clearPrefetchedEditWindows()
+                activeEdit = null
+                hasActiveDraftChanges = false
+                metrics = result
+                failedEditWindowSelection = null
+                failedEditWindowLine = null
+                status = EditorDocumentStatus.Ready
+                requestEditWindowLocked(selectionAfter)
+                DocumentReplacementResult.Applied(result.revision)
             }
-            try {
-                validateReplacementMetrics(previous, result, removed, inserted)
-            } catch (_: Exception) {
-                recoverUnverifiedAppliedEdit(result.revision)
-                return@commit DocumentReplacementResult.Failed
-            }
-            currentRevision = result.revision
-            clearRevisionBoundViewport()
-            clearPrefetchedEditWindows()
-            activeEdit = null
-            hasActiveDraftChanges = false
-            metrics = result
-            failedEditWindowSelection = null
-            failedEditWindowLine = null
-            status = EditorDocumentStatus.Ready
-            requestEditWindowLocked(selectionAfter)
-            DocumentReplacementResult.Applied(result.revision)
         }
     }
 
@@ -1173,88 +1155,129 @@ internal constructor(
         }
     }
 
-    /** Applies one verified atomic replacement and reopens its target selection. */
-    suspend fun replaceDocumentRange(
-        generation: Long,
-        request: DocumentReplacementRequest
-    ): DocumentReplacementResult = operations.withLock {
-        val edit = activeEdit ?: return@withLock DocumentReplacementResult.Unavailable
-        val previousMetrics = edit.snapshot.metrics
-        if (
-            status != EditorDocumentStatus.Ready ||
-            edit.generation != generation ||
-            hasActiveDraftChanges ||
-            request.expectedRevision != currentRevision ||
-            previousMetrics.revision != currentRevision ||
-            request.range.end > previousMetrics.utf16Length ||
-            closeStarted.get()
-        ) {
+    /** Builds normalized insertion chunks off the UI thread and publishes exactly once. */
+    suspend fun replaceDocumentContent(revision: Long, range: Utf16Range,
+        input: DocumentInsertion, selectionBefore: Utf16Range,
+        selectionAfter: (Long) -> Utf16Range = { length ->
+            val caret = range.start + length
+            Utf16Range(caret, caret)
+        }): DocumentReplacementResult = operations.withLock {
+        val previous = metrics ?: return@withLock DocumentReplacementResult.Unavailable
+        if (!canReplaceTree(revision) || range.end > previous.utf16Length)
             return@withLock DocumentReplacementResult.Unavailable
+        withDocumentTreeChange {
+            val context = currentCoroutineContext()
+            val checkCancelled = {
+                context.ensureActive()
+                if (closeStarted.get()) throw CancellationException("document closed")
+            }
+            val (length, after) = try {
+                withContext(workerDispatcher) {
+                    // The transfer validates Unicode. This pass only maps raw caret positions.
+                    val length = input.normalizedOffset(input.rawLength, checkCancelled)
+                    length to selectionAfter(length)
+                }
+            } catch (failure: Exception) {
+                if (closeStarted.get()) return@withDocumentTreeChange DocumentReplacementResult.Unavailable
+                throw failure
+            }
+            val expectedLength = previous.utf16Length - (range.end - range.start) + length
+            if (after.end > expectedLength) return@withDocumentTreeChange DocumentReplacementResult.Unavailable
+            val result = publishDocumentTree(revision, expectedLength, after) {
+                document.replaceContent(revision, range, input, checkCancelled)
+            }
+            if (result is DocumentReplacementResult.Applied && result.revision != revision) {
+                result.copy(delta = CommittedEditDelta(revision, result.revision,
+                    listOf(DocumentEditShape(range, length)), selectionBefore, after))
+            } else result
         }
-        val resultingUtf16Length =
-            Math.addExact(
-                Math.subtractExact(
-                    previousMetrics.utf16Length,
-                    request.range.end - request.range.start
-                ),
-                request.replacement.length.toLong()
-            )
-        if (request.selectionAfter.end > resultingUtf16Length) {
-            return@withLock DocumentReplacementResult.Unavailable
+    }
+
+    /** Restores native tree roots; no document text crosses JNI for Undo or Redo. */
+    suspend fun restoreDocumentHistory(revision: Long, entry: CommittedEditDelta,
+        undo: Boolean): DocumentReplacementResult = operations.withLock {
+        val previous = metrics ?: return@withLock DocumentReplacementResult.Unavailable
+        if (!canReplaceTree(revision)) return@withLock DocumentReplacementResult.Unavailable
+        val change = entry.changes.sumOf { it.insertedLength - (it.range.end - it.range.start) }
+        val expectedLength = previous.utf16Length + if (undo) -change else change
+        val selection = if (undo) entry.selectionBefore else entry.selectionAfter
+        // Global selections can exceed the editable window. Keep the restored caret
+        // at their active end; the session retains the original selection metadata.
+        val after = if (selection.end - selection.start > EDIT_WINDOW_UTF16_UNITS)
+            Utf16Range(selection.end, selection.end) else selection
+        withDocumentTreeChange {
+            publishDocumentTree(revision, expectedLength, after) {
+                document.restoreHistory(revision, entry.revisionAfter, undo)
+            }
         }
+    }
+
+    /** Blocks new field input before preparation yields, retaining the existing IME. */
+    private suspend fun <T> withDocumentTreeChange(operation: suspend () -> T): T {
+        check(!replacingDocumentTree)
+        replacingDocumentTree = true
         status = EditorDocumentStatus.ApplyingEdit
         editorMessage = null
-        val resultingMetrics =
-            try {
-                withContext(workerDispatcher + NonCancellable) {
-                    document.replace(
-                        expectedRevision = request.expectedRevision,
-                        range = request.range,
-                        replacement = request.replacement
-                    )
-                }
-            } catch (cancellation: CancellationException) {
-                throw cancellation
+        try {
+            return operation()
+        } finally {
+            replacingDocumentTree = false
+            if (!closeStarted.get() && status == EditorDocumentStatus.ApplyingEdit)
+                status = EditorDocumentStatus.Ready
+        }
+    }
+
+    private fun canReplaceTree(revision: Long): Boolean =
+        status == EditorDocumentStatus.Ready && !hasActiveDraftChanges &&
+            revision == currentRevision && metrics?.revision == revision && !closeStarted.get()
+
+    /** Keeps native publication and its platform revision update in one completion. */
+    private suspend fun publishDocumentTree(revision: Long, expectedLength: Long,
+        selection: Utf16Range, operation: () -> DocumentMetrics): DocumentReplacementResult =
+        withContext(NonCancellable) {
+            status = EditorDocumentStatus.ApplyingEdit
+            editorMessage = null
+            val result = try {
+                withContext(workerDispatcher) { operation() }
+            } catch (cancel: CancellationException) {
+                if (!closeStarted.get()) status = EditorDocumentStatus.Ready
+                throw cancel
             } catch (failure: Exception) {
-                if (closeStarted.get()) {
-                    return@withLock DocumentReplacementResult.Unavailable
-                }
-                if (failure is DocumentSizeLimitException) {
-                    status = EditorDocumentStatus.Ready
-                    return@withLock DocumentReplacementResult.RejectedBySizeLimit
-                }
+                if (closeStarted.get()) return@withContext DocumentReplacementResult.Unavailable
                 if (!handleStaleRevision(failure)) {
                     status = EditorDocumentStatus.Ready
-                    editorMessage = UiText.Resource(R.string.operation_apply_change_failed)
+                    editorMessage = UiText.Resource(if (failure is DocumentHistoryLimitException)
+                        R.string.editor_input_history_size else R.string.operation_apply_change_failed)
                 }
-                return@withLock DocumentReplacementResult.Failed
+                return@withContext if (failure is DocumentSizeLimitException)
+                    DocumentReplacementResult.RejectedBySizeLimit else DocumentReplacementResult.Failed
             }
-        if (closeStarted.get()) {
-            return@withLock DocumentReplacementResult.Unavailable
+            if (closeStarted.get()) return@withContext DocumentReplacementResult.Unavailable
+            if (result.revision == revision) {
+                if (result != metrics) {
+                    recoverUnverifiedAppliedEdit(result.revision)
+                    return@withContext DocumentReplacementResult.Failed
+                }
+                status = EditorDocumentStatus.Ready
+                requestEditWindowLocked(selection)
+                return@withContext DocumentReplacementResult.Applied(revision)
+            }
+            if (result.revision != Math.incrementExact(revision) || result.utf16Length != expectedLength) {
+                recoverUnverifiedAppliedEdit(result.revision)
+                return@withContext DocumentReplacementResult.Failed
+            }
+            currentRevision = result.revision
+            clearRevisionBoundViewport()
+            clearPrefetchedEditWindows()
+            activeEdit = null
+            hasActiveDraftChanges = false
+            metrics = result
+            failedEditWindowSelection = null
+            failedEditWindowLine = null
+            status = EditorDocumentStatus.Ready
+            requestEditWindowLocked(selection)
+            DocumentReplacementResult.Applied(result.revision)
         }
-        try {
-            validateReplacementMetrics(
-                previousMetrics = previousMetrics,
-                resultingMetrics = resultingMetrics,
-                removedText = request.expectedRemovedText,
-                replacement = request.replacement
-            )
-        } catch (_: Exception) {
-            recoverUnverifiedAppliedEdit(resultingMetrics.revision)
-            return@withLock DocumentReplacementResult.Failed
-        }
-        currentRevision = resultingMetrics.revision
-        clearRevisionBoundViewport()
-        clearPrefetchedEditWindows()
-        activeEdit = null
-        hasActiveDraftChanges = false
-        metrics = resultingMetrics
-        failedEditWindowSelection = null
-        failedEditWindowLine = null
-        status = EditorDocumentStatus.Ready
-        requestEditWindowLocked(request.selectionAfter)
-        DocumentReplacementResult.Applied(resultingMetrics.revision)
-    }
 
     /** Retries the exact bounded editor selection retained after a load failure. */
     suspend fun retryEditWindow() {
@@ -1440,7 +1463,7 @@ internal constructor(
         (status == EditorDocumentStatus.Ready || status == EditorDocumentStatus.ApplyingEdit) &&
             activeEdit?.generation == generation &&
             activeEdit?.snapshot?.metrics?.revision == currentRevision &&
-            !closeStarted.get()
+            !replacingDocumentTree && !closeStarted.get()
 
     /** Records whether the matching field currently differs from its native window. */
     fun updateActiveDraftStatus(generation: Long, hasChanges: Boolean) {

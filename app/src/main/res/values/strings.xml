@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">BeauTyXT</string>
     <string name="editor_input_document_size">This change would exceed the 256 MiB document limit. It was not applied.</string>
+    <string name="editor_input_history_size">This edit needs too much memory to keep Undo available. Insert smaller sections or open the content as a file.</string>
     <string name="editor_input_bulk_size">That insertion is too large. Insert smaller sections or open the content as a file.</string>
     <string name="editor_input_bulk_unavailable">Could not complete this insertion. Check the document before trying again.</string>
     <string name="close_received_title">Close without saving?</string>

@@ -422,3 +422,37 @@ fn edits_and_streams_large_document() {
     assert_eq!(document.metrics().revision, 3);
     verify_sparse_source_save(&document, middle);
 }
+
+/// Profiles the complete tracked-edit path on the largest supported source.
+#[test]
+#[ignore = "generates a 256 MiB source and records release-mode editing timings"]
+fn profiles_persistent_history_on_large_source() {
+    let mut source = TemporarySourceFile::create(256 * MEBIBYTE).unwrap();
+    let mut document = Document::open_source(source.take_file()).unwrap();
+    source.unlink().unwrap();
+    let mut elapsed = Vec::new();
+    for revision in 0..128 {
+        let offset = usize::try_from(revision).unwrap() * MEBIBYTE;
+        let started = std::time::Instant::now();
+        document
+            .replace(revision, Utf16Range::new(offset, offset + 1), "Z")
+            .unwrap();
+        elapsed.push(started.elapsed());
+    }
+    elapsed.sort_unstable();
+    eprintln!(
+        "256 MiB tracked edits: median={:?}, p95={:?}, max={:?}, retained={}",
+        elapsed[64],
+        elapsed[121],
+        elapsed[127],
+        document.history_state().retained_bytes
+    );
+    assert_eq!(document.history_state().entries, 128);
+    for _ in 0..128 {
+        let state = document.history_state();
+        document
+            .restore_history(document.metrics().revision, state.undo, true)
+            .unwrap();
+    }
+    assert_eq!(document.history_state().undo, 0);
+}

@@ -1,5 +1,7 @@
 package dev.soupslurpr.beautyxt.testing
 
+import dev.soupslurpr.beautyxt.document.DocumentInsertion
+import dev.soupslurpr.beautyxt.document.DocumentHistoryState
 import dev.soupslurpr.beautyxt.document.DocumentLineEnding
 import dev.soupslurpr.beautyxt.document.DocumentMetrics
 import dev.soupslurpr.beautyxt.document.DocumentPatch
@@ -134,6 +136,42 @@ internal class TestEditorDocument(
         }
     }
 
+    private data class History(val token: Long, val before: String, val after: String)
+    private val undo = ArrayDeque<History>()
+    private val redo = ArrayDeque<History>()
+
+    private fun recordHistory(before: String) {
+        redo.clear()
+        undo.addLast(History(revision, before, text))
+        while (undo.size > 128) undo.removeFirst()
+    }
+
+    override fun historyState() = DocumentHistoryState(undo.peekLast()?.token ?: 0,
+        redo.peekLast()?.token ?: 0, undo.peekFirst()?.token ?: 0, 0, (undo.size + redo.size).toLong())
+
+    override fun clearHistory() { undo.clear(); redo.clear() }
+
+    override fun restoreHistory(revision: Long, token: Long, undo: Boolean): DocumentMetrics {
+        requireCurrentRevision(revision)
+        replaceFailure?.let { throw it }
+        val source = if (undo) this.undo else redo
+        val destination = if (undo) redo else this.undo
+        val entry = checkNotNull(source.peekLast())
+        check(entry.token == token)
+        source.removeLast()
+        destination.addLast(entry)
+        text = if (undo) entry.before else entry.after
+        this.revision++
+        return transformedMetrics()
+    }
+
+    override fun replaceContent(revision: Long, range: Utf16Range, input: DocumentInsertion,
+        checkCancelled: () -> Unit): DocumentMetrics {
+        val replacement = buildString { input.forEachChunk(checkCancelled) { append(it) } }
+        checkCancelled()
+        return replace(revision, range, replacement)
+    }
+
     private var revision = INITIAL_TEST_REVISION
     private var isClosed = false
     private val snapshots = mutableListOf<TestEditorDocumentSnapshot>()
@@ -199,8 +237,10 @@ internal class TestEditorDocument(
         requireCurrentRevision(revision)
         patches.forEach { check(readRange(revision, it.range) == it.removed) }
         replaceFailure?.let { throw it }
+        val before = text
         patches.asReversed().forEach { text = text.replaceRange(it.range.start.toInt(), it.range.end.toInt(), it.inserted) }
         this@TestEditorDocument.revision++
+        recordHistory(before)
         return transformedMetrics()
     }
 
@@ -402,13 +442,16 @@ internal class TestEditorDocument(
                 range = range,
                 replacement = replacement
             )
+        val before = text
         text =
             text.replaceRange(
                 startIndex = range.start.toInt(),
                 endIndex = range.end.toInt(),
                 replacement = replacement
             )
+        if (before == text) return transformedMetrics()
         revision = Math.incrementExact(revision)
+        recordHistory(before)
         return transformedMetrics()
     }
 

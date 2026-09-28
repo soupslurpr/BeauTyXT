@@ -1,6 +1,6 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
-import dev.soupslurpr.beautyxt.document.DocumentPatch
+import dev.soupslurpr.beautyxt.document.DocumentChange
 import dev.soupslurpr.beautyxt.document.Utf16Range
 
 internal data class DocumentLocation(
@@ -57,7 +57,7 @@ internal class DocumentLocations(private val capacity: Int = 128) {
         return null to skipped
     }
 
-    fun rebase(before: Long, after: Long, patches: List<DocumentPatch>) {
+    fun rebase(before: Long, after: Long, patches: List<DocumentChange>) {
         entries.indices.forEach { index ->
             val location = entries[index] ?: return@forEach
             entries[index] = if (location.revision != before) null else {
@@ -73,23 +73,23 @@ internal class DocumentLocations(private val capacity: Int = 128) {
 }
 
 /** Right affinity keeps an anchor attached to its original following character. */
-internal fun rebaseDocumentPoint(offset: Long, patches: List<DocumentPatch>): Long? {
+internal fun rebaseDocumentPoint(offset: Long, patches: List<DocumentChange>): Long? {
     var shift = 0L
     for (patch in patches) {
         if (offset < patch.range.start) break
         if (offset < patch.range.end) return null
-        shift += patch.inserted.length - (patch.range.end - patch.range.start)
+        shift += patch.insertedLength - (patch.range.end - patch.range.start)
     }
     return Math.addExact(offset, shift)
 }
 
 /** Captured ranges exclude ordinary edge insertions and never silently widen. */
-internal fun rebaseCapturedRange(range: Utf16Range, patches: List<DocumentPatch>,
+internal fun rebaseCapturedRange(range: Utf16Range, patches: List<DocumentChange>,
     scopedReplacement: Boolean = false): Utf16Range? {
     var start = range.start
     var end = range.end
     for (patch in patches) {
-        val change = patch.inserted.length - (patch.range.end - patch.range.start)
+        val change = patch.insertedLength - (patch.range.end - patch.range.start)
         if (patch.range.start == patch.range.end) {
             when {
                 patch.range.start < range.start ||

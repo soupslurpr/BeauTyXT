@@ -36,7 +36,6 @@ import dev.soupslurpr.beautyxt.ui.editor.EditorDocumentState
 import dev.soupslurpr.beautyxt.ui.editor.EditorInputRejection
 import dev.soupslurpr.beautyxt.ui.editor.EditorPresentation
 import dev.soupslurpr.beautyxt.ui.editor.EditorSession
-import dev.soupslurpr.beautyxt.ui.editor.MAX_BULK_FIELD_UTF16_UNITS
 import dev.soupslurpr.beautyxt.ui.editor.MAX_MARKDOWN_CODE_COPY_UTF16_UNITS
 import dev.soupslurpr.beautyxt.ui.editor.MarkdownPreviewStatus
 import java.io.File
@@ -256,8 +255,8 @@ private fun Instrumentation.verifyCopiedCodeCanBePasted(
             val clipboard = checkNotNull(activity.getSystemService(ClipboardManager::class.java))
             clipboard.setPrimaryClip(
                 ClipData.newPlainText(
-                    "Oversized test input",
-                    "x".repeat(MAX_BULK_FIELD_UTF16_UNITS + 1)
+                    "Large test input",
+                    "x".repeat(200_000)
                 )
             )
         }
@@ -265,18 +264,19 @@ private fun Instrumentation.verifyCopiedCodeCanBePasted(
             it.isEditable && it.isEnabled
         }
         check(pasteTarget.performAction(AccessibilityNodeInfo.ACTION_PASTE))
-        waitForCodeCopyAppNode("oversized paste feedback") {
-            it.text?.toString() ==
-                "That insertion is too large. Insert smaller sections or open the content as a file."
-        }
+        awaitCopiedCodeLength(session, expected.length + 200_000)
         runOnMainSync {
             val draft = checkNotNull(session.activeDraft)
-            check(session.state.metrics?.revision == revision)
+            check(session.state.metrics?.revision == revision + 1)
             check(draft.textFieldState === originalField)
+            check(draft.textFieldState.text.length <= EDIT_DRAFT_MAX_UTF16_UNITS)
             check(!draft.hasChanges && !session.hasPendingEditWindowAction)
-            check(draft.inputRejection == EditorInputRejection.BulkSize)
+            check(draft.inputRejection == null)
         }
-        if (capturePreviews) captureCodeCopyPreview("oversized-paste.webp")
+        if (capturePreviews) captureCodeCopyPreview("large-paste.webp")
+        waitForCodeCopyAppNode("Undo large paste") { it.contentDescription?.toString() == "Undo" }
+            .codeCopyControl().performRequiredClick()
+        awaitCopiedCodeLength(session, expected.length)
 
         for ((action, length) in listOf("Undo" to 0, "Redo" to expected.length)) {
             waitForCodeCopyAppNode(action) { it.contentDescription?.toString() == action }

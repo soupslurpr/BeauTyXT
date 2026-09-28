@@ -4,7 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicLong
 
 internal const val MAX_REPLACEMENT_PATCHES = 4096
-internal const val MAX_REPLACEMENT_HISTORY_UNITS = 256 * 1024
+internal const val MAX_REPLACEMENT_REVIEW_UNITS = 256 * 1024
 internal const val MAX_SEARCH_RESULTS = 4096
 
 internal data class SearchOptions(
@@ -35,8 +35,9 @@ internal interface DocumentSearch : AutoCloseable {
     fun text(text: String, scope: Utf16Range, cursor: SearchCursor): SearchPage
 }
 
-/** Exact original-revision patch shared by review, native commit, and Undo. */
-internal data class DocumentPatch(val range: Utf16Range, val removed: String, val inserted: String) {
+/** Exact original-revision patch retained only during review and native commit. */
+internal data class DocumentPatch(override val range: Utf16Range, val removed: String, val inserted: String) : DocumentChange {
+    override val insertedLength: Long get() = inserted.length.toLong()
     init {
         require(range.end - range.start == removed.length.toLong())
         require(removed.hasWellFormedUtf16() && inserted.hasWellFormedUtf16())
@@ -45,31 +46,9 @@ internal data class DocumentPatch(val range: Utf16Range, val removed: String, va
     val retainedUnits: Int get() = Math.addExact(removed.length, inserted.length)
 }
 
-internal fun inversePatches(patches: List<DocumentPatch>): List<DocumentPatch> {
-    var shift = 0L
-    val inverse = patches.map { patch ->
-        val start = Math.addExact(patch.range.start, shift)
-        shift = Math.addExact(shift, patch.inserted.length.toLong() - patch.removed.length)
-        DocumentPatch(Utf16Range(start, Math.addExact(start, patch.inserted.length.toLong())),
-            patch.inserted, patch.removed)
-    }
-    // Adjacent deletions have the same inverse insertion point. Merge them
-    // before publication, retaining their original left-to-right order.
-    return buildList {
-        inverse.forEach { patch ->
-            val previous = lastOrNull()
-            if (previous != null && previous.range.end == patch.range.start) {
-                removeAt(lastIndex)
-                add(DocumentPatch(Utf16Range(previous.range.start, patch.range.end),
-                    previous.removed + patch.removed, previous.inserted + patch.inserted))
-            } else add(patch)
-        }
-    }
-}
-
 internal fun encodeReplacementBatch(patches: List<DocumentPatch>): ByteArray {
     require(patches.size <= MAX_REPLACEMENT_PATCHES)
-    require(patches.sumOf { it.retainedUnits.toLong() } <= MAX_REPLACEMENT_HISTORY_UNITS)
+    require(patches.sumOf { it.retainedUnits.toLong() } <= MAX_REPLACEMENT_REVIEW_UNITS)
     val output = ByteArrayOutputStream()
     fun number(value: Long, bytes: Int) {
         repeat(bytes) { index -> output.write((value ushr (index * 8)).toInt() and 255) }
@@ -120,7 +99,7 @@ internal fun decodeSearchPage(packet: ByteArray): SearchPage {
         require(before.codePointCount(0, before.length) <= 40 && after.codePointCount(0, after.length) <= 40)
         require(flags and 2 != 0 || replacement.isEmpty())
         retained += matched.length.toLong() + replacement.length
-        require(retained <= MAX_REPLACEMENT_HISTORY_UNITS)
+        require(retained <= MAX_REPLACEMENT_REVIEW_UNITS)
         previous = range.start
         SearchHit(range, matched, replacement.takeIf { flags and 2 != 0 }, before, after)
     }

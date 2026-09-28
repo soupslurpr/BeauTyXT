@@ -1562,9 +1562,8 @@ class EditorDocumentStateTest {
         assertEquals(1, document.editWindowCalls.size)
         assertEquals(INITIAL_REVISION, delta.revisionBefore)
         assertEquals(FIRST_EDIT_REVISION, delta.revisionAfter)
-        assertEquals(expectedReplacementRange.start, delta.rangeStart)
-        assertEquals("😀", delta.removedText)
-        assertEquals("😁", delta.insertedText)
+        assertEquals(expectedReplacementRange, delta.changes.single().range)
+        assertEquals(2L, delta.changes.single().insertedLength)
         assertEquals(Utf16Range(start = 7, end = 7), delta.selectionBefore)
         assertEquals(expectedCaret, delta.selectionAfter)
 
@@ -1638,20 +1637,10 @@ class EditorDocumentStateTest {
             throw IllegalStateException("synthetic edit-window failure")
         }
 
-        val result =
-            state.replaceDocumentRange(
-                generation = edit.generation,
-                request =
-                    DocumentReplacementRequest(
-                        expectedRevision = INITIAL_REVISION,
-                        range = Utf16Range(start = 1, end = 3),
-                        expectedRemovedText = "bc",
-                        replacement = "XY",
-                        selectionAfter = Utf16Range(start = 3, end = 3)
-                    )
-            )
+        val result = state.replaceDocumentContent(INITIAL_REVISION, Utf16Range(1, 3),
+            dev.soupslurpr.beautyxt.document.DocumentInsertion("XY"), Utf16Range(1, 3))
+        assertEquals(FIRST_EDIT_REVISION, (result as DocumentReplacementResult.Applied).revision)
 
-        assertEquals(DocumentReplacementResult.Applied(FIRST_EDIT_REVISION), result)
         assertEquals("aXYdef", document.text)
         assertNull(state.activeEdit)
         assertTrue(state.canRetryEditWindow)
@@ -1665,20 +1654,6 @@ class EditorDocumentStateTest {
         assertEquals(FIRST_EDIT_REVISION, retried.snapshot.metrics.revision)
         assertFalse(state.canRetryEditWindow)
         assertNull(state.editorMessage)
-    }
-
-    /** Verifies malformed history requests fail before reaching the document seam. */
-    @Test
-    fun rejectsAHistoryRequestWhoseRangeConflictsWithItsExpectedText() {
-        assertThrows(IllegalArgumentException::class.java) {
-            DocumentReplacementRequest(
-                expectedRevision = INITIAL_REVISION,
-                range = Utf16Range(start = 1, end = 3),
-                expectedRemovedText = "b",
-                replacement = "XY",
-                selectionAfter = Utf16Range(start = 3, end = 3)
-            )
-        }
     }
 
     /** Verifies an unchanged window never crosses the document seam. */
@@ -2500,6 +2475,11 @@ private class FakeEditorDocument(
     }
 
     /** Applies one exact in-memory replacement or reports a stale revision. */
+    override fun replaceContent(revision: Long, range: Utf16Range,
+        input: dev.soupslurpr.beautyxt.document.DocumentInsertion,
+        checkCancelled: () -> Unit): DocumentMetrics = replace(revision, range,
+            buildString { input.forEachChunk(checkCancelled) { append(it) } })
+
     override fun replace(
         expectedRevision: Long,
         range: Utf16Range,

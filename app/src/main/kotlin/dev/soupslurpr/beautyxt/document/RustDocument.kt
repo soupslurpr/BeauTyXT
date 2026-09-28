@@ -64,6 +64,33 @@ internal data class Utf16Range(val start: Long, val end: Long) {
 internal class RustDocument private constructor(private var nativeHandle: Long) : EditorDocument {
     private val documentLock = Any()
 
+    override fun replaceContent(revision: Long, range: Utf16Range, input: DocumentInsertion,
+        checkCancelled: () -> Unit): DocumentMetrics = withOpenHandle { handle ->
+        NativeDocument.beginInsertion(handle, revision, range.start, range.end)
+        try {
+            input.forEachChunk(checkCancelled) { chunk ->
+                NativeDocument.appendInsertion(handle, revision, chunk.toByteArray(Charsets.UTF_8))
+            }
+            checkCancelled()
+            DocumentMetricsPacketDecoder.decode(NativeDocument.finishInsertion(handle, revision))
+        } finally {
+            NativeDocument.cancelInsertion(handle)
+        }
+    }
+
+    override fun restoreHistory(revision: Long, token: Long, undo: Boolean): DocumentMetrics =
+        withOpenHandle { handle ->
+            DocumentMetricsPacketDecoder.decode(NativeDocument.restoreHistory(handle, revision, token, undo))
+        }
+
+    override fun historyState(): DocumentHistoryState = withOpenHandle { handle ->
+        val values = NativeDocument.historyState(handle)
+        check(values.size == 5 && values.all { it >= 0 })
+        DocumentHistoryState(values[0], values[1], values[2], values[3], values[4])
+    }
+
+    override fun clearHistory() = withOpenHandle { NativeDocument.clearHistory(it) }
+
     override fun compileSearch(query: String, options: SearchOptions): DocumentSearch =
         NativeSearch(query, options) { pattern, revision, scope, cursor, replacement ->
             withOpenHandle { handle ->
@@ -427,6 +454,9 @@ private fun decodeSourceSavePackageMetrics(packet: LongArray): SourceSavePackage
 /** Translates stable native revision failures without exposing string parsing to UI state. */
 private fun translateNativeFailure(failure: RuntimeException): RuntimeException {
     val message = failure.message ?: return failure
+    if (message == "Rust error: edit exceeds native history memory limit") {
+        return DocumentHistoryLimitException(failure)
+    }
     val match = NATIVE_STALE_REVISION_PATTERN.matchEntire(message) ?: return failure
     val expectedRevision = match.groupValues[1].toLongOrNull() ?: return failure
     val actualRevision = match.groupValues[2].toLongOrNull() ?: return failure

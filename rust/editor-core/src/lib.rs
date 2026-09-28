@@ -3,11 +3,15 @@
 #![forbid(unsafe_code)]
 
 mod find_highlights;
+mod history;
+mod insertion;
+pub use history::{HistoryState, MAX_HISTORY_BYTES, MAX_HISTORY_ENTRIES};
+pub use insertion::MAX_INSERTION_CHUNK_BYTES;
 mod piece_tree;
 mod replacements;
 pub mod search;
 
-pub use replacements::{DocumentEdit, MAX_BATCH_EDITS, MAX_BATCH_HISTORY_UTF16_UNITS};
+pub use replacements::{DocumentEdit, MAX_BATCH_EDITS, MAX_BATCH_TEXT_UTF16_UNITS};
 
 pub use find_highlights::{FindHighlightRequest, MAX_FIND_HIGHLIGHT_UTF16_UNITS};
 
@@ -432,6 +436,9 @@ pub enum DocumentError {
         max_bytes: usize,
     },
 
+    /// Reports an edit that cannot retain its atomic Undo within the memory budget.
+    HistoryLimit,
+
     /// Reports replacement text that violates the normalized document model.
     InvalidReplacement(&'static str),
 
@@ -499,6 +506,7 @@ impl Display for DocumentError {
                     "replacement length {bytes} exceeds limit {max_bytes}"
                 )
             }
+            Self::HistoryLimit => formatter.write_str("edit exceeds native history memory limit"),
             Self::InvalidReplacement(reason) => {
                 write!(formatter, "invalid replacement: {reason}")
             }
@@ -546,6 +554,8 @@ impl From<std::io::Error> for DocumentError {
 pub struct Document {
     tree: PieceTree,
     revision: u64,
+    history: history::History,
+    insertion: Option<insertion::Insertion>,
 }
 
 impl Document {
@@ -555,6 +565,8 @@ impl Document {
         Self {
             tree: PieceTree::new(),
             revision: INITIAL_REVISION,
+            history: history::History::default(),
+            insertion: None,
         }
     }
 
@@ -568,6 +580,8 @@ impl Document {
         Self {
             tree: PieceTree::from_text(text),
             revision: INITIAL_REVISION,
+            history: history::History::default(),
+            insertion: None,
         }
     }
 
@@ -590,6 +604,8 @@ impl Document {
         Ok(Self {
             tree: PieceTree::open_source(source)?,
             revision: INITIAL_REVISION,
+            history: history::History::default(),
+            insertion: None,
         })
     }
 
@@ -659,6 +675,8 @@ impl Document {
         let selected = Self {
             tree,
             revision: original.revision,
+            history: history::History::default(),
+            insertion: None,
         };
         let mut metrics = selected.metrics();
         metrics.serialized_bytes = metrics.bytes;
@@ -730,31 +748,7 @@ impl Document {
         let ReplaceOutcome::Replaced(replacement_tree) = replacement_outcome else {
             return Ok(self.metrics());
         };
-        let resulting_utf16_units = replacement_tree.summary().utf16_units;
-        if resulting_utf16_units > MAX_EDITABLE_UTF16_UNITS {
-            return Err(DocumentError::DocumentTooLargeForEditing {
-                utf16_units: resulting_utf16_units,
-                max_utf16_units: MAX_EDITABLE_UTF16_UNITS,
-            });
-        }
-
-        let resulting_bytes = replacement_tree.serialized_bytes();
-        if resulting_bytes > self.tree.serialized_bytes()
-            && u64::try_from(resulting_bytes).unwrap_or(u64::MAX) > max_serialized_bytes
-        {
-            return Err(DocumentError::DocumentTooLargeForSaving {
-                bytes: resulting_bytes,
-                max_bytes: max_serialized_bytes,
-            });
-        }
-
-        let next_revision = self
-            .revision
-            .checked_add(1)
-            .ok_or(DocumentError::RevisionExhausted)?;
-        self.tree = replacement_tree;
-        self.revision = next_revision;
-        Ok(self.metrics())
+        self.commit_tree(replacement_tree, max_serialized_bytes)
     }
 
     /// Returns the global UTF-16 start offset of one logical line.

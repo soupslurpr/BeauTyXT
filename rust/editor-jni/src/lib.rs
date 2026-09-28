@@ -1,5 +1,6 @@
 //! Bridges Android's bounded editor requests to the Rust document core.
 
+mod editing;
 mod experience;
 
 use std::collections::BTreeMap;

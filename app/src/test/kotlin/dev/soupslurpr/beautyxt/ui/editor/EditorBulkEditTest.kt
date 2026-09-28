@@ -3,6 +3,12 @@ package dev.soupslurpr.beautyxt.ui.editor
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.text.TextRange
 import dev.soupslurpr.beautyxt.document.DocumentSizeLimitException
+import dev.soupslurpr.beautyxt.document.DocumentHistoryLimitException
+import dev.soupslurpr.beautyxt.document.DocumentInsertion
+import dev.soupslurpr.beautyxt.document.DocumentMetrics
+import dev.soupslurpr.beautyxt.document.EditorDocument
+import dev.soupslurpr.beautyxt.document.Utf16Range
+import dev.soupslurpr.beautyxt.ui.UiText
 import dev.soupslurpr.beautyxt.testing.ImmediateSessionTestDispatcher
 import dev.soupslurpr.beautyxt.testing.QueuedSessionTestDispatcher
 import dev.soupslurpr.beautyxt.testing.TestEditorDocument
@@ -37,7 +43,7 @@ class EditorBulkEditTest {
         }
         assertEquals("seed", field.text.toString())
         assertEquals(TextRange(4), field.selection)
-        assertEquals("x".repeat(BULK_TEST_TEXT_LENGTH), requireNotNull(proposal).delta.replacement)
+        assertEquals("x".repeat(BULK_TEST_TEXT_LENGTH), buildString { requireNotNull(proposal).input.forEachChunk { append(it) } })
     }
 
     @Test
@@ -81,30 +87,15 @@ class EditorBulkEditTest {
     }
 
     @Test
-    fun rejectsOverBudgetInputWithoutPublishingItOrQueueingAnOperation() {
-        val field = TextFieldState("seed", TextRange(4))
-        var rejection: EditorInputRejection? = null
-        val transformation = editorInputTransformation(
-            canAcceptInput = { true },
-            onBulkEdit = { error("over-budget input reached the operation queue") },
-            onRejection = { rejection = it },
-            clearRejection = { error("over-budget input cleared its rejection") }
-        )
-        field.edit {
-            append("x".repeat(MAX_BULK_FIELD_UTF16_UNITS))
-            with(transformation) { transformInput() }
-        }
-        assertEquals("seed", field.text.toString())
-        assertEquals(TextRange(4), field.selection)
-        assertEquals(EditorInputRejection.BulkSize, rejection)
-    }
-
-    @Test
-    fun checksBulkAndUnicodeBoundsBeforeCreatingAnOperation() {
-        val maximum = "x".repeat(MAX_BULK_INSERT_UTF16_UNITS)
-        assertNotNull(EditorBulkEdit.create("", maximum, TextRange.Zero, TextRange(maximum.length)))
-        assertNull(EditorBulkEdit.create("", maximum + "x", TextRange.Zero, TextRange.Zero))
-        assertNull(EditorBulkEdit.create("", "\uD800", TextRange.Zero, TextRange.Zero))
+    fun admitsMultiMegabyteInputAndDefersLargeUnicodeValidationToTransfer() {
+        val large = "😀x\r\n".repeat(400_000)
+        val proposal = requireNotNull(EditorBulkEdit.create("", large, TextRange.Zero, TextRange(large.length)))
+        var length = 0L
+        proposal.input.forEachChunk { length += it.length }
+        assertEquals(1_600_000L, length)
+        assertEquals(dev.soupslurpr.beautyxt.document.Utf16Range(length, length), proposal.selectionAfter(length))
+        val invalid = requireNotNull(EditorBulkEdit.create("", "\uD800", TextRange.Zero, TextRange.Zero))
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) { invalid.input.forEachChunk { } }
         assertNull(EditorBulkEdit.create("😀", "abc", TextRange(1), TextRange.Zero))
     }
 
@@ -224,6 +215,86 @@ class EditorBulkEditTest {
         dispatcher.runAll()
     }
 
+    @Test
+    fun wholeDocumentReplacementAndUndoDoNotNeedRemovedTextInPlatformHistory() {
+        val dispatcher = QueuedSessionTestDispatcher()
+        val original = "x".repeat(400_000)
+        val document = TestEditorDocument("seed", editWindowUtf16Units = 4)
+        val session = createSession(document, dispatcher)
+        session.openInitialEditor()
+        dispatcher.runAll()
+        assertTrue(session.requestBulkEdit(requireNotNull(session.activeDraft), proposal("seed", original)))
+        dispatcher.runAll()
+        assertTrue(session.selectWholeDocument())
+        assertTrue(session.replaceSelectedSource("replacement\r\n😀"))
+        dispatcher.runAll()
+        assertEquals("replacement\n😀", document.text)
+        assertTrue(session.requestUndo())
+        dispatcher.runAll()
+        assertEquals(original, document.text)
+        assertEquals(dev.soupslurpr.beautyxt.document.Utf16Range(0, original.length.toLong()),
+            (session.documentSelection as DocumentSelection.Source).range)
+        assertTrue(requireNotNull(session.activeDraft).textFieldState.text.length <= EDIT_DRAFT_MAX_UTF16_UNITS)
+        assertTrue(session.requestRedo())
+        dispatcher.runAll()
+        assertEquals("replacement\n😀", document.text)
+        session.close()
+        dispatcher.runAll()
+    }
+
+    @Test
+    fun identicalNormalizedBulkReplacementMovesCaretWithoutCreatingHistory() {
+        val dispatcher = QueuedSessionTestDispatcher()
+        val document = TestEditorDocument("a\nb", editWindowUtf16Units = 3)
+        val session = createSession(document, dispatcher)
+        session.openInitialEditor()
+        dispatcher.runAll()
+        val draft = requireNotNull(session.activeDraft)
+        val proposal = requireNotNull(EditorBulkEdit.insertion("a\nb", TextRange(0, 3), "a\r\nb"))
+        assertTrue(session.requestBulkEdit(draft, proposal))
+        dispatcher.runAll()
+        assertEquals("a\nb", document.text)
+        assertFalse(session.canUndo)
+        assertEquals(TextRange(3), requireNotNull(session.activeDraft).textFieldState.selection)
+        session.close()
+        dispatcher.runAll()
+    }
+
+    @Test
+    fun nativeMemoryRejectionPreservesTheExistingRedoAndField() {
+        val dispatcher = QueuedSessionTestDispatcher()
+        val underlying = TestEditorDocument("seed", editWindowUtf16Units = 4)
+        var reject = false
+        val document = object : EditorDocument by underlying {
+            override fun replaceContent(revision: Long, range: Utf16Range, input: DocumentInsertion,
+                checkCancelled: () -> Unit): DocumentMetrics {
+                if (reject) throw DocumentHistoryLimitException()
+                return underlying.replaceContent(revision, range, input, checkCancelled)
+            }
+        }
+        val session = createSession(document, dispatcher)
+        session.openInitialEditor()
+        dispatcher.runAll()
+        val inserted = "seed" + "x".repeat(BULK_TEST_TEXT_LENGTH)
+        assertTrue(session.requestBulkEdit(requireNotNull(session.activeDraft), proposal("seed", inserted)))
+        dispatcher.runAll()
+        assertTrue(session.requestUndo())
+        dispatcher.runAll()
+        reject = true
+        val draft = requireNotNull(session.activeDraft)
+        assertTrue(session.requestBulkEdit(draft, proposal("seed", "seed" + "y".repeat(BULK_TEST_TEXT_LENGTH))))
+        dispatcher.runAll()
+        assertEquals("seed", underlying.text)
+        assertSame(draft, session.activeDraft)
+        assertEquals(UiText.Resource(dev.soupslurpr.beautyxt.R.string.editor_input_history_size), session.state.editorMessage)
+        assertTrue(session.canRedo)
+        assertTrue(session.requestRedo())
+        dispatcher.runAll()
+        assertEquals(inserted, underlying.text)
+        session.close()
+        dispatcher.runAll()
+    }
+
     private fun proposal(original: String, updated: String): EditorBulkEdit = requireNotNull(
         EditorBulkEdit.create(
             original,
@@ -234,7 +305,7 @@ class EditorBulkEditTest {
     )
 
     private fun createSession(
-        document: TestEditorDocument,
+        document: EditorDocument,
         dispatcher: QueuedSessionTestDispatcher
     ): EditorSession = EditorSession(
         title = "Bulk input test.txt",

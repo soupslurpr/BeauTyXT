@@ -163,7 +163,18 @@ It does not access the staging app's classes or internal session state.
 The ordinary `document experience controls` phase runs the same journey
 against debug. `Home document experience` runs it inside Home's Navigation 3
 entry, then checks that Back dismisses export, selection, and reading before
-returning to Home in the same activity. The staging background-checkpoint
+returning to Home in the same activity.
+
+The opt-in `staging large paste` phase pastes Unicode clipboard content beyond
+the field window, checks native Undo/Redo and whole-document replacement, and
+verifies exact autosaved bytes and a cold reopen. The ordinary `native paste
+history` phase covers multi-megabyte insertions, mixed source line endings,
+snapshot ownership, cancellation, and stale revisions through JNI. The opt-in
+`native insertion memory` phase fills the native insertion budget, then checks
+that rejection leaves the document and Redo intact. Its sampled native-heap
+measurement is not an exact peak or a whole-process memory bound.
+
+The staging background-checkpoint
 phases also require a docked on-screen keyboard that resizes the editor; a
 floating or handwriting panel does not satisfy their keyboard-visibility check.
 The `excerpt sharing` phase uses the helper APK as a separate-UID receiver for

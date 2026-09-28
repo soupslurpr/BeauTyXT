@@ -1,6 +1,10 @@
 /* Displays bounded source windows while retaining input and scroll state. */
 package dev.soupslurpr.beautyxt.ui.editor
 
+import androidx.compose.foundation.content.contentReceiver
+import androidx.compose.foundation.content.TransferableContent
+import androidx.compose.foundation.content.ReceiveContentListener
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -1085,6 +1089,24 @@ private fun ActiveEditWindowEditor(
                         .padding(horizontal = DocumentPageGutter - EditorHorizontalPadding)
                         .focusRequester(focusRequester)
                         .then(sourceSelectionModifier)
+                        .contentReceiver(ReceiveContentListener { content ->
+                            val clip = content.clipEntry.clipData
+                            val text = if (content.source == TransferableContent.Source.Clipboard && clip.itemCount == 1)
+                                clip.getItemAt(0).text else null
+                            if (text == null || text.length <= EDIT_DRAFT_MAX_UTF16_UNITS) content else {
+                                if (session.canApplyEditorInput(draft)) {
+                                    val proposal = EditorBulkEdit.insertion(textFieldState.text.toString(),
+                                        textFieldState.selection, text.toString())
+                                    if (proposal == null) draft.reportInputRejection(EditorInputRejection.BulkSize)
+                                    else {
+                                        draft.clearInputRejection()
+                                        if (!session.requestBulkEdit(draft, proposal))
+                                            draft.reportInputRejection(EditorInputRejection.BulkUnavailable)
+                                    }
+                                }
+                                null
+                            }
+                        })
                         .onPreviewKeyEvent { event ->
                             handleEditorHistoryShortcut(
                                 event = event,

@@ -50,7 +50,7 @@ internal fun verifyDocumentExperience(context: Context) = runBlocking {
             val next = document.replaceBatch(revision, patches)
             check(next.revision == revision + 1)
             check(document.readRange(next.revision, Utf16Range(0, text.length.toLong())) == "dog concatenate dog\nα😀")
-            document.replaceBatch(next.revision, inversePatches(patches))
+            document.restoreHistory(next.revision, next.revision, undo = true)
         }
         document.compileSearch("(?P<word>cat)", SearchOptions(regex = true)).use { query ->
             val found = query.source(revision + 2, Utf16Range(0, text.length.toLong()), SearchCursor(0), "${'$'}{word}\\n${'$'}${'$'}")

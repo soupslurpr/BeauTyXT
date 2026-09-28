@@ -11,14 +11,16 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.document.DocumentFormat
+import dev.soupslurpr.beautyxt.document.DocumentChange
+import dev.soupslurpr.beautyxt.document.DocumentInsertion
+import dev.soupslurpr.beautyxt.document.inverseChanges
 import dev.soupslurpr.beautyxt.document.DocumentPatch
 import dev.soupslurpr.beautyxt.document.DocumentSearch
 import dev.soupslurpr.beautyxt.document.SearchOptions
 import dev.soupslurpr.beautyxt.document.SearchCursor
 import dev.soupslurpr.beautyxt.document.SearchCompletion
 import dev.soupslurpr.beautyxt.document.MAX_SEARCH_RESULTS
-import dev.soupslurpr.beautyxt.document.MAX_REPLACEMENT_HISTORY_UNITS
-import dev.soupslurpr.beautyxt.document.inversePatches
+import dev.soupslurpr.beautyxt.document.MAX_REPLACEMENT_REVIEW_UNITS
 import dev.soupslurpr.beautyxt.document.DocumentRemovalAction
 import dev.soupslurpr.beautyxt.document.DocumentRemovalCapabilities
 import dev.soupslurpr.beautyxt.document.EditorDocument
@@ -825,46 +827,39 @@ internal constructor(
     fun replaceSelectedSource(inserted: String, copyRemoved: ((String) -> Unit)? = null): Boolean {
         if (!canEditDocumentSelection) return false
         val selected = documentSelection as? DocumentSelection.Source ?: return false
-        val normalized = inserted.replace("\r\n", "\n").replace('\r', '\n')
-        if (selected.range.end - selected.range.start + normalized.length > MAX_REPLACEMENT_HISTORY_UNITS) {
-            selectionMessage = UiText.Resource(R.string.replace_undo_limit)
-            return false
-        }
-        var patches: List<DocumentPatch> = emptyList()
         var outcome: DocumentReplacementResult = DocumentReplacementResult.Unavailable
-        val caret = selected.range.start + normalized.length
-        val after = Utf16Range(caret, caret)
         launchOperation(operation = { state ->
             try {
-                val removed = state.readSourceRange(selected.revision, selected.range)
-                if (selected != documentSelection || !canEditDocumentSelection) return@launchOperation
-                patches = listOf(DocumentPatch(selected.range, removed, normalized))
-                if (!history.canRetain(patches)) {
-                    selectionMessage = UiText.Resource(R.string.replace_undo_limit)
-                    return@launchOperation
-                }
                 if (copyRemoved != null) {
+                    if (selected.range.end - selected.range.start > 128 * 1024) {
+                        selectionMessage = UiText.Resource(R.string.selection_output_failed)
+                        return@launchOperation
+                    }
+                    val removed = state.readSourceRange(selected.revision, selected.range)
+                    if (selected != documentSelection || !canEditDocumentSelection) return@launchOperation
                     if (removed.toByteArray().size > 128 * 1024) {
                         selectionMessage = UiText.Resource(R.string.selection_output_failed)
                         return@launchOperation
                     }
                     copyRemoved(removed)
                 }
-                outcome = state.replaceDocumentBatch(selected.revision, patches, after)
+                outcome = state.replaceDocumentContent(selected.revision, selected.range,
+                    DocumentInsertion(inserted), selected.range)
             } catch (cancel: CancellationException) { throw cancel }
             catch (_: Exception) { selectionMessage = UiText.Resource(R.string.operation_apply_change_failed) }
         }, requestDraftFocus = false, onCompletion = {
             when (val result = outcome) {
                 is DocumentReplacementResult.Applied -> {
-                    val patch = patches.single()
-                    recordCommittedEdit(CommittedEditDelta(selected.revision, result.revision, patch.range.start,
-                        patch.removed, patch.inserted, selected.range, after, patches))
+                    result.delta?.let {
+                        recordCommittedEdit(it)
+                        invalidateMarkdownPreview()
+                        recordSourceSaveRequest()
+                    }
                     clearDocumentSelection()
-                    invalidateMarkdownPreview()
-                    recordSourceSaveRequest()
                 }
                 DocumentReplacementResult.RejectedBySizeLimit -> selectionMessage = UiText.Resource(R.string.operation_save_document_too_large)
-                else -> if (selectionMessage == null) selectionMessage = UiText.Resource(R.string.operation_apply_change_failed)
+                else -> if (selectionMessage == null) selectionMessage = state.editorMessage
+                    ?: UiText.Resource(R.string.operation_apply_change_failed)
             }
         })
         return true
@@ -1159,7 +1154,7 @@ internal constructor(
 
     /** Retains the IME contract during an in-place field handoff while input remains gated. */
     val preservesEditorInputSession: Boolean
-        get() = pendingEditWindowAction?.let { pending ->
+        get() = state.isReplacingDocumentTree || pendingEditWindowAction?.let { pending ->
             pending.automaticTransition != null ||
                 pending.action == EditWindowAction.Undo ||
                 pending.action == EditWindowAction.Redo ||
@@ -2268,7 +2263,7 @@ internal constructor(
     }
 
     fun updateReplacementFieldValue(value: TextFieldValue) {
-        if (value.text.length > MAX_REPLACEMENT_HISTORY_UNITS || '\r' in value.text ||
+        if (value.text.length > MAX_REPLACEMENT_REVIEW_UNITS || '\r' in value.text ||
             !value.text.hasWellFormedUtf16()) return
         val changed = value.text != replacementFieldValue.text
         replacementFieldValue = value
@@ -2720,51 +2715,25 @@ internal constructor(
             return
         }
         val start = snapshot.range.start
-        val delta = proposal.delta
-        val removed = proposal.originalText.substring(
-            delta.oldRange.start.toInt(),
-            delta.oldRange.end.toInt()
-        )
-        val selectionBefore = Utf16Range(
-            Math.addExact(start, proposal.selectionBefore.start),
-            Math.addExact(start, proposal.selectionBefore.end)
-        )
-        val request = DocumentReplacementRequest(
-            expectedRevision = snapshot.metrics.revision,
-            range = Utf16Range(
-                Math.addExact(start, delta.oldRange.start),
-                Math.addExact(start, delta.oldRange.end)
-            ),
-            expectedRemovedText = removed,
-            replacement = delta.replacement,
-            selectionAfter = Utf16Range(
-                Math.addExact(start, proposal.selectionAfter.start),
-                Math.addExact(start, proposal.selectionAfter.end)
-            )
-        )
+        val range = Utf16Range(start + proposal.oldRange.start, start + proposal.oldRange.end)
+        val before = Utf16Range(start + proposal.selectionBefore.start, start + proposal.selectionBefore.end)
         var result: DocumentReplacementResult = DocumentReplacementResult.Unavailable
         launchOperation(
             operation = { state ->
-                result =
-                    state.replaceDocumentRange(draft.edit.generation, request)
+                result = state.replaceDocumentContent(snapshot.metrics.revision, range, proposal.input, before) { length ->
+                    val local = proposal.selectionAfter(length)
+                    Utf16Range(start + local.start, start + local.end)
+                }
             },
             requestDraftFocus = draft.isEditorFocused,
             onCompletion = {
                 when (val completed = result) {
                     is DocumentReplacementResult.Applied -> {
-                        recordCommittedEdit(
-                            CommittedEditDelta(
-                                revisionBefore = request.expectedRevision,
-                                revisionAfter = completed.revision,
-                                rangeStart = request.range.start,
-                                removedText = removed,
-                                insertedText = request.replacement,
-                                selectionBefore = selectionBefore,
-                                selectionAfter = request.selectionAfter
-                            )
-                        )
-                        invalidateMarkdownPreview()
-                        recordSourceSaveRequest()
+                        completed.delta?.let {
+                            recordCommittedEdit(it)
+                            invalidateMarkdownPreview()
+                            recordSourceSaveRequest()
+                        }
                     }
 
                     DocumentReplacementResult.RejectedBySizeLimit ->
@@ -2818,44 +2787,10 @@ internal constructor(
             completeExecutingEditWindowAction(actionToken)
             return
         }
-        val request =
-            if (action == EditWindowAction.Undo) {
-                DocumentReplacementRequest(
-                    expectedRevision = currentRevision,
-                    range =
-                        Utf16Range(
-                            start = entry.rangeStart,
-                            end =
-                                Math.addExact(
-                                    entry.rangeStart,
-                                    entry.insertedText.length.toLong()
-                                )
-                        ),
-                    expectedRemovedText = entry.insertedText,
-                    replacement = entry.removedText,
-                    selectionAfter = entry.selectionBefore
-                )
-            } else {
-                DocumentReplacementRequest(
-                    expectedRevision = currentRevision,
-                    range =
-                        Utf16Range(
-                            start = entry.rangeStart,
-                            end = Math.addExact(entry.rangeStart, entry.removedText.length.toLong())
-                        ),
-                    expectedRemovedText = entry.removedText,
-                    replacement = entry.insertedText,
-                    selectionAfter = entry.selectionAfter
-                )
-            }
         var result: DocumentReplacementResult = DocumentReplacementResult.Unavailable
         launchOperation(
             operation = { state ->
-                result = if (entry.patches.size > 1) {
-                    state.replaceDocumentBatch(currentRevision,
-                        if (action == EditWindowAction.Undo) inversePatches(entry.patches) else entry.patches,
-                        if (action == EditWindowAction.Undo) entry.selectionBefore else entry.selectionAfter)
-                } else state.replaceDocumentRange(generation = draft.edit.generation, request = request)
+                result = state.restoreDocumentHistory(currentRevision, entry, action == EditWindowAction.Undo)
             },
             requestDraftFocus = draft.isEditorFocused && !isFindVisible,
             onCompletion = {
@@ -2891,11 +2826,15 @@ internal constructor(
         val undidReplacement = action == EditWindowAction.Undo &&
             undoableFindReplacementRevision == history.headRevision
         onDocumentPatchesApplied(checkNotNull(history.headRevision), revision,
-            if (action == EditWindowAction.Undo) inversePatches(entry.patches) else entry.patches)
+            if (action == EditWindowAction.Undo) inverseChanges(entry.changes) else entry.changes)
         when (action) {
             EditWindowAction.Undo -> history.completeUndo(entry, revision)
             EditWindowAction.Redo -> history.completeRedo(entry, revision)
             else -> error("history stack move requires undo or redo")
+        }
+        val selection = if (action == EditWindowAction.Undo) entry.selectionBefore else entry.selectionAfter
+        if (selection.end - selection.start > EDIT_WINDOW_UTF16_UNITS) {
+            documentSelection = DocumentSelection.Source(revision, selection.start, selection.end)
         }
         historyVersion = Math.incrementExact(historyVersion)
         if (undidReplacement && isFindVisible) replacementUndoNoticeRevision = revision
@@ -2903,12 +2842,12 @@ internal constructor(
 
     /** Records one verified edit and publishes the journal's new availability. */
     private fun recordCommittedEdit(delta: CommittedEditDelta, scopedReplacement: Boolean = false) {
-        onDocumentPatchesApplied(delta.revisionBefore, delta.revisionAfter, delta.patches, scopedReplacement)
-        history.record(delta)
+        onDocumentPatchesApplied(delta.revisionBefore, delta.revisionAfter, delta.changes, scopedReplacement)
+        history.record(delta, state.oldestUndoRevision)
         historyVersion = Math.incrementExact(historyVersion)
     }
 
-    private fun onDocumentPatchesApplied(before: Long, after: Long, patches: List<DocumentPatch>,
+    private fun onDocumentPatchesApplied(before: Long, after: Long, patches: List<DocumentChange>,
         scopedReplacement: Boolean = false) {
         findActionMessage = null
         undoableFindReplacementRevision = null
@@ -4840,7 +4779,7 @@ internal constructor(
                             continue
                         }
                         val cost = result.hit.text.length.toLong() + (result.hit.replacement?.length ?: 0)
-                        if (accumulated.size == MAX_SEARCH_RESULTS || retained + cost > MAX_REPLACEMENT_HISTORY_UNITS) {
+                        if (accumulated.size == MAX_SEARCH_RESULTS || retained + cost > MAX_REPLACEMENT_REVIEW_UNITS) {
                             // Resume at the first unretained match, including a zero-width hit.
                             // Discard this bounded review only when the user asks for the next batch.
                             if (accumulated.isNotEmpty()) {
@@ -5184,8 +5123,8 @@ internal constructor(
             }
             return false
         }
-        if (!history.canRetain(patches)) {
-            findActionMessage = UiText.Resource(R.string.replace_undo_limit)
+        if (patches.sumOf { it.retainedUnits.toLong() } > MAX_REPLACEMENT_REVIEW_UNITS) {
+            findActionMessage = UiText.Resource(R.string.replace_review_limit)
             return false
         }
         val revision = if (currentOnly) findOriginRevision else reviewedFindRevision ?: return false
@@ -5222,7 +5161,7 @@ internal constructor(
                         (caret to (first.range.start == first.range.end)).takeIf { advance })
                 }
                 DocumentReplacementResult.RejectedBySizeLimit -> findActionMessage = UiText.Resource(R.string.operation_save_document_too_large)
-                else -> findActionMessage = UiText.Resource(R.string.operation_apply_change_failed)
+                else -> findActionMessage = state.editorMessage ?: UiText.Resource(R.string.operation_apply_change_failed)
             }
         })
         return true
@@ -6691,7 +6630,8 @@ internal constructor(
                     )
         }
         if (currentDraft != null && historyAction != null) {
-            currentDraft.reconcileHistoryEditWindow(activeEdit)
+            currentDraft.reconcileHistoryEditWindow(activeEdit,
+                allowUnchangedRevision = historyAction.action == EditWindowAction.BulkInsert)
             latestObservedDraft = null
             latestFieldValue = null
             return

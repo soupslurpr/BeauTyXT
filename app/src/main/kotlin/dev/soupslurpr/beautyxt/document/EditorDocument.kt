@@ -71,6 +71,17 @@ internal interface EditorDocumentSnapshot : AutoCloseable {
 
 /** Defines the bounded document operations required by the Compose editor. */
 internal interface EditorDocument : AutoCloseable {
+    /** Publishes normalized input from bounded chunks, with an atomic native Undo. */
+    fun replaceContent(revision: Long, range: Utf16Range, input: DocumentInsertion,
+        checkCancelled: () -> Unit = {}): DocumentMetrics = error("chunked insertion is unsupported")
+
+    /** Restores the exact native history token as a new document revision. */
+    fun restoreHistory(revision: Long, token: Long, undo: Boolean): DocumentMetrics =
+        error("native history is unsupported")
+
+    fun historyState(): DocumentHistoryState = DocumentHistoryState(0, 0, 0, 0, 0)
+    fun clearHistory() = Unit
+
     /** Creates one bounded native matcher with independent cancellation. */
     fun compileSearch(query: String, options: SearchOptions): DocumentSearch =
         error("advanced search is unsupported")
@@ -81,7 +92,7 @@ internal interface EditorDocument : AutoCloseable {
     /** Resolves a source offset without changing the editor selection. */
     fun positionAt(revision: Long, offset: Long): ViewportCursor = error("position resolution is unsupported")
 
-    /** Applies sorted verified patches as one revision, with a preflighted Undo budget. */
+    /** Applies sorted verified patches as one revision, with atomic native history. */
     fun replaceBatch(revision: Long, patches: List<DocumentPatch>): DocumentMetrics =
         error("atomic replacement is unsupported")
 

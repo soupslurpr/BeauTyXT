@@ -103,7 +103,7 @@
     </plurals>
     <string name="replace_end_scope">Reached the end of the scope. Match arrows still wrap.</string>
     <string name="replace_no_further_verified_match">No further verified match. Search is incomplete.</string>
-    <string name="replace_undo_limit">This batch exceeds the Undo budget. Narrow the selection or exclude matches; no text was changed.</string>
+    <string name="replace_review_limit">This batch exceeds the replacement review limit. Narrow the selection or exclude matches; no text was changed.</string>
     <plurals name="replace_applied">
         <item quantity="one">Applied %1$d replacement</item>
         <item quantity="other">Applied %1$d replacements</item>
