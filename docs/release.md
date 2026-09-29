@@ -115,6 +115,12 @@ metadata omits the Git revision, retain it explicitly with the evidence.
 
 ## Accrescent artifact
 
+The store listing icon is
+[`app/src/main/ic_launcher-accrescent.png`](../app/src/main/ic_launcher-accrescent.png),
+an opaque 512 x 512 PNG. Provide it separately when requesting an icon update.
+Regenerate it with the [launcher artwork renderer](../artwork/launcher-icon/README.md)
+whenever the launcher artwork changes.
+
 Accrescent accepts a developer-signed split APK set rather than a monolithic
 APK. Follow the current [Accrescent build documentation][accrescent-build] and
 [publishing requirements][accrescent-requirements]. For manual signing,

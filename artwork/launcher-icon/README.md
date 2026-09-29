@@ -32,4 +32,19 @@ blender --background --python-exit-code 1 --python artwork/launcher-icon/render.
 ```
 
 The script saves `beautyxt-launcher.blend` beside itself and writes each Android
-density asset directly into `app/src/main/res`.
+density asset directly into `app/src/main/res`. It also writes the complete
+[Accrescent icon](../../app/src/main/ic_launcher-accrescent.png): a 512 x 512,
+opaque PNG with the jade background, ready to attach to an icon update request.
+This separate listing asset is outside `res` and is not packaged in the app.
+
+The store render uses the same geometry, lighting, and perspective. Its framing
+matches the central 72 units of the 108-unit adaptive foreground, without the
+extra margin reserved for launcher effects. It composites the foreground and
+contact shadows over the exact Android background color, with no outer mask.
+
+To regenerate only the Accrescent icon:
+
+```sh
+blender --background --python-exit-code 1 --python artwork/launcher-icon/render.py \
+    -- --accrescent-only
+```

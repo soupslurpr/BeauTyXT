@@ -1,6 +1,8 @@
 """Builds and renders BeauTyXT's physically modeled document-and-pencil identity."""
 
+import argparse
 import math
+import sys
 import xml.etree.ElementTree as xml
 from pathlib import Path
 
@@ -15,6 +17,8 @@ PROJECT_DIRECTORY = SCRIPT_DIRECTORY.parents[1]
 RESOURCE_DIRECTORY = PROJECT_DIRECTORY / "app" / "src" / "main" / "res"
 SCENE_PATH = SCRIPT_DIRECTORY / "beautyxt-launcher.blend"
 OUTPUT_NAME = "ic_launcher_foreground_color.png"
+ACCRESCENT_PATH = RESOURCE_DIRECTORY.parent / "ic_launcher-accrescent.png"
+ACCRESCENT_SIZE = 512
 VECTOR_VIEWPORT = 108.0
 VECTOR_CENTER = VECTOR_VIEWPORT / 2.0
 VECTOR_UNIT_METERS = 0.001
@@ -661,8 +665,49 @@ def relative_output_path(density: str) -> str:
     return f"//../../app/src/main/res/drawable-{density}/{OUTPUT_NAME}"
 
 
+def render_accrescent_icon(scene: bpy.types.Scene) -> None:
+    """Renders the store icon over jade at the launcher's visible framing."""
+    # Show the central 72 units of the 108-unit adaptive foreground without
+    # moving the camera or changing the perspective and depth of field.
+    scene.camera.data.lens *= ADAPTIVE_FOREGROUND_SCALE
+    scene.render.resolution_x = ACCRESCENT_SIZE
+    scene.render.resolution_y = ACCRESCENT_SIZE
+    scene.render.filepath = str(ACCRESCENT_PATH)
+    scene.render.dither_intensity = 0.0
+
+    compositor = bpy.data.node_groups.new("Accrescent icon", "CompositorNodeTree")
+    compositor.interface.new_socket(
+        name="Image", in_out="OUTPUT", socket_type="NodeSocketColor"
+    )
+    scene.compositing_node_group = compositor
+    layers = compositor.nodes.new("CompositorNodeRLayers")
+    layers.scene = scene
+    over = compositor.nodes.new("CompositorNodeAlphaOver")
+    over.inputs["Factor"].default_value = 1.0
+    # Compositing precedes the display transform. Compensate for the scene's
+    # exposure so the exported background remains exactly BACKGROUND_COLOR.
+    exposure_compensation = 2.0 ** -scene.view_settings.exposure
+    background = hex_to_linear_rgba(BACKGROUND_COLOR)
+    over.inputs["Background"].default_value = tuple(
+        channel * exposure_compensation for channel in background[:3]
+    ) + (1.0,)
+    output = compositor.nodes.new("NodeGroupOutput")
+    compositor.links.new(layers.outputs["Image"], over.inputs["Foreground"])
+    compositor.links.new(over.outputs["Image"], output.inputs["Image"])
+    bpy.ops.render.render(write_still=True)
+    assert ACCRESCENT_PATH.exists()
+
+
 def main() -> None:
-    """Saves the reproducible scene and renders every Android density asset."""
+    """Renders Android launcher assets and the complete Accrescent store icon."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--accrescent-only",
+        action="store_true",
+        help="render only the store icon, leaving Android assets and scene intact",
+    )
+    arguments = sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else []
+    options = parser.parse_args(arguments)
     scene = create_icon_scene()
     largest_density, largest_size = RENDER_TARGETS[-1]
     scene.render.resolution_x = largest_size
@@ -670,15 +715,17 @@ def main() -> None:
     scene.render.filepath = relative_output_path(largest_density)
     validate_android_resources()
     validate_scene(scene)
-    bpy.ops.wm.save_as_mainfile(filepath=str(SCENE_PATH), compress=True)
-    for density, size in RENDER_TARGETS:
-        path = output_path(density)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        scene.render.resolution_x = size
-        scene.render.resolution_y = size
-        scene.render.filepath = str(path)
-        bpy.ops.render.render(write_still=True)
-        assert path.exists()
+    if not options.accrescent_only:
+        bpy.ops.wm.save_as_mainfile(filepath=str(SCENE_PATH), compress=True)
+        for density, size in RENDER_TARGETS:
+            path = output_path(density)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            scene.render.resolution_x = size
+            scene.render.resolution_y = size
+            scene.render.filepath = str(path)
+            bpy.ops.render.render(write_still=True)
+            assert path.exists()
+    render_accrescent_icon(scene)
 
 
 if __name__ == "__main__":
