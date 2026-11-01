@@ -197,8 +197,32 @@ impl Semantics {
         Ok(())
     }
 
-    pub fn finish(mut self) -> Result<(bool, Vec<TextRun>), DrawingError> {
+    pub fn finish(mut self, viewport: [f32; 4]) -> Result<(bool, Vec<TextRun>), DrawingError> {
         self.insert_spaces(usize::MAX)?;
+        for (group, run) in self.runs.iter_mut().enumerate() {
+            for rect in &mut run.boxes {
+                let clipped = [
+                    rect.bounds[0].max(viewport[0]),
+                    rect.bounds[1].max(viewport[1]),
+                    rect.bounds[2].min(viewport[2]),
+                    rect.bounds[3].min(viewport[3]),
+                ];
+                if rect.bounds[0] < viewport[0]
+                    || rect.bounds[1] < viewport[1]
+                    || rect.bounds[2] > viewport[2]
+                    || rect.bounds[3] > viewport[3]
+                {
+                    self.complete = false;
+                    if clipped[0] >= clipped[2] || clipped[1] >= clipped[3] {
+                        // Never join visible neighbors into a phrase across an excluded glyph.
+                        self.invalid_groups.insert(group);
+                    } else {
+                        // Still-drawn glyphs remain searchable; highlights stay inside the viewport.
+                        rect.bounds = clipped;
+                    }
+                }
+            }
+        }
         Ok((
             self.complete,
             self.runs
@@ -213,7 +237,10 @@ impl Semantics {
 
     #[cfg(test)]
     pub fn runs(self) -> impl Iterator<Item = TextRun> {
-        self.finish().unwrap().1.into_iter()
+        self.finish([-100.0, -100.0, 100.0, 100.0])
+            .unwrap()
+            .1
+            .into_iter()
     }
 }
 
@@ -364,8 +391,46 @@ mod tests {
                     .unwrap();
             }
         }
-        let (complete, runs) = semantics.finish().unwrap();
+        let (complete, runs) = semantics.finish([0.0, 0.0, 1.0, 1.0]).unwrap();
         assert!(!complete);
         assert!(runs.is_empty());
+    }
+
+    #[test]
+    fn clipping_invalidates_only_its_structural_run() {
+        for left in [-2.0, -0.5] {
+            let nodes = ratex_parser::parse(r"\frac{ab}{cd}").unwrap();
+            let root = layout(&nodes, &LayoutOptions::default());
+            let list = to_display_list(&root);
+            let mut semantics = Semantics::new(&root, &list.items).unwrap();
+            for (index, item) in list.items.iter().enumerate() {
+                if let DisplayItem::GlyphPath { char_code, .. } = item {
+                    let x = if *char_code == u32::from('a') {
+                        left
+                    } else {
+                        0.0
+                    };
+                    semantics
+                        .glyph(index, *char_code, &[0.0, x, 0.0, 1.0, x + 1.0, 1.0])
+                        .unwrap();
+                }
+            }
+            let (complete, runs) = semantics.finish([0.0, 0.0, 1.0, 1.0]).unwrap();
+            assert!(!complete);
+            let expected = if left < -1.0 {
+                vec!["cd"]
+            } else {
+                vec!["ab", "cd"]
+            };
+            assert!(
+                runs.iter()
+                    .flat_map(|run| &run.boxes)
+                    .all(|rect| rect.bounds[0] >= 0.0)
+            );
+            assert_eq!(
+                runs.into_iter().map(|run| run.text).collect::<Vec<_>>(),
+                expected
+            );
+        }
     }
 }
