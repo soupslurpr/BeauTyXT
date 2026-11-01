@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.nfc.NfcManager
-import android.print.PrintManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -51,6 +50,7 @@ import dev.soupslurpr.beautyxt.importing.client.SelectedDocumentSource
 import dev.soupslurpr.beautyxt.importing.client.querySelectedDocumentMetadata
 import dev.soupslurpr.beautyxt.markdown.client.IsolatedMarkdownRenderer
 import dev.soupslurpr.beautyxt.printing.DocumentPrintAdapter
+import dev.soupslurpr.beautyxt.printing.launchDocumentPrint
 import dev.soupslurpr.beautyxt.sharing.IncomingDocumentShare
 import dev.soupslurpr.beautyxt.sharing.IncomingSourcePurpose
 import dev.soupslurpr.beautyxt.sharing.IncomingTextOrigin
@@ -108,7 +108,6 @@ internal fun BeauTyXTApp(
         remember(applicationContext) {
             applicationContext.getSystemService(NfcManager::class.java)?.defaultAdapter
         }
-    val printManager = remember(context) { context.getSystemService(PrintManager::class.java) }
     val nfcTransferProcessor: NfcTransferProcessor? =
         if (nfcAdapter == null) null else transferProcessor
     val hasCamera =
@@ -268,8 +267,7 @@ internal fun BeauTyXTApp(
         try {
             val claimedAdapter = request.claimAdapter(resources)
             adapter = claimedAdapter
-            checkNotNull(printManager) { "print manager is unavailable" }
-                .print(claimedAdapter.jobName, claimedAdapter, null)
+            launchDocumentPrint(context, claimedAdapter)
             adapter = null
             currentEditor.completePrintLaunch(request.generation)
         } catch (_: Exception) {
