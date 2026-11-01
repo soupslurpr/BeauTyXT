@@ -11,9 +11,53 @@ import org.junit.Test
 class DocumentSelectionTest {
     private fun block(text: String, kind: MarkdownBlockKind = MarkdownBlockKind.Paragraph) = MarkdownRenderBlock(kind,
         false, false, false, false, false, false, 0, 0, 0, 0, text, "", emptyList(),
+        tableCellSeparators = if (kind == MarkdownBlockKind.TableRow) text.indices.filter { text[it] == '\t' } else emptyList(),
         source = MarkdownSourceRange(0, text.length.toLong()),
         sourceMaps = listOf(MarkdownSourceMap(0, text.length, MarkdownSourceRange(0, text.length.toLong()))))
     private fun model(vararg blocks: MarkdownRenderBlock) = MarkdownPreviewDocument(500, blocks.toList(), 0, false)
+
+    @Test fun refusesCoarseHtmlAndIncompleteOrOverlappingProvenance() {
+        val html = model(block("Public").copy(source = MarkdownSourceRange(0, 46), sourceMaps = emptyList()),
+            block("Private sibling").copy(source = MarkdownSourceRange(0, 46), sourceMaps = emptyList()))
+        val public = DocumentSelection.Reading(0, ReadingPoint(0, 0), ReadingPoint(0, 6))
+        assertNull(public.exactSource(html))
+        val exact = model(block("Public").copy(source = MarkdownSourceRange(0, 23), sourceMaps = listOf(
+            MarkdownSourceMap(0, 6, MarkdownSourceRange(8, 14)))))
+        assertEquals(Utf16Range(8, 14), public.exactSource(exact))
+        assertEquals(Utf16Range(9, 12), public.copy(anchor = ReadingPoint(0, 1), focus = ReadingPoint(0, 4)).exactSource(exact))
+        val partial = block("A\tB", MarkdownBlockKind.TableRow).copy(sourceMaps = listOf(
+            MarkdownSourceMap(0, 1, MarkdownSourceRange(0, 1)), MarkdownSourceMap(2, 3, MarkdownSourceRange(2, 3))))
+        assertNull(exactReadingSourceRange(partial, 0, 3))
+        assertEquals(Utf16Range(2, 3), exactReadingSourceRange(partial, 2, 3))
+        val overlapping = block("AB").copy(sourceMaps = listOf(
+            MarkdownSourceMap(0, 1, MarkdownSourceRange(0, 2)), MarkdownSourceMap(1, 2, MarkdownSourceRange(1, 2))))
+        assertNull(exactReadingSourceRange(overlapping, 0, 2))
+        assertNull(exactReadingSourceRange(overlapping, 0, 1))
+        val sibling = model(block("Public"), block("Other").copy(sourceMaps = listOf(
+            MarkdownSourceMap(0, 5, MarkdownSourceRange(0, 5)))))
+        assertNull(public.exactSource(sibling))
+        val joined = model(block("Public"), block("lic").copy(illustrationContinuation = true,
+            source = MarkdownSourceRange(3, 6), sourceMaps = listOf(
+                MarkdownSourceMap(0, 3, MarkdownSourceRange(3, 6)))))
+        assertEquals(Utf16Range(0, 6), public.exactSource(joined))
+    }
+
+    @Test fun readingFindKeepsEveryCellSeparateWhenAnotherCellContainsMath() {
+        val row = block("x\tfoo\tbar", MarkdownBlockKind.TableRow).copy(spans = listOf(
+            MarkdownInlineSpan(0, 1, MARKDOWN_SPAN_STYLE_MATH, null)))
+        val document = model(row)
+        val units = readingSearchUnits(document, false).units
+        assertEquals(listOf("x", "foo", "bar"), units.map { it.text })
+        assertFalse(units.any { "foo\tbar" in it.text })
+        val foo = units.single { it.text == "foo" }
+        val hit = dev.soupslurpr.beautyxt.document.SearchHit(Utf16Range(0, 3), "foo", null, "", "")
+        assertEquals(Utf16Range(2, 5), readingSearchResult(document, foo, hit).source)
+        val literal = row.copy(text = "a\tb\tc", spans = emptyList(), tableCellSeparators = listOf(3))
+        assertEquals(listOf("a\tb", "c"), readingSearchUnits(model(literal), false).units.map { it.text })
+        val mathLast = row.copy(text = "foo\tbar\tx", tableCellSeparators = listOf(3, 7), spans = listOf(
+            MarkdownInlineSpan(8, 9, MARKDOWN_SPAN_STYLE_MATH, null)))
+        assertEquals(listOf("foo", "bar", "x"), readingSearchUnits(model(mathLast), false).units.map { it.text })
+    }
 
     @Test fun individualFootnoteDigitsCopySearchAndExportWithoutImportingTheUnselectedNote() {
         fun reference(text: String, start: Int, end: Int, label: String) = block(text).copy(spans = listOf(

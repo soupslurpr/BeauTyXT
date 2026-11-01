@@ -1,10 +1,35 @@
 package dev.soupslurpr.beautyxt.printing
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MarkdownPrintPaginationTest {
+    @Test
+    fun keepsADefinitionLabelWithTheFirstContentAndFittingFollowingRow() {
+        val group = markdownPrintDefinitionGroupHeight(12, 30, 100, 20)
+        assertEquals(62, group)
+        assertTrue(shouldAdvanceMarkdownPrintGroup(0, 100, 50, group))
+        assertFalse(shouldAdvanceMarkdownPrintGroup(0, 100, 38, group))
+    }
+
+    @Test
+    fun yieldsFollowingContentBeforeSeparatingTheDefinitionLabel() {
+        val group = markdownPrintDefinitionGroupHeight(12, 30, 50, 20)
+        assertEquals(42, group)
+        assertTrue(shouldAdvanceMarkdownPrintGroup(0, 50, 20, group))
+        assertFalse(shouldAdvanceMarkdownPrintGroup(0, 50, 5, group))
+    }
+
+    @Test
+    fun oversizedDefinitionContentStillMakesProgress() {
+        val group = markdownPrintDefinitionGroupHeight(12, 100, 100, 20)
+        assertEquals(112, group)
+        assertFalse(shouldAdvanceMarkdownPrintGroup(0, 100, 80, group))
+        assertFalse(shouldAdvanceMarkdownPrintGroup(0, 100, 0, group))
+    }
+
     @Test
     fun movesOnlyWhenTheGroupDoesNotFitTheRemainingSpace() {
         assertTrue(shouldAdvanceMarkdownPrintGroup(10, 110, 81, 30))

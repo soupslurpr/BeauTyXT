@@ -95,6 +95,7 @@ internal suspend fun readMarkdownPrintBlock(
     val text = StringBuilder(textLength)
     val spans = ArrayList<MarkdownInlineSpan>()
     val alignments = ArrayList<MarkdownTableAlignment>()
+    val separators = ArrayList<Int>()
     var columnOffset = 0
     val endExclusive = nextIndex + if (nextOffset > 0) 1 else 0
     for (fragmentIndex in startIndex until endExclusive) {
@@ -130,6 +131,9 @@ internal suspend fun readMarkdownPrintBlock(
             }
         }
         if (first.kind == MarkdownBlockKind.TableRow) {
+            fragment.tableCellSeparators.filter { it in start until end }.forEach {
+                separators += textOffset + it - start
+            }
             val columnCount = markdownPrintTableColumnCount(fragment)
             for (localColumn in 0 until columnCount) {
                 val alignment = fragment.tableAlignments.getOrElse(localColumn) {
@@ -155,7 +159,8 @@ internal suspend fun readMarkdownPrintBlock(
             spans = spans,
             source = MarkdownSourceRange(first.source.start, blocks[endExclusive - 1].source.end),
             sourceMaps = emptyList(),
-            tableAlignments = alignments
+            tableAlignments = alignments,
+            tableCellSeparators = separators
         ),
         nextIndex,
         nextOffset,

@@ -24,13 +24,24 @@ internal fun markdownRenderedPositionForSourceOffset(
     if (blocks.isEmpty()) {
         return null
     }
-    val containingBlockIndex =
-        blocks.indexOfFirst { block ->
+    // Enclosing list/footnote ranges can overlap their descendants. Prefer the
+    // smallest mapped run containing the position, then the narrowest block.
+    val mappedBlockIndex = blocks.indices.filter { index ->
+        blocks[index].sourceMaps.any { mapping ->
+            sourceUtf16Offset >= mapping.source.start && sourceUtf16Offset < mapping.source.end
+        }
+    }.minByOrNull { index ->
+        blocks[index].sourceMaps.filter { mapping ->
+            sourceUtf16Offset >= mapping.source.start && sourceUtf16Offset < mapping.source.end
+        }.minOf { it.source.end - it.source.start }
+    }
+    val containingBlockIndex = mappedBlockIndex ?: blocks.indices.filter { index ->
+            val block = blocks[index]
             block.source.start < block.source.end &&
                 sourceUtf16Offset >= block.source.start &&
                 sourceUtf16Offset < block.source.end
-        }
-    if (containingBlockIndex >= 0) {
+        }.minByOrNull { index -> blocks[index].source.end - blocks[index].source.start }
+    if (containingBlockIndex != null) {
         val block = blocks[containingBlockIndex]
         return MarkdownRenderedSourcePosition(
             blockIndex = containingBlockIndex,

@@ -14,6 +14,7 @@
     <string name="selection_scope">Find within selection</string>
     <string name="selection_all">Select all</string>
     <string name="selection_output_failed">The output could not be prepared. Retry or choose a different format or selection.</string>
+    <string name="selection_preview_changed">Preview changed. Select the content again.</string>
     <string name="excerpt_share_limit">Previous file shares have filled the sharing capacity. End this document’s previous file shares once their recipients have finished, or close other documents with active shares. Recipients will no longer be able to open those shared files.</string>
     <string name="excerpt_end_shares">End previous file shares</string>
     <string name="excerpt_shares_ended">Previous file shares ended. You can share again.</string>
@@ -146,6 +147,7 @@
     <string name="excerpt_preview_description">Preview of the output</string>
     <string name="excerpt_invalid_print">Check the page settings before preparing this PDF.</string>
     <string name="excerpt_format_limit">This formatted output exceeds its limit. Choose source text or export a smaller selection.</string>
+    <string name="excerpt_list_start_unsupported">This starting list number cannot be preserved. Choose text output or include an earlier item.</string>
     <string name="excerpt_source_destination">Choose a separate destination. Export cannot overwrite the source document.</string>
     <string name="excerpt_saved">Copy saved.</string>
     <string name="excerpt_shared">Opened Android sharing.</string>

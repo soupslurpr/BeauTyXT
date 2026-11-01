@@ -450,7 +450,7 @@ class DocumentExperienceTest {
 
     @Test fun readingJoinsParagraphsAndChunksButKeepsCellsSeparate() {
         val blocks = listOf(block("one"), block(" two").copy(continuesPrevious = true), block("three"),
-            block("cell A\tcell B").copy(kind = MarkdownBlockKind.TableRow))
+            block("cell A\tcell B").copy(kind = MarkdownBlockKind.TableRow, tableCellSeparators = listOf(6)))
         val units = readingSearchUnits(MarkdownPreviewDocument(30, blocks, 0, false), false)
         assertEquals(listOf("one two\n\nthree", "cell A", "cell B"), units.units.map { it.text })
         assertFalse(units.hasCoverageGaps)

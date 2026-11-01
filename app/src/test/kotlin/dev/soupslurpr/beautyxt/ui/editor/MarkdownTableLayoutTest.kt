@@ -12,6 +12,13 @@ import org.junit.Test
 /** Verifies table cell splitting and UTF-16 span rebasing. */
 class MarkdownTableLayoutTest {
     @Test
+    fun literalTabsRemainInsideTheirDeclaredCell() {
+        val row = tableRow("literal\ttab\tsecond").copy(tableCellSeparators = listOf(11))
+        assertEquals(2, markdownTableColumnCount(row))
+        assertEquals(listOf("literal\ttab", "second"), splitMarkdownTableRow(row).map { it.text })
+    }
+
+    @Test
     fun splitsCellsAndRebasesInlineSpans() {
         val linkDestination = "https://example.com"
         val block =
@@ -121,6 +128,7 @@ class MarkdownTableLayoutTest {
         listNumber = 0,
         text = text,
         metadata = "",
-        spans = spans
+        spans = spans,
+        tableCellSeparators = text.indices.filter { text[it] == '\t' }
     )
 }

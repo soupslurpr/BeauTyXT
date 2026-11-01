@@ -6,8 +6,8 @@ import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
-private val PACKET_MAGIC = "BTXTMDR4".toByteArray(StandardCharsets.US_ASCII)
-private const val PACKET_VERSION = 4L
+private val PACKET_MAGIC = "BTXTMDR6".toByteArray(StandardCharsets.US_ASCII)
+private const val PACKET_VERSION = 6L
 private const val PACKET_HEADER_BYTES = 80L
 private const val BLOCK_HEADER_BYTES = 72L
 private const val SPAN_HEADER_BYTES = 24L
@@ -77,7 +77,7 @@ private const val UNSIGNED_INT_MASK = 0xffff_ffffL
 /** Reports malformed or unsupported output from the isolated Markdown renderer. */
 internal class MarkdownProtocolException(message: String) : IllegalArgumentException(message)
 
-/** Decodes and validates bounded version-four Markdown render packets. */
+/** Decodes and validates bounded version-six Markdown render packets. */
 internal object MarkdownPacketDecoder {
     /** Decodes one complete little-endian render packet. */
     fun decode(packet: ByteArray): MarkdownPreviewDocument {
@@ -207,18 +207,25 @@ internal object MarkdownPacketDecoder {
         val headingLevel = reader.readUnsignedInt("heading level")
         val quoteDepth = reader.readUnsignedInt("quote depth")
         val listDepth = reader.readUnsignedInt("list depth")
-        reader.requireZeroUnsignedInt("block reserved field")
+        val tableSeparatorCount = reader.readUnsignedInt("table separator count")
         val listNumber = reader.readSupportedUnsignedLong("list number")
         val textByteLength = reader.readUnsignedInt("block text byte count")
         val metadataByteLength = reader.readUnsignedInt("block metadata byte count")
         val blockSpanCount = reader.readUnsignedInt("block span count")
-        reader.requireZeroUnsignedInt("block trailing reserved field")
+        val footnoteLabelByteLength = reader.readUnsignedInt("footnote label byte count")
         val sourceStart = reader.readSupportedUnsignedLong("block source start")
         val sourceEnd = reader.readSupportedUnsignedLong("block source end")
         val blockSourceMapCount = reader.readUnsignedInt("block source-map count")
-        reader.requireZeroUnsignedInt("block source reserved field")
+        val quoteAlertDepth = reader.readUnsignedInt("quote alert depth")
         if (textByteLength > MarkdownProtocol.MAX_BLOCK_TEXT_BYTES) {
             throw MarkdownProtocolException("Markdown block text exceeds its limit")
+        }
+        if (tableSeparatorCount >= MAX_METADATA_BYTES ||
+            (kind != MarkdownBlockKind.TableRow && tableSeparatorCount != 0L)) {
+            throw MarkdownProtocolException("Markdown table separator count is invalid")
+        }
+        if (footnoteLabelByteLength > MAX_METADATA_BYTES) {
+            throw MarkdownProtocolException("Markdown footnote label exceeds its limit")
         }
         if (metadataByteLength > MAX_METADATA_BYTES) {
             throw MarkdownProtocolException("Markdown block metadata exceeds its limit")
@@ -244,6 +251,22 @@ internal object MarkdownPacketDecoder {
         }
         val text = reader.readUtf8(textByteLength, "block text")
         val metadata = reader.readUtf8(metadataByteLength, "block metadata")
+        val footnoteLabel = reader.readUtf8(footnoteLabelByteLength, "footnote label").takeIf { it.isNotEmpty() }
+        if (kind == MarkdownBlockKind.Footnote && (footnoteLabel == null ||
+            (metadata.isNotEmpty() && metadata != footnoteLabel))) {
+            throw MarkdownProtocolException("Markdown footnote owner is inconsistent")
+        }
+        val tableSeparators = ArrayList<Int>(tableSeparatorCount.toInt())
+        var previousSeparator = -1
+        repeat(tableSeparatorCount.toInt()) {
+            val separator = reader.readUnsignedInt("table separator")
+            if (separator >= text.length.toLong() || separator <= previousSeparator.toLong() ||
+                text[separator.toInt()] != '\t' || !text.isUtf16ScalarBoundary(separator.toInt())) {
+                throw MarkdownProtocolException("Markdown table separator is invalid")
+            }
+            previousSeparator = separator.toInt()
+            tableSeparators += previousSeparator
+        }
         val spans = ArrayList<MarkdownInlineSpan>(blockSpanCount.toInt())
         var destinationBytes = 0L
         var previousSpanEnd = 0
@@ -268,20 +291,14 @@ internal object MarkdownPacketDecoder {
             sourceMaps += sourceMap
             previousRenderedEnd = sourceMap.renderedEnd
         }
-        if (
-            (text.isEmpty() && sourceMaps.isNotEmpty()) ||
-            (text.isNotEmpty() && previousRenderedEnd != text.length)
-        ) {
-            throw MarkdownProtocolException("Markdown source maps do not cover the block text")
-        }
-
         val quoteKind = markdownQuoteKind(blockFlags)
-        val tableAlignments = markdownTableAlignments(kind, text, metadata)
+        val tableAlignments = markdownTableAlignments(kind, tableSeparators.size + 1, metadata)
         validateBlockFields(
             kind = kind,
             flags = blockFlags,
             headingLevel = headingLevel,
             quoteDepth = quoteDepth,
+            quoteAlertDepth = quoteAlertDepth,
             listDepth = listDepth,
             listNumber = listNumber,
             text = text,
@@ -312,10 +329,14 @@ internal object MarkdownPacketDecoder {
                     tableAlignments = tableAlignments,
                     startsTable = blockFlags and BLOCK_FLAG_TABLE_START != 0L,
                     continuesListItem = blockFlags and BLOCK_FLAG_LIST_ITEM_CONTINUATION != 0L,
-                    startsList = blockFlags and BLOCK_FLAG_LIST_START != 0L
+                    startsList = blockFlags and BLOCK_FLAG_LIST_START != 0L,
+                    tableCellSeparators = tableSeparators,
+                    footnoteLabel = footnoteLabel,
+                    quoteAlertDepth = quoteAlertDepth.toInt()
                 ),
             textBytes = textByteLength,
-            auxiliaryBytes = checkedAdd(metadataByteLength, destinationBytes),
+            auxiliaryBytes = checkedAdd(checkedAdd(metadataByteLength, destinationBytes),
+                checkedAdd(footnoteLabelByteLength, checkedMultiply(tableSeparatorCount, Int.SIZE_BYTES.toLong()))),
             spanCount = blockSpanCount,
             sourceMapCount = blockSourceMapCount
         )
@@ -442,7 +463,7 @@ internal object MarkdownPacketDecoder {
             renderedStart > Int.MAX_VALUE.toLong() ||
             renderedEnd > Int.MAX_VALUE.toLong() ||
             renderedStart >= renderedEnd ||
-            renderedStart != previousRenderedEnd.toLong() ||
+            renderedStart < previousRenderedEnd.toLong() ||
             renderedEnd > text.length.toLong()
         ) {
             throw MarkdownProtocolException("Markdown source-map rendered range is invalid")
@@ -476,6 +497,7 @@ internal object MarkdownPacketDecoder {
         flags: Long,
         headingLevel: Long,
         quoteDepth: Long,
+        quoteAlertDepth: Long,
         listDepth: Long,
         listNumber: Long,
         text: String,
@@ -494,6 +516,10 @@ internal object MarkdownPacketDecoder {
         }
         if (startsQuoteAlert && quoteKindFlags == 0L) {
             throw MarkdownProtocolException("Markdown alert start lacks an alert kind")
+        }
+        if (if (quoteKindFlags == 0L) quoteAlertDepth != 0L
+            else quoteAlertDepth !in 1L..quoteDepth) {
+            throw MarkdownProtocolException("Markdown alert owner depth is invalid")
         }
         val isList = kind == MarkdownBlockKind.ListItem
         val hasOrderedFlag = flags and BLOCK_FLAG_ORDERED_LIST != 0L
@@ -569,13 +595,12 @@ internal object MarkdownPacketDecoder {
     /** Decodes exact table-column alignment metadata for one row. */
     private fun markdownTableAlignments(
         kind: MarkdownBlockKind,
-        text: String,
+        expectedCount: Int,
         metadata: String
     ): List<MarkdownTableAlignment> {
         if (kind != MarkdownBlockKind.TableRow) {
             return emptyList()
         }
-        val expectedCount = Math.addExact(text.count { character -> character == '\t' }, 1)
         if (metadata.length != expectedCount) {
             throw MarkdownProtocolException("Markdown table alignment count is inconsistent")
         }

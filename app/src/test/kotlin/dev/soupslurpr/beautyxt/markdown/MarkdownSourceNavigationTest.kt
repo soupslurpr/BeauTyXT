@@ -6,6 +6,20 @@ import org.junit.Test
 
 /** Verifies bidirectional logical-source navigation through Markdown presentation ranges. */
 class MarkdownSourceNavigationTest {
+    @Test
+    fun prefersNestedTextProvenanceToAnEnclosingListRange() {
+        val parent = block("Parent", MarkdownSourceRange(0, 19), listOf(
+            MarkdownSourceMap(0, 6, MarkdownSourceRange(2, 8))))
+        val child = block("Child", MarkdownSourceRange(11, 19), listOf(
+            MarkdownSourceMap(0, 5, MarkdownSourceRange(13, 18))))
+        assertEquals(MarkdownRenderedSourcePosition(1, 1),
+            markdownRenderedPositionForSourceOffset(listOf(parent, child), 14))
+        assertEquals(MarkdownRenderedSourcePosition(1, 0),
+            markdownRenderedPositionForSourceOffset(listOf(parent, child), 11))
+        assertEquals(MarkdownRenderedSourcePosition(0, 1),
+            markdownRenderedPositionForSourceOffset(listOf(parent, child), 3))
+    }
+
     /** Maps invisible outer syntax and one exact equal-length inline run. */
     @Test
     fun mapsStyledTextWithoutTargetingInvisibleSyntax() {

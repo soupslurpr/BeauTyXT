@@ -16,10 +16,12 @@ use super::{
     InlineDestinationKind, MAX_LINK_DESTINATION_BYTES, MAX_LIST_DEPTH, MAX_NESTING_DEPTH,
     MAX_PACKET_BYTES, MAX_QUOTE_DEPTH, RenderBlock, RenderError, SPAN_STYLE_CODE,
     SPAN_STYLE_EMPHASIS, SPAN_STYLE_STRIKETHROUGH, SPAN_STYLE_STRONG, SPAN_STYLE_SUBSCRIPT,
-    SPAN_STYLE_SUPERSCRIPT, TABLE_ALIGNMENT_NONE, TABLE_CELL_SEPARATOR,
+    SPAN_STYLE_SUPERSCRIPT, TABLE_ALIGNMENT_NONE,
 };
 
 const MAX_SAFE_HTML_TOKEN_COUNT: usize = 131_072;
+// Selected Markdown can represent an initial ordered marker with at most nine digits.
+const MAX_SAFE_HTML_LIST_NUMBER: u64 = 999_999_999;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum SafeHtmlInlineTag {
@@ -474,6 +476,7 @@ fn ordinary_block_spec(kind: u32, heading_level: u32, context: SafeHtmlBlockCont
         flags: 0,
         heading_level,
         quote_depth: context.quote_depth,
+        quote_alert_depth: 0,
         list_depth: 0,
         list_number: 0,
         metadata: String::new(),
@@ -520,9 +523,12 @@ fn render_list(
         if item.name != "li" || !item.attributes.is_empty() {
             return Ok(None);
         }
-        let number = start_number
+        let Some(number) = start_number
             .checked_add(item_index)
-            .ok_or(RenderError::ArithmeticOverflow)?;
+            .filter(|number| *number <= MAX_SAFE_HTML_LIST_NUMBER)
+        else {
+            return Ok(None);
+        };
         let item_context = SafeHtmlBlockContext {
             max_packet_bytes: blocks.remaining_packet_bytes(),
             ..context
@@ -716,6 +722,7 @@ fn list_item_spec(
         flags,
         heading_level: 0,
         quote_depth: context.quote_depth,
+        quote_alert_depth: 0,
         list_depth,
         list_number: if ordered && first_content { number } else { 0 },
         metadata: String::new(),
@@ -731,7 +738,10 @@ fn list_start_number(element: &SafeHtmlElement, ordered: bool) -> Option<u64> {
         return None;
     }
     match attribute_value(&element.attributes, "start") {
-        Some(value) => value.parse().ok(),
+        Some(value) => value
+            .parse()
+            .ok()
+            .filter(|number| *number <= MAX_SAFE_HTML_LIST_NUMBER),
         None => Some(1),
     }
 }
@@ -883,6 +893,7 @@ fn render_table_row(
         },
         heading_level: 0,
         quote_depth: context.quote_depth,
+        quote_alert_depth: 0,
         list_depth: 0,
         list_number: 0,
         metadata: std::iter::repeat_n(TABLE_ALIGNMENT_NONE, cells.len()).collect(),
@@ -1042,7 +1053,7 @@ impl SafeHtmlInlineRenderer {
     /// Separates two flattened table cells without carrying whitespace state.
     fn append_cell_separator(&mut self) -> Result<(), RenderError> {
         self.pending_space = false;
-        self.block.append(TABLE_CELL_SEPARATOR, 0, None)
+        self.block.append_table_separator()
     }
 
     /// Clears trailing collapsible whitespace at one table-cell boundary.

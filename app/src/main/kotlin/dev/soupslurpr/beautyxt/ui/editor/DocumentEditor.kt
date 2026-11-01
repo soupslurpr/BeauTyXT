@@ -601,7 +601,7 @@ internal fun DocumentEditor(
                         onReturn = returnFromFindResults, onEditSearch = editFindQuery)
                 } else EditorBody(session, activeDraft, requestSave, restartExplicitSave, Modifier.fillMaxSize(), documentFocus)
             }
-            if (session.documentSelection != null && !fullFindResults) DocumentSelectionActions(session)
+            if ((session.documentSelection != null || session.selectionMessage != null) && !fullFindResults) DocumentSelectionActions(session)
             else if (!useImeFocusLayout && !session.isFindVisible && state.metrics != null) {
                 EditorActionBar(
                     session = session,

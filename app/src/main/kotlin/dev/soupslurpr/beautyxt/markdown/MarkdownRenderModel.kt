@@ -100,8 +100,34 @@ internal data class MarkdownRenderBlock(
     val continuesListItem: Boolean = false,
     // Caller-owned presentation only: retain a stable block slot covered by a complete drawing.
     val illustrationContinuation: Boolean = false,
-    val startsList: Boolean = false
+    val startsList: Boolean = false,
+    // Only these tabs delimit cells; other tabs are authored cell content.
+    val tableCellSeparators: List<Int> = emptyList(),
+    // Independent of block kind and metadata (for example, a code language).
+    val footnoteLabel: String? = null,
+    // The enclosing alert may begin outside this block's innermost quote.
+    val quoteAlertDepth: Int = 0
 )
+
+/** Contains one half-open rendered cell range, including an empty cell. */
+internal data class MarkdownTableCellRange(val start: Int, val end: Int)
+
+/** Uses explicit structure so literal tabs never acquire another column. */
+internal fun MarkdownRenderBlock.markdownTableCellRanges(): List<MarkdownTableCellRange> {
+    require(kind == MarkdownBlockKind.TableRow)
+    val result = ArrayList<MarkdownTableCellRange>(tableCellSeparators.size + 1)
+    var start = 0
+    for (separator in tableCellSeparators) {
+        result += MarkdownTableCellRange(start, separator)
+        start = separator + 1
+    }
+    result += MarkdownTableCellRange(start, text.length)
+    return result
+}
+
+/** Returns independent ownership, with the conventional paragraph label as a fallback. */
+internal fun MarkdownRenderBlock.markdownFootnoteLabel(): String? =
+    footnoteLabel ?: metadata.takeIf { kind == MarkdownBlockKind.Footnote && it.isNotEmpty() }
 
 /** Contains one immutable, bounded Markdown preview model. */
 internal data class MarkdownPreviewDocument(

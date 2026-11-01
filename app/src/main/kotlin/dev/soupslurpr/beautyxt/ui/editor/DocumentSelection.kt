@@ -87,6 +87,22 @@ internal sealed interface DocumentSelection {
         val text: String, val range: TextRange = TextRange(0, text.length)) : DocumentSelection
 }
 
+/** Retains only selected text references and transport-slot visibility, never cached drawings. */
+internal class ReadingSelectionProjection(selection: DocumentSelection.Reading, document: MarkdownPreviewDocument) {
+    private data class Slot(val text: String, val hidden: Boolean)
+    private val first = selection.start.block
+    private val slots = (first..selection.end.block).map { index ->
+        val block = document.blocks[index]
+        Slot(block.text, block.illustrationContinuation)
+    }
+
+    fun matches(resolve: (Int) -> MarkdownRenderBlock?): Boolean = slots.indices.all { offset ->
+        val block = resolve(first + offset)
+        block != null && block.text == slots[offset].text &&
+            block.illustrationContinuation == slots[offset].hidden
+    }
+}
+
 internal fun DocumentSelection.Reading.rangeFor(block: Int, length: Int): TextRange? {
     if (block !in start.block..end.block) return null
     val from = (if (block == start.block) start.offset else 0).coerceIn(0, length)
@@ -99,11 +115,27 @@ internal fun DocumentSelection.exactSource(document: MarkdownPreviewDocument?): 
     is DocumentSelection.Label -> null
     is DocumentSelection.Reading -> document?.let { model ->
         if (start.markerOffset != 0 || end.markerOffset != 0) return null
-        val first = model.blocks.getOrNull(start.block) ?: return null
-        val last = model.blocks.getOrNull(end.block) ?: return null
-        val beginning = exactReadingSourceOffset(first, start.offset, ending = false) ?: return null
-        val ending = exactReadingSourceOffset(last, end.offset, ending = true) ?: return null
-        if (beginning <= ending) Utf16Range(beginning, ending) else null
+        if (start.block !in model.blocks.indices || end.block !in model.blocks.indices) return null
+        var beginning: Long? = null
+        var ending: Long? = null
+        for (index in start.block..end.block) {
+            val block = model.blocks[index]
+            if (block.illustrationContinuation) continue
+            val from = if (index == start.block) start.offset else 0
+            val to = if (index == end.block) end.offset else block.text.length
+            val range = exactReadingSourceRange(block, from, to) ?: return null
+            if (ending != null && range.start < ending) return null
+            if (beginning == null) beginning = range.start
+            ending = range.end
+        }
+        val range = Utf16Range(beginning ?: return null, ending ?: return null)
+        if (range.start < range.end && model.blocks.indices.any { index ->
+            index !in start.block..end.block && !model.blocks[index].illustrationContinuation &&
+                model.blocks[index].sourceMaps.any { map ->
+                map.source.start < range.end && map.source.end > range.start
+            }
+        }) return null
+        range
     }
 } }
 
@@ -145,7 +177,7 @@ internal fun excerptFence(text: String, language: String): String {
     var current = 0
     text.forEach { if (it == '`') { current++; longest = maxOf(longest, current) } else current = 0 }
     val fence = "`".repeat(maxOf(3, longest + 1))
-    return "$fence$language\n$text${if (text.endsWith('\n')) "" else "\n"}$fence"
+    return "$fence$language\n$text${if (text.isEmpty() || text.endsWith('\n')) "" else "\n"}$fence"
 }
 
 /** Displayed text only: notes, table headers, and link destinations are never imported here. */

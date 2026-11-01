@@ -13,6 +13,28 @@ import org.junit.Test
 
 /** Verifies semantic Markdown content preparation for native printing. */
 class MarkdownPrintContentTest {
+    /** Literal code/entity tabs retain their cell while protocol separators create columns. */
+    @Test
+    fun distinguishesLiteralTabsFromStructuralSeparators() {
+        val row = markdownBlock("literal\ttab\tsecond", MarkdownBlockKind.TableRow)
+            .copy(tableCellSeparators = listOf(11))
+        assertEquals(2, markdownPrintTableColumnCount(row))
+        assertEquals(listOf("literal\ttab", "second"), markdownPrintCells(row).map { it.text })
+        assertEquals("literal\ttab  |  second", markdownPrintContent(row).text)
+    }
+
+    /** Numbered note references rebase the structural boundary without splitting data tabs. */
+    @Test
+    fun rebasesStructuralSeparatorsAfterNumberingFootnotes() {
+        val row = markdownBlock("[^long]\tdata\ttab", MarkdownBlockKind.TableRow,
+            spans = listOf(MarkdownInlineSpan(0, 7, 0, "long",
+                MarkdownInlineDestinationKind.FootnoteReference)))
+            .copy(tableCellSeparators = listOf(7))
+        val cells = markdownPrintCells(row, mapOf("long" to 12))
+        assertEquals(listOf("12", "data\ttab"), cells.map { it.text })
+        assertEquals("12  |  data\ttab", markdownPrintContent(row, mapOf("long" to 12)).text)
+    }
+
     /** Verifies ordinary block text and spans remain unchanged. */
     @Test
     fun preservesNonTableContent() {
@@ -194,6 +216,8 @@ class MarkdownPrintContentTest {
         text = text,
         metadata = "",
         spans = spans,
-        tableAlignments = tableAlignments
+        tableAlignments = tableAlignments,
+        tableCellSeparators = if (kind == MarkdownBlockKind.TableRow)
+            text.indices.filter { text[it] == '\t' } else emptyList()
     )
 }

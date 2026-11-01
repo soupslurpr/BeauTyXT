@@ -6,6 +6,18 @@ import org.junit.Test
 
 /** Verifies shared footnote numbering and presentation transformations. */
 class MarkdownFootnotesTest {
+    @Test
+    fun indexesOwnersWithoutParagraphsAndRebasesOnlyStructuralSeparators() {
+        assertEquals(mapOf("code" to 1), markdownFootnoteNumbers(listOf(
+            block(MarkdownBlockKind.Code, metadata = "text").copy(footnoteLabel = "code"))))
+        val row = block(MarkdownBlockKind.TableRow, text = "[^long]\ta\tb", spans = listOf(
+            MarkdownInlineSpan(0, 7, MARKDOWN_SPAN_STYLE_FOOTNOTE_REFERENCE, "long",
+                MarkdownInlineDestinationKind.FootnoteReference))).copy(tableCellSeparators = listOf(7))
+        val presentation = checkNotNull(markdownFootnotePresentation(row.text, row.spans, mapOf("long" to 12)))
+        assertEquals("12\ta\tb", presentation.text)
+        assertEquals(listOf(2), presentation.tableCellSeparators(row))
+    }
+
     /** Verifies references receive precedence before unreferenced definitions. */
     @Test
     fun numbersByFirstReferenceThenDefinition() {

@@ -49,11 +49,11 @@ pub const SPAN_HEADER_BYTES: usize = 24;
 /// Fixes every source-map header width.
 pub const SOURCE_MAP_HEADER_BYTES: usize = 24;
 
-/// Identifies every version-four Markdown render packet.
-pub const PACKET_MAGIC: [u8; 8] = *b"BTXTMDR4";
+/// Identifies every version-six Markdown render packet.
+pub const PACKET_MAGIC: [u8; 8] = *b"BTXTMDR6";
 
 /// Identifies the only supported Markdown render packet version.
-pub const PACKET_VERSION: u32 = 4;
+pub const PACKET_VERSION: u32 = 6;
 
 /// Indicates that a render model contains literal raw HTML.
 pub const DOCUMENT_FLAG_RAW_HTML: u32 = 1;
@@ -207,16 +207,16 @@ const BLOCK_FLAGS_OFFSET: usize = 4;
 const BLOCK_HEADING_LEVEL_OFFSET: usize = 8;
 const BLOCK_QUOTE_DEPTH_OFFSET: usize = 12;
 const BLOCK_LIST_DEPTH_OFFSET: usize = 16;
-const BLOCK_RESERVED_OFFSET: usize = 20;
+const BLOCK_TABLE_SEPARATOR_COUNT_OFFSET: usize = 20;
 const BLOCK_LIST_NUMBER_OFFSET: usize = 24;
 const BLOCK_TEXT_BYTES_OFFSET: usize = 32;
 const BLOCK_METADATA_BYTES_OFFSET: usize = 36;
 const BLOCK_SPAN_COUNT_OFFSET: usize = 40;
-const BLOCK_TRAILING_RESERVED_OFFSET: usize = 44;
+const BLOCK_FOOTNOTE_LABEL_BYTES_OFFSET: usize = 44;
 const BLOCK_SOURCE_START_UTF16_OFFSET: usize = 48;
 const BLOCK_SOURCE_END_UTF16_OFFSET: usize = 56;
 const BLOCK_SOURCE_MAP_COUNT_OFFSET: usize = 64;
-const BLOCK_SOURCE_RESERVED_OFFSET: usize = 68;
+const BLOCK_QUOTE_ALERT_DEPTH_OFFSET: usize = 68;
 
 const SPAN_START_UTF16_OFFSET: usize = 0;
 const SPAN_END_UTF16_OFFSET: usize = 4;
@@ -542,6 +542,7 @@ struct BlockSpec {
     flags: u32,
     heading_level: u32,
     quote_depth: u32,
+    quote_alert_depth: u32,
     list_depth: u32,
     list_number: u64,
     metadata: String,
@@ -556,6 +557,8 @@ struct RenderBlock {
     span_bytes: usize,
     source_range: Option<SourceRange>,
     source_maps: Vec<InlineSourceMap>,
+    table_separators: Vec<u32>,
+    footnote_label: String,
 }
 
 impl RenderBlock {
@@ -568,6 +571,8 @@ impl RenderBlock {
             span_bytes: 0,
             source_range: None,
             source_maps: Vec::new(),
+            table_separators: Vec::new(),
+            footnote_label: String::new(),
         }
     }
 
@@ -622,7 +627,7 @@ impl RenderBlock {
             .ok_or(RenderError::ArithmeticOverflow)?;
         bounded_block_packet_bytes(
             self.text.len(),
-            self.spec.metadata.len(),
+            self.auxiliary_bytes()?,
             span_bytes,
             self.source_maps.len(),
         )?;
@@ -654,6 +659,13 @@ impl RenderBlock {
             return Ok(());
         }
         if source.start_utf16 == source.end_utf16 {
+            // The parser can synthesize indentation after removing a containing
+            // list marker. Keep HTML whitespace without inventing source text.
+            if self.spec.kind == BLOCK_KIND_HTML_LITERAL
+                && text.bytes().all(|byte| matches!(byte, b' ' | b'\t'))
+            {
+                return Ok(());
+            }
             return Err(RenderError::State);
         }
         if let Some(previous) = self.source_maps.last_mut()
@@ -678,26 +690,26 @@ impl RenderBlock {
         Ok(())
     }
 
-    fn map_entire_text(&mut self, source: SourceRange) -> Result<(), RenderError> {
-        self.include_source(source);
-        if self.utf16_units != 0 && source.len() == 0 {
-            return Err(RenderError::State);
-        }
-        if self.utf16_units != 0 && self.source_maps.is_empty() {
-            self.source_maps.push(InlineSourceMap {
-                rendered_start_utf16: 0,
-                rendered_end_utf16: self.utf16_units,
-                source,
-            });
-        }
-        Ok(())
+    /// Appends an unmapped structural separator without conflating authored tabs.
+    fn append_table_separator(&mut self) -> Result<(), RenderError> {
+        self.table_separators.push(self.utf16_units);
+        self.append(TABLE_CELL_SEPARATOR, 0, None)
+    }
+
+    fn auxiliary_bytes(&self) -> Result<usize, RenderError> {
+        self.table_separators
+            .len()
+            .checked_mul(size_of::<u32>())
+            .and_then(|bytes| bytes.checked_add(self.spec.metadata.len()))
+            .and_then(|bytes| bytes.checked_add(self.footnote_label.len()))
+            .ok_or(RenderError::ArithmeticOverflow)
     }
 
     /// Returns this block's checked encoded size without allocating packet bytes.
     fn packet_bytes(&self) -> Result<usize, RenderError> {
         bounded_block_packet_bytes(
             self.text.len(),
-            self.spec.metadata.len(),
+            self.auxiliary_bytes()?,
             self.span_bytes,
             self.source_maps.len(),
         )
@@ -778,14 +790,23 @@ impl DocumentBuilder {
     }
 
     fn start_block(&mut self, mut spec: BlockSpec, source: SourceRange) -> Result<(), RenderError> {
-        if self.current.is_some() {
-            return Err(RenderError::State);
+        if let Some(current) = self.current.as_ref() {
+            // Tight list prose has no paragraph-end event before a following block.
+            if current.spec.kind != BLOCK_KIND_LIST_ITEM {
+                return Err(RenderError::State);
+            }
+            self.finish_block()?;
+        }
+        if spec.kind != BLOCK_KIND_LIST_ITEM {
+            self.ensure_item_marker()?;
         }
         spec.quote_depth =
             u32::try_from(self.quotes.len()).map_err(|_| RenderError::ArithmeticOverflow)?;
         if let Some(quote_index) = self.quotes.iter().rposition(|quote| quote.kind.is_some()) {
             let quote = &mut self.quotes[quote_index];
             spec.flags |= quote_kind_flag(quote.kind.ok_or(RenderError::State)?);
+            spec.quote_alert_depth =
+                u32::try_from(quote_index + 1).map_err(|_| RenderError::ArithmeticOverflow)?;
             if quote.starts_next_block {
                 spec.flags |= BLOCK_FLAG_QUOTE_ALERT_START;
                 quote.starts_next_block = false;
@@ -793,6 +814,7 @@ impl DocumentBuilder {
         }
         let mut block = RenderBlock::new(spec);
         block.include_source(source);
+        block.footnote_label = self.footnote_label.clone().unwrap_or_default();
         self.current = Some(block);
         Ok(())
     }
@@ -852,6 +874,7 @@ impl DocumentBuilder {
                 },
                 heading_level,
                 quote_depth: 0,
+                quote_alert_depth: 0,
                 list_depth: if is_list_item {
                     u32::try_from(self.lists.len()).map_err(|_| RenderError::ArithmeticOverflow)?
                 } else {
@@ -887,6 +910,7 @@ impl DocumentBuilder {
                 flags: 0,
                 heading_level: 0,
                 quote_depth: 0,
+                quote_alert_depth: 0,
                 list_depth: 0,
                 list_number: 0,
                 metadata,
@@ -902,6 +926,7 @@ impl DocumentBuilder {
                 flags: BLOCK_FLAG_RAW_HTML,
                 heading_level: 0,
                 quote_depth: 0,
+                quote_alert_depth: 0,
                 list_depth: 0,
                 list_number: 0,
                 metadata: String::new(),
@@ -922,6 +947,7 @@ impl DocumentBuilder {
                 },
                 heading_level: 0,
                 quote_depth: 0,
+                quote_alert_depth: 0,
                 list_depth: 0,
                 list_number: 0,
                 metadata: self.table_alignments.clone().ok_or(RenderError::State)?,
@@ -951,15 +977,13 @@ impl DocumentBuilder {
     }
 
     fn push_rule(&mut self, source: SourceRange) -> Result<(), RenderError> {
-        if self.current.is_some() {
-            return Err(RenderError::State);
-        }
         self.start_block(
             BlockSpec {
                 kind: BLOCK_KIND_RULE,
                 flags: 0,
                 heading_level: 0,
                 quote_depth: 0,
+                quote_alert_depth: 0,
                 list_depth: 0,
                 list_number: 0,
                 metadata: String::new(),
@@ -1064,7 +1088,7 @@ impl DocumentBuilder {
         source: SourceRange,
     ) -> Result<(), RenderError> {
         // Larger formulas remain literal TeX, and retain ordinary bounded fragmentation.
-        // A tab is the table protocol's structural separator, not a drawable math glyph.
+        // Tabs are not drawable math glyphs; their literal source remains available.
         if math.len() > MAX_BLOCK_TEXT_BYTES
             || math.contains('\t')
             || inline.styles() & (SPAN_STYLE_CODE | SPAN_STYLE_SUBSCRIPT | SPAN_STYLE_SUPERSCRIPT)
@@ -1133,8 +1157,22 @@ impl DocumentBuilder {
 
     fn start_table_cell(&mut self, source: SourceRange) -> Result<(), RenderError> {
         if self.table_cell_count != 0 {
-            self.append(TABLE_CELL_SEPARATOR, 0, None, source)?;
+            if self
+                .current
+                .as_ref()
+                .is_some_and(|block| block.text.len() >= MAX_BUILDER_BLOCK_TEXT_BYTES)
+            {
+                self.continue_current_block()?;
+            }
+            self.current
+                .as_mut()
+                .ok_or(RenderError::State)?
+                .append_table_separator()?;
         }
+        self.current
+            .as_mut()
+            .ok_or(RenderError::State)?
+            .include_source(source);
         self.table_cell_count = self
             .table_cell_count
             .checked_add(1)
@@ -1165,7 +1203,20 @@ impl DocumentBuilder {
     }
 
     fn finish_block(&mut self) -> Result<(), RenderError> {
-        let block = self.current.take().ok_or(RenderError::State)?;
+        let mut block = self.current.take().ok_or(RenderError::State)?;
+        if block.spec.kind == BLOCK_KIND_LIST_ITEM {
+            // Finish both explicit and tight paragraphs with the authored item
+            // extent. Intermediate builder chunks keep their consumed ranges;
+            // this final coarse end lets joined text retain its child ownership.
+            let start = block.source_range.ok_or(RenderError::State)?.start_utf16;
+            let end = self
+                .items
+                .last()
+                .ok_or(RenderError::State)?
+                .source
+                .end_utf16;
+            block.include_source(SourceRange::new(start, end));
+        }
         self.push_block(block)
     }
 
@@ -1187,10 +1238,14 @@ impl DocumentBuilder {
             let source = block.source_range.ok_or(RenderError::State)?;
             for (block_index, mut safe_block) in blocks.blocks.into_iter().enumerate() {
                 safe_block.spec.flags |= quote_kind_flags;
+                safe_block.spec.quote_alert_depth = block.spec.quote_alert_depth;
                 if starts_alert && block_index == 0 {
                     safe_block.spec.flags |= BLOCK_FLAG_QUOTE_ALERT_START;
                 }
-                safe_block.map_entire_text(source)?;
+                // HTML tokenization does not provide child offsets. Enclosing provenance
+                // supports approximate navigation, never an exact source selection.
+                safe_block.include_source(source);
+                safe_block.footnote_label.clone_from(&block.footnote_label);
                 self.push_block(safe_block)?;
             }
             return Ok(());
@@ -1209,21 +1264,22 @@ impl DocumentBuilder {
             // End the chunk at consumed text, not at the enclosing parser tag's end.
             completed.source_range = Some(SourceRange::new(start, last_mapping.source.end_utf16));
         }
+        let footnote_label = completed.footnote_label.clone();
         let mut continuation_spec = completed.spec.clone();
         continuation_spec.flags |= BLOCK_FLAG_CONTINUATION;
         continuation_spec.flags &= !(BLOCK_FLAG_TABLE_START | BLOCK_FLAG_LIST_START);
         if completed.spec.kind == BLOCK_KIND_TABLE_ROW {
-            continuation_spec.metadata = table_alignment_suffix(
-                &completed.spec.metadata,
-                completed.text.bytes().filter(|byte| *byte == b'\t').count(),
-            )?;
+            continuation_spec.metadata =
+                table_alignment_suffix(&completed.spec.metadata, completed.table_separators.len())?;
         }
         if completed.spec.kind == BLOCK_KIND_HTML_LITERAL {
             self.contains_raw_html = true;
         }
         completed.text.shrink_to_fit();
         self.push_block(completed)?;
-        self.current = Some(RenderBlock::new(continuation_spec));
+        let mut continuation = RenderBlock::new(continuation_spec);
+        continuation.footnote_label = footnote_label;
+        self.current = Some(continuation);
         Ok(())
     }
 
@@ -1238,6 +1294,7 @@ impl DocumentBuilder {
             }
             self.finish_block()?;
         }
+        self.ensure_item_marker()?;
         if self.lists.len() >= usize::try_from(MAX_LIST_DEPTH).unwrap_or(usize::MAX) {
             return Err(RenderError::NestingLimit);
         }
@@ -1277,6 +1334,7 @@ impl DocumentBuilder {
     }
 
     fn finish_item(&mut self) -> Result<(), RenderError> {
+        self.ensure_item_marker()?;
         if self.current.is_some() {
             self.finish_block()?;
         }
@@ -1286,7 +1344,31 @@ impl DocumentBuilder {
         Ok(())
     }
 
+    /// Retains an authored empty marker before a nonparagraph or nested child.
+    fn ensure_item_marker(&mut self) -> Result<(), RenderError> {
+        if self.current.is_none()
+            && let Some(item) = self.items.last().copied()
+            && item.first_paragraph
+        {
+            self.start_text_block(BLOCK_KIND_PARAGRAPH, 0, item.source)?;
+            self.finish_block()?;
+        }
+        Ok(())
+    }
+
     fn enter_quote(&mut self, kind: Option<BlockQuoteKind>) -> Result<(), RenderError> {
+        if self.current.is_some() {
+            // Flush tight item prose before changing the quote context.
+            if self
+                .current
+                .as_ref()
+                .is_none_or(|block| block.spec.kind != BLOCK_KIND_LIST_ITEM)
+            {
+                return Err(RenderError::State);
+            }
+            self.finish_block()?;
+        }
+        self.ensure_item_marker()?;
         if self.quotes.len() >= usize::try_from(MAX_QUOTE_DEPTH).unwrap_or(usize::MAX) {
             return Err(RenderError::NestingLimit);
         }
@@ -2067,17 +2149,35 @@ fn split_block_for_presentation(
     blocks: &mut BlockBuffer,
 ) -> Result<(), RenderError> {
     if block.text.len() <= MAX_BLOCK_TEXT_BYTES
-        && table_presentation_boundary(block.spec.kind, &block.text, block.text.len())
-            == block.text.len()
+        && table_presentation_boundary(
+            block.spec.kind,
+            &block.text,
+            block.text.len(),
+            &block.table_separators,
+            0,
+        ) == block.text.len()
     {
         let mut block = block;
         if block.spec.kind == BLOCK_KIND_TABLE_ROW {
-            block.spec.metadata = table_alignment_chunk(&block.spec.metadata, 0, &block.text)?;
+            block.spec.metadata = table_alignment_chunk(
+                &block.spec.metadata,
+                &block.table_separators,
+                0,
+                block.utf16_units,
+            )?;
         } else if block.spec.flags & BLOCK_FLAG_CONTINUATION != 0 {
             block.spec.metadata.clear();
         }
         return push_presentation_block(block, blocks);
     }
+    split_large_block_for_presentation(block, blocks)
+}
+
+/// Splits a block that exceeds text or per-cell alignment limits.
+fn split_large_block_for_presentation(
+    block: RenderBlock,
+    blocks: &mut BlockBuffer,
+) -> Result<(), RenderError> {
     let RenderBlock {
         spec,
         text,
@@ -2085,6 +2185,8 @@ fn split_block_for_presentation(
         spans,
         source_range,
         source_maps,
+        table_separators,
+        footnote_label,
         ..
     } = block;
     let source_range = source_range.ok_or(RenderError::State)?;
@@ -2096,7 +2198,13 @@ fn split_block_for_presentation(
         let remaining = &text[byte_start..];
         let byte_count =
             presentation_chunk_boundary(remaining, &spans[first_pending_span..], utf16_start)?;
-        let byte_count = table_presentation_boundary(spec.kind, remaining, byte_count);
+        let byte_count = table_presentation_boundary(
+            spec.kind,
+            remaining,
+            byte_count,
+            &table_separators,
+            utf16_start,
+        );
         if byte_count == 0 {
             return Err(RenderError::State);
         }
@@ -2106,8 +2214,7 @@ fn split_block_for_presentation(
         let utf16_end = utf16_start
             .checked_add(chunk_utf16_units)
             .ok_or(RenderError::ArithmeticOverflow)?;
-        let chunk_spec =
-            presentation_block_spec(&spec, byte_start, &text[..byte_start + byte_count])?;
+        let chunk_spec = presentation_block_spec(&spec, &table_separators, utf16_start, utf16_end)?;
         while first_pending_span < spans.len() && spans[first_pending_span].end_utf16 <= utf16_start
         {
             first_pending_span += 1;
@@ -2139,6 +2246,14 @@ fn split_block_for_presentation(
                 span_bytes: chunk_span_bytes,
                 source_range: Some(chunk_source_range),
                 source_maps: chunk_source_maps,
+                table_separators: table_separators
+                    .iter()
+                    .copied()
+                    .skip_while(|offset| *offset < utf16_start)
+                    .take_while(|offset| *offset < utf16_end)
+                    .map(|offset| offset - utf16_start)
+                    .collect(),
+                footnote_label: footnote_label.clone(),
             },
             blocks,
         )?;
@@ -2163,10 +2278,11 @@ fn split_block_for_presentation(
 /// Rebases one semantic block specification for a presentation chunk.
 fn presentation_block_spec(
     spec: &BlockSpec,
-    byte_start: usize,
-    text_through_chunk: &str,
+    separators: &[u32],
+    utf16_start: u32,
+    utf16_end: u32,
 ) -> Result<BlockSpec, RenderError> {
-    let is_continuation = byte_start != 0 || spec.flags & BLOCK_FLAG_CONTINUATION != 0;
+    let is_continuation = utf16_start != 0 || spec.flags & BLOCK_FLAG_CONTINUATION != 0;
     Ok(BlockSpec {
         kind: spec.kind,
         flags: if is_continuation {
@@ -2177,10 +2293,11 @@ fn presentation_block_spec(
         },
         heading_level: spec.heading_level,
         quote_depth: spec.quote_depth,
+        quote_alert_depth: spec.quote_alert_depth,
         list_depth: spec.list_depth,
         list_number: spec.list_number,
         metadata: if spec.kind == BLOCK_KIND_TABLE_ROW {
-            table_alignment_chunk(&spec.metadata, byte_start, text_through_chunk)?
+            table_alignment_chunk(&spec.metadata, separators, utf16_start, utf16_end)?
         } else if is_continuation {
             String::new()
         } else {
@@ -2280,43 +2397,42 @@ fn table_alignment_suffix(metadata: &str, cell_start: usize) -> Result<String, R
 }
 
 /// Keeps a table fragment within its independent per-cell metadata allowance.
-fn table_presentation_boundary(kind: u32, text: &str, byte_count: usize) -> usize {
+fn table_presentation_boundary(
+    kind: u32,
+    text: &str,
+    byte_count: usize,
+    separators: &[u32],
+    utf16_start: u32,
+) -> usize {
     if kind != BLOCK_KIND_TABLE_ROW {
         return byte_count;
     }
-    // A row needs one alignment byte more than its separator count. Split before
-    // that final separator rather than truncating or discarding an empty cell.
-    text[..byte_count]
-        .bytes()
-        .enumerate()
-        .filter(|(_, byte)| *byte == b'\t')
-        .nth(MAX_METADATA_BYTES - 1)
-        .map_or(byte_count, |(offset, _)| offset)
+    // One alignment belongs to the first cell. Split before the next separator
+    // that would exceed the independent metadata bound, including empty cells.
+    let first = separators.partition_point(|offset| *offset < utf16_start);
+    let Some(limit) = separators.get(first + MAX_METADATA_BYTES - 1) else {
+        return byte_count;
+    };
+    let mut units = utf16_start;
+    for (offset, character) in text[..byte_count].char_indices() {
+        if units == *limit {
+            return offset;
+        }
+        units += u32::try_from(character.len_utf16()).expect("scalar width fits u32");
+    }
+    byte_count
 }
 
-/// Returns alignment metadata rebased to one bounded table-row chunk.
+/// Returns alignments for actual cells intersecting one bounded row fragment.
 fn table_alignment_chunk(
     metadata: &str,
-    byte_start: usize,
-    text_through_chunk: &str,
+    separators: &[u32],
+    utf16_start: u32,
+    utf16_end: u32,
 ) -> Result<String, RenderError> {
-    if byte_start > text_through_chunk.len() || !text_through_chunk.is_char_boundary(byte_start) {
-        return Err(RenderError::State);
-    }
-    let cell_start = text_through_chunk[..byte_start]
-        .bytes()
-        .filter(|byte| *byte == b'\t')
-        .count();
-    let cell_count = text_through_chunk[byte_start..]
-        .bytes()
-        .filter(|byte| *byte == b'\t')
-        .count()
-        .checked_add(1)
-        .ok_or(RenderError::ArithmeticOverflow)?;
-    let cell_end = cell_start
-        .checked_add(cell_count)
-        .ok_or(RenderError::ArithmeticOverflow)?;
-    if !metadata.is_ascii() || cell_end > metadata.len() {
+    let cell_start = separators.partition_point(|offset| *offset < utf16_start);
+    let cell_end = separators.partition_point(|offset| *offset < utf16_end) + 1;
+    if !metadata.is_ascii() || cell_start > cell_end || cell_end > metadata.len() {
         return Err(RenderError::State);
     }
     Ok(metadata[cell_start..cell_end].to_owned())
@@ -2482,8 +2598,8 @@ fn encoded_document_metrics(
             .ok_or(RenderError::ArithmeticOverflow)
     })?;
     let auxiliary_bytes = document.blocks.iter().try_fold(0_u64, |total, block| {
-        let metadata = u64::try_from(block.spec.metadata.len())
-            .map_err(|_| RenderError::ArithmeticOverflow)?;
+        let metadata =
+            u64::try_from(block.auxiliary_bytes()?).map_err(|_| RenderError::ArithmeticOverflow)?;
         block.spans.iter().try_fold(
             total
                 .checked_add(metadata)
@@ -2592,7 +2708,11 @@ fn encode_block(packet: &mut Vec<u8>, block: &RenderBlock) -> Result<(), RenderE
     encode_u32(header, BLOCK_HEADING_LEVEL_OFFSET, block.spec.heading_level);
     encode_u32(header, BLOCK_QUOTE_DEPTH_OFFSET, block.spec.quote_depth);
     encode_u32(header, BLOCK_LIST_DEPTH_OFFSET, block.spec.list_depth);
-    encode_u32(header, BLOCK_RESERVED_OFFSET, 0);
+    encode_u32(
+        header,
+        BLOCK_TABLE_SEPARATOR_COUNT_OFFSET,
+        u32::try_from(block.table_separators.len()).map_err(|_| RenderError::ArithmeticOverflow)?,
+    );
     encode_u64(header, BLOCK_LIST_NUMBER_OFFSET, block.spec.list_number);
     encode_u32(
         header,
@@ -2609,7 +2729,11 @@ fn encode_block(packet: &mut Vec<u8>, block: &RenderBlock) -> Result<(), RenderE
         BLOCK_SPAN_COUNT_OFFSET,
         u32::try_from(block.spans.len()).map_err(|_| RenderError::ArithmeticOverflow)?,
     );
-    encode_u32(header, BLOCK_TRAILING_RESERVED_OFFSET, 0);
+    encode_u32(
+        header,
+        BLOCK_FOOTNOTE_LABEL_BYTES_OFFSET,
+        u32::try_from(block.footnote_label.len()).map_err(|_| RenderError::ArithmeticOverflow)?,
+    );
     encode_u64(
         header,
         BLOCK_SOURCE_START_UTF16_OFFSET,
@@ -2625,9 +2749,17 @@ fn encode_block(packet: &mut Vec<u8>, block: &RenderBlock) -> Result<(), RenderE
         BLOCK_SOURCE_MAP_COUNT_OFFSET,
         u32::try_from(block.source_maps.len()).map_err(|_| RenderError::ArithmeticOverflow)?,
     );
-    encode_u32(header, BLOCK_SOURCE_RESERVED_OFFSET, 0);
+    encode_u32(
+        header,
+        BLOCK_QUOTE_ALERT_DEPTH_OFFSET,
+        block.spec.quote_alert_depth,
+    );
     packet.extend_from_slice(block.text.as_bytes());
     packet.extend_from_slice(block.spec.metadata.as_bytes());
+    packet.extend_from_slice(block.footnote_label.as_bytes());
+    for separator in &block.table_separators {
+        packet.extend_from_slice(&separator.to_le_bytes());
+    }
     for span in &block.spans {
         encode_span(packet, span)?;
     }
@@ -2723,6 +2855,59 @@ mod tests {
     //! Verifies bounded Markdown parsing and deterministic packet encoding.
 
     #[test]
+    fn distinguishes_an_enclosing_alert_from_an_innermost_alert() {
+        let outer = render_markdown("> [!NOTE]  \n> > deeper\n").unwrap();
+        let inner = render_markdown("> > [!NOTE]\n> > deeper\n").unwrap();
+        assert_ne!(outer.bytes, inner.bytes);
+        let outer = decode_blocks(&outer.bytes);
+        let inner = decode_blocks(&inner.bytes);
+        assert_eq!(outer[0].quote_depth, 2);
+        assert_eq!(inner[0].quote_depth, 2);
+        assert_eq!(outer[0].quote_alert_depth, 1);
+        assert_eq!(inner[0].quote_alert_depth, 2);
+        assert_eq!(outer[0].source, inner[0].source);
+        assert_eq!(outer[0].source_maps, inner[0].source_maps);
+        let nested = decode_blocks(
+            &render_markdown("> [!NOTE]\n> first\n>\n> > [!TIP]\n> > inner\n>\n> after\n")
+                .unwrap()
+                .bytes,
+        );
+        assert_eq!(
+            nested
+                .iter()
+                .map(|block| block.quote_alert_depth)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 1]
+        );
+    }
+
+    #[test]
+    fn preserves_alert_owner_through_fragments_and_structural_html() {
+        for size in [5_000, super::MAX_BUILDER_BLOCK_TEXT_BYTES + 100] {
+            let source = format!("> [!NOTE]\n> > {}\n>\n> after\n", "a".repeat(size));
+            let blocks = decode_blocks(&render_markdown(&source).unwrap().bytes);
+            assert!(blocks.len() > 2);
+            assert!(blocks.iter().all(|block| block.quote_alert_depth == 1));
+            assert!(
+                blocks[..blocks.len() - 1]
+                    .iter()
+                    .all(|block| block.quote_depth == 2)
+            );
+            assert_eq!(blocks.last().unwrap().text, "after");
+            assert_eq!(blocks.last().unwrap().quote_depth, 1);
+        }
+        let blocks = decode_blocks(
+            &render_markdown("> [!NOTE]\n> <blockquote><p>nested</p></blockquote>\n>\n> after\n")
+                .unwrap()
+                .bytes,
+        );
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].text, "nested");
+        assert_eq!(blocks[0].quote_depth, 2);
+        assert!(blocks.iter().all(|block| block.quote_alert_depth == 1));
+    }
+
+    #[test]
     fn maps_every_source_boundary_with_ascii_unicode_and_crlf() {
         for text in ["", "plain\rtext\n", "\r\n", "😀é東京\r\nend"] {
             let source = text.repeat(150);
@@ -2739,6 +2924,367 @@ mod tests {
                 );
             }
             assert!(offsets.logical_utf16_at(source.len() + 1).is_err());
+        }
+    }
+
+    /// Tight item prose must finish before a different child block begins.
+    #[test]
+    fn renders_tight_list_prose_before_other_blocks() {
+        for suffix in ["  > quote\n", "  ```text\n  exact code\n  ```\n"] {
+            for newline in ["\n", "\r\n"] {
+                let source = format!("- outer\n{suffix}- next\n").replace('\n', newline);
+                let blocks = decode_blocks(render_markdown(&source).unwrap().as_bytes());
+                assert_eq!(blocks[0].kind, BLOCK_KIND_LIST_ITEM);
+                assert_eq!(blocks[0].text, "outer");
+                assert_eq!(blocks.last().unwrap().text, "next");
+                let child = &blocks[1];
+                if suffix.contains('>') {
+                    assert_eq!(child.text, "quote");
+                    assert_eq!(child.quote_depth, 1);
+                    assert_eq!(blocks[0].quote_depth, 0);
+                } else {
+                    assert_eq!(child.kind, BLOCK_KIND_CODE);
+                    assert_eq!(child.text, "exact code\n");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn preserves_compact_empty_cells_and_literal_table_tabs() {
+        for row in ["|C||", "|C|", "|||", "|a\tb|c|"] {
+            let source = format!("|A|B|\n|-|-|\n{row}\n");
+            let blocks = decode_blocks(render_markdown(&source).unwrap().as_bytes());
+            let body = &blocks[1];
+            assert_eq!(body.metadata, "nn");
+            if row.contains('a') {
+                assert_eq!(body.text, "a\tb\tc");
+                assert_eq!(body.table_separators, [3]);
+                let mapping = body
+                    .source_maps
+                    .iter()
+                    .find(|mapping| mapping.rendered_start_utf16 == 0)
+                    .unwrap();
+                assert_eq!(mapping.rendered_end_utf16, 3);
+                assert_eq!(mapping.source, SourceRange::new(13, 16));
+            } else {
+                assert_eq!(body.text, if row.contains('C') { "C\t" } else { "\t" });
+                assert_eq!(body.table_separators, [u32::from(row.contains('C'))]);
+            }
+            assert_eq!(
+                decode_blocks(
+                    render_markdown(&source.replace('\n', "\r\n"))
+                        .unwrap()
+                        .as_bytes()
+                ),
+                blocks
+            );
+        }
+    }
+
+    #[test]
+    fn rebases_only_structural_table_tabs_across_both_fragment_limits() {
+        let data = "😀a\tb ".repeat(super::MAX_BUILDER_BLOCK_TEXT_BYTES / 5);
+        let source = format!("|A|B|\n|-|-|\n|{data}|end|\n");
+        let blocks = decode_blocks(render_markdown(&source).unwrap().as_bytes());
+        let body = &blocks[1..];
+        assert_eq!(body.concat_text(), format!("{}\tend", data.trim_end()));
+        assert_eq!(
+            body.iter()
+                .map(|block| block.table_separators.len())
+                .sum::<usize>(),
+            1
+        );
+        for block in body {
+            assert_eq!(block.metadata.len(), block.table_separators.len() + 1);
+            let units: Vec<_> = block.text.encode_utf16().collect();
+            for separator in &block.table_separators {
+                assert_eq!(units[*separator as usize], u16::from(b'\t'));
+            }
+        }
+        assert_eq!(
+            decode_blocks(
+                render_markdown(&source.replace('\n', "\r\n"))
+                    .unwrap()
+                    .as_bytes()
+            ),
+            blocks
+        );
+    }
+
+    #[test]
+    fn retains_nonempty_block_provenance_for_compact_empty_builder_fragments() {
+        let cells = super::MAX_BUILDER_BLOCK_TEXT_BYTES + 2;
+        let source = format!("|{}\n|{}\n", "|".repeat(cells), "-|".repeat(cells));
+        let blocks = decode_blocks(render_markdown(&source).unwrap().as_bytes());
+        assert!(
+            blocks
+                .iter()
+                .all(|block| block.source.start_utf16 < block.source.end_utf16)
+        );
+        assert_eq!(blocks.concat_text().len(), cells - 1);
+        assert!(
+            blocks
+                .iter()
+                .all(|block| block.metadata.len() == block.table_separators.len() + 1)
+        );
+    }
+
+    #[test]
+    fn retains_footnote_owner_on_every_semantic_kind() {
+        let source = concat!(
+            "Claim[^n]\n\n[^n]: First.\n\n",
+            "    - Detail one\n    - Detail two\n\n",
+            "    ```rust\n    exact code\n    ```\n\n",
+            "    # Heading\n\n    |A|B|\n    |-|-|\n    |C|D|\n\n    Last.\n"
+        );
+        let blocks = decode_blocks(render_markdown(source).unwrap().as_bytes());
+        assert!(blocks[1..].iter().all(|block| block.footnote_label == "n"));
+        assert!(
+            blocks[1..]
+                .iter()
+                .any(|block| block.kind == BLOCK_KIND_LIST_ITEM)
+        );
+        assert!(
+            blocks[1..]
+                .iter()
+                .any(|block| block.kind == BLOCK_KIND_HEADING)
+        );
+        assert!(
+            blocks[1..]
+                .iter()
+                .any(|block| block.kind == super::BLOCK_KIND_TABLE_ROW)
+        );
+        assert!(
+            blocks[1..]
+                .iter()
+                .any(|block| block.kind == BLOCK_KIND_CODE && block.metadata == "rust")
+        );
+        let list_only = decode_blocks(
+            render_markdown("Claim[^n]\n\n[^n]:\n    - detail\n")
+                .unwrap()
+                .as_bytes(),
+        );
+        assert_eq!(list_only[1].kind, BLOCK_KIND_LIST_ITEM);
+        assert_eq!(list_only[1].footnote_label, "n");
+    }
+
+    #[test]
+    fn keeps_structural_html_provenance_approximate_and_inline_html_exact() {
+        let source = "<div><p>Public</p><p>Private sibling</p></div>";
+        let blocks = decode_blocks(render_markdown(source).unwrap().as_bytes());
+        assert_eq!(blocks[0].text, "Public");
+        assert_eq!(blocks[1].text, "Private sibling");
+        assert!(blocks.iter().all(|block| block.source_maps.is_empty()));
+        assert!(
+            blocks
+                .iter()
+                .all(|block| block.source == SourceRange::new(0, source.len() as u64))
+        );
+        let inline = decode_blocks(
+            render_markdown("<strong>Public</strong>")
+                .unwrap()
+                .as_bytes(),
+        );
+        assert_eq!(inline[0].source_maps[0].source, SourceRange::new(8, 14));
+    }
+
+    #[test]
+    fn preserves_empty_and_nonparagraph_first_list_item_markers() {
+        let empty = decode_blocks(render_markdown("-\n").unwrap().as_bytes());
+        assert_eq!(empty.len(), 1);
+        assert_eq!(empty[0].kind, BLOCK_KIND_LIST_ITEM);
+        assert_eq!(empty[0].text, "");
+        assert!(empty[0].source_maps.is_empty());
+        let nested = decode_blocks(
+            render_markdown("-\n  - child\n- sibling\n")
+                .unwrap()
+                .as_bytes(),
+        );
+        assert_eq!(
+            nested
+                .iter()
+                .map(|block| block.list_depth)
+                .collect::<Vec<_>>(),
+            [1, 2, 1]
+        );
+        assert_eq!(nested[1].text, "child");
+        assert_eq!(nested[2].text, "sibling");
+        let source = "- ```text\n  exact\n  ```\n- sibling\n";
+        let code = decode_blocks(render_markdown(source).unwrap().as_bytes());
+        assert_eq!(code[0].kind, BLOCK_KIND_LIST_ITEM);
+        assert_eq!(code[0].text, "");
+        assert_eq!(code[1].kind, BLOCK_KIND_CODE);
+        assert_eq!(code[1].text, "exact\n");
+        assert!(code[0].source.start_utf16 <= code[1].source.start_utf16);
+        assert!(code[0].source.end_utf16 >= code[1].source.end_utf16);
+        assert_eq!(code[2].text, "sibling");
+        assert_eq!(
+            decode_blocks(
+                render_markdown(&source.replace('\n', "\r\n"))
+                    .unwrap()
+                    .as_bytes()
+            ),
+            code
+        );
+    }
+
+    #[test]
+    fn reparses_selected_empty_marker_and_nested_note_syntax_without_flattening() {
+        for (original, generated) in [
+            (
+                "- ```text\n  exact\n  ```\n- sibling\n",
+                "- \n    ```text\n    exact\n    ```\n- sibling",
+            ),
+            ("-\n  - child\n- sibling\n", "- \n    - child\n- sibling"),
+            (
+                "Claim[^1]\n\n[^1]:\n    - ```text\n      exact\n      ```\n",
+                "Claim[^1]\n\n[^1]:\n    - \n        ```text\n        exact\n        ```",
+            ),
+            (
+                "Claim[^1]\n\n[^1]:\n    -\n      - ```text\n        exact\n        ```\n",
+                "Claim[^1]\n\n[^1]:\n    - \n        - \n            ```text\n            exact\n            ```",
+            ),
+        ] {
+            let shape = |source| {
+                decode_blocks(render_markdown(source).unwrap().as_bytes())
+                    .into_iter()
+                    .map(|block| {
+                        (
+                            block.kind,
+                            block.text,
+                            block.list_depth,
+                            block.footnote_label,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(
+                shape(original),
+                shape(generated),
+                "generated source: {generated}"
+            );
+        }
+    }
+
+    #[test]
+    fn retains_synthetic_html_indentation_without_an_exact_source_map() {
+        let mut builder = super::DocumentBuilder::new();
+        builder.start_html_block(SourceRange::new(0, 20)).unwrap();
+        builder
+            .append("  ", 0, None, SourceRange::new(2, 2))
+            .unwrap();
+        let block = builder.current.as_ref().unwrap();
+        assert_eq!(block.text, "  ");
+        assert!(block.source_maps.is_empty());
+        assert_eq!(
+            builder.append("x", 0, None, SourceRange::new(2, 2)),
+            Err(RenderError::State)
+        );
+
+        let mut ordinary = super::DocumentBuilder::new();
+        ordinary
+            .start_text_block(BLOCK_KIND_PARAGRAPH, 0, SourceRange::new(0, 20))
+            .unwrap();
+        assert_eq!(
+            ordinary.append("  ", 0, None, SourceRange::new(2, 2)),
+            Err(RenderError::State)
+        );
+    }
+
+    #[test]
+    fn renders_nested_structural_tables_with_parser_generated_indentation() {
+        for html in [
+            "<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>",
+            "<table><tr><th>A</th><th>B</th></tr><tr><th>C</th><th>D</th></tr></table>",
+        ] {
+            let top = decode_blocks(render_markdown(html).unwrap().as_bytes());
+            for indent in 2..=4 {
+                let source = format!("- outer\n\n{}{html}\n- next\n", " ".repeat(indent));
+                let blocks = decode_blocks(render_markdown(&source).unwrap().as_bytes());
+                assert_eq!(blocks.first().unwrap().text, "outer");
+                assert_eq!(blocks.last().unwrap().text, "next");
+                let rows = &blocks[1..blocks.len() - 1];
+                assert_eq!(rows.len(), top.len());
+                for (row, control) in rows.iter().zip(&top) {
+                    assert_eq!(row.kind, super::BLOCK_KIND_TABLE_ROW);
+                    assert_eq!(row.text, control.text);
+                    assert_eq!(
+                        row.flags & BLOCK_FLAG_TABLE_HEADER,
+                        control.flags & BLOCK_FLAG_TABLE_HEADER
+                    );
+                    assert!(row.source_maps.is_empty());
+                    assert!(blocks[0].source.start_utf16 <= row.source.start_utf16);
+                    assert!(blocks[0].source.end_utf16 >= row.source.end_utf16);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn retains_list_child_extents_through_presentation_and_builder_continuations() {
+        for size in [100, 5_000, super::MAX_BUILDER_BLOCK_TEXT_BYTES + 500] {
+            for nested in [false, true] {
+                let prefix = if nested { "- outer\n  - " } else { "- " };
+                let indent = if nested { "    " } else { "  " };
+                let source = format!(
+                    "{prefix}{}\n{indent}```text\n{indent}code child\n{indent}```\n- sibling\n",
+                    "a".repeat(size)
+                );
+                let blocks = decode_blocks(render_markdown(&source).unwrap().as_bytes());
+                let code_index = blocks
+                    .iter()
+                    .position(|block| block.kind == BLOCK_KIND_CODE)
+                    .unwrap();
+                let parents: Vec<_> = blocks[..code_index]
+                    .iter()
+                    .filter(|block| block.list_depth == if nested { 2 } else { 1 })
+                    .collect();
+                let joined = parents
+                    .iter()
+                    .map(|block| block.source)
+                    .reduce(SourceRange::union)
+                    .unwrap();
+                assert_eq!(
+                    parents
+                        .iter()
+                        .map(|block| block.text.as_str())
+                        .collect::<String>(),
+                    "a".repeat(size)
+                );
+                assert!(joined.start_utf16 <= blocks[code_index].source.start_utf16);
+                assert!(joined.end_utf16 >= blocks[code_index].source.end_utf16);
+                assert!(joined.end_utf16 <= blocks.last().unwrap().source.start_utf16);
+                assert!(
+                    parents
+                        .iter()
+                        .flat_map(|block| &block.source_maps)
+                        .all(|mapping| mapping.source.end_utf16 <= (prefix.len() + size) as u64)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn keeps_unrepresentable_html_list_numbers_as_local_literal_source() {
+        for start in [0, 1, 999_999_999] {
+            let source = format!("<ol start=\"{start}\"><li>item</li></ol>");
+            let blocks = decode_blocks(render_markdown(&source).unwrap().as_bytes());
+            assert_eq!(blocks[0].kind, BLOCK_KIND_LIST_ITEM);
+            assert_eq!(blocks[0].list_number, start);
+        }
+        for html in [
+            "<ol start=\"1000000000\"><li>item</li></ol>",
+            "<ol start=\"18446744073709551615\"><li>item</li><li>next</li></ol>",
+            "<ol start=\"999999999\"><li>item</li><li>next</li></ol>",
+            "<ul><li>outer<ol start=\"1000000000\"><li>nested</li></ol></li></ul>",
+        ] {
+            let source = format!("Before.\n\n{html}\n\nAfter.\n");
+            let blocks = decode_blocks(render_markdown(&source).unwrap().as_bytes());
+            assert_eq!(blocks[0].text, "Before.");
+            assert_eq!(blocks[1].kind, BLOCK_KIND_HTML_LITERAL);
+            assert_eq!(blocks[1].text, format!("{html}\n"));
+            assert_eq!(blocks[2].text, "After.");
         }
     }
 
@@ -3937,6 +4483,7 @@ mod tests {
         flags: u32,
         heading_level: u32,
         quote_depth: u32,
+        quote_alert_depth: u32,
         list_depth: u32,
         list_number: u64,
         text: String,
@@ -3946,6 +4493,8 @@ mod tests {
         destinations: Vec<String>,
         source: SourceRange,
         source_maps: Vec<InlineSourceMap>,
+        table_separators: Vec<u32>,
+        footnote_label: String,
     }
 
     trait DecodedBlocksExt {
@@ -3976,6 +4525,17 @@ mod tests {
             let metadata = String::from_utf8(packet[offset..offset + metadata_bytes].to_vec())
                 .expect("encoded block metadata should be UTF-8");
             offset += metadata_bytes;
+            let footnote_bytes = decode_u32(header, 44) as usize;
+            let footnote_label =
+                String::from_utf8(packet[offset..offset + footnote_bytes].to_vec()).unwrap();
+            offset += footnote_bytes;
+            let table_separators = (0..decode_u32(header, 20))
+                .map(|_| {
+                    let separator = decode_u32(packet, offset);
+                    offset += size_of::<u32>();
+                    separator
+                })
+                .collect();
             let mut styles = Vec::with_capacity(span_count);
             let mut span_flags = Vec::with_capacity(span_count);
             let mut destinations = Vec::new();
@@ -4004,32 +4564,13 @@ mod tests {
                 }
                 offset += destination_bytes;
             }
-            let mut source_maps = Vec::with_capacity(source_map_count);
-            for _source_map_index in 0..source_map_count {
-                let source_map = &packet[offset..offset + super::SOURCE_MAP_HEADER_BYTES];
-                offset += super::SOURCE_MAP_HEADER_BYTES;
-                source_maps.push(InlineSourceMap {
-                    rendered_start_utf16: decode_u32(source_map, 0),
-                    rendered_end_utf16: decode_u32(source_map, 4),
-                    source: SourceRange::new(
-                        u64::from_le_bytes(
-                            source_map[8..16]
-                                .try_into()
-                                .expect("source-map start bytes should be exact"),
-                        ),
-                        u64::from_le_bytes(
-                            source_map[16..24]
-                                .try_into()
-                                .expect("source-map end bytes should be exact"),
-                        ),
-                    ),
-                });
-            }
+            let source_maps = decode_source_maps(packet, &mut offset, source_map_count);
             blocks.push(DecodedBlock {
                 kind: decode_u32(header, 0),
                 flags: decode_u32(header, 4),
                 heading_level: decode_u32(header, 8),
                 quote_depth: decode_u32(header, 12),
+                quote_alert_depth: decode_u32(header, 68),
                 list_depth: decode_u32(header, 16),
                 list_number: u64::from_le_bytes(
                     header[24..32]
@@ -4054,10 +4595,42 @@ mod tests {
                     ),
                 ),
                 source_maps,
+                table_separators,
+                footnote_label,
             });
         }
         assert_eq!(offset, packet.len());
         blocks
+    }
+
+    /// Decodes each source-map record independently of block payload fields.
+    fn decode_source_maps(
+        packet: &[u8],
+        offset: &mut usize,
+        source_map_count: usize,
+    ) -> Vec<InlineSourceMap> {
+        let mut source_maps = Vec::with_capacity(source_map_count);
+        for _source_map_index in 0..source_map_count {
+            let source_map = &packet[*offset..*offset + super::SOURCE_MAP_HEADER_BYTES];
+            *offset += super::SOURCE_MAP_HEADER_BYTES;
+            source_maps.push(InlineSourceMap {
+                rendered_start_utf16: decode_u32(source_map, 0),
+                rendered_end_utf16: decode_u32(source_map, 4),
+                source: SourceRange::new(
+                    u64::from_le_bytes(
+                        source_map[8..16]
+                            .try_into()
+                            .expect("source-map start bytes should be exact"),
+                    ),
+                    u64::from_le_bytes(
+                        source_map[16..24]
+                            .try_into()
+                            .expect("source-map end bytes should be exact"),
+                    ),
+                ),
+            });
+        }
+        source_maps
     }
 
     fn decode_u32(bytes: &[u8], offset: usize) -> u32 {

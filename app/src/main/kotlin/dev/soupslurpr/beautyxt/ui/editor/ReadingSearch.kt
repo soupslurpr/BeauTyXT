@@ -2,6 +2,7 @@ package dev.soupslurpr.beautyxt.ui.editor
 
 import dev.soupslurpr.beautyxt.document.SearchHit
 import dev.soupslurpr.beautyxt.document.Utf16Range
+import dev.soupslurpr.beautyxt.document.isScalarBoundary
 import dev.soupslurpr.beautyxt.illustration.IllustrationKind
 import dev.soupslurpr.beautyxt.illustration.IllustrationResult
 import dev.soupslurpr.beautyxt.illustration.IllustrationTextBox
@@ -11,6 +12,7 @@ import dev.soupslurpr.beautyxt.markdown.MarkdownInlineDestinationKind
 import dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument
 import dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock
 import dev.soupslurpr.beautyxt.markdown.markdownFootnoteNumbers
+import dev.soupslurpr.beautyxt.markdown.markdownTableCellRanges
 
 internal enum class SearchRepresentation { Source, Reading, FormulaSource, DiagramSource, Formula, DiagramLabel }
 internal data class ReadingSearchSegment(
@@ -92,7 +94,7 @@ internal fun readingSearchUnits(document: MarkdownPreviewDocument, includeSource
         text.append(value)
         segments.add(ReadingSearchSegment(index, start, offset, text.length, end, generatedMarker = generatedMarker))
     }
-    fun prose(index: Int, block: MarkdownRenderBlock, start: Int, end: Int) {
+    fun proseRun(index: Int, block: MarkdownRenderBlock, start: Int, end: Int) {
         var cursor = start
         block.spans.filter { it.start >= start && it.end <= end &&
             it.destinationKind == MarkdownInlineDestinationKind.FootnoteReference && it.destination in numbers
@@ -102,6 +104,17 @@ internal fun readingSearchUnits(document: MarkdownPreviewDocument, includeSource
             cursor = span.end
         }
         if (cursor < end || (start == end && segments.isEmpty())) append(index, cursor, end, block.text.substring(cursor, end))
+    }
+    fun prose(index: Int, block: MarkdownRenderBlock, start: Int, end: Int) {
+        var cursor = start
+        for (separator in block.tableCellSeparators) {
+            if (separator < start) continue
+            if (separator >= end) break
+            if (cursor < separator) proseRun(index, block, cursor, separator)
+            flush()
+            cursor = separator + 1
+        }
+        if (cursor < end || start == end) proseRun(index, block, cursor, end)
     }
     fun beginFlow(index: Int, block: MarkdownRenderBlock) {
         val last = previous
@@ -160,11 +173,9 @@ internal fun readingSearchUnits(document: MarkdownPreviewDocument, includeSource
             previous = null
         } else if (block.kind == MarkdownBlockKind.TableRow) {
             if (!block.continuesPrevious || previous?.kind != MarkdownBlockKind.TableRow) flush()
-            var start = 0
-            block.text.split('\t').forEachIndexed { cellIndex, cell ->
+            block.markdownTableCellRanges().forEachIndexed { cellIndex, cell ->
                 if (cellIndex > 0) flush()
-                prose(index, block, start, start + cell.length)
-                start += cell.length + 1
+                prose(index, block, cell.start, cell.end)
             }
             previous = block
         } else {
@@ -190,6 +201,7 @@ internal fun matchingVisibleIllustration(results: List<DocumentSearchResult>, so
 
 /** Exact endpoint mapping; decoded escapes and generated markers are never guessed. */
 internal fun exactReadingSourceOffset(block: MarkdownRenderBlock, offset: Int, ending: Boolean): Long? {
+    if (offset !in 0..block.text.length || !block.text.isScalarBoundary(offset)) return null
     val before = block.sourceMaps.lastOrNull { offset > it.renderedStart && offset <= it.renderedEnd }
     val after = block.sourceMaps.firstOrNull { offset >= it.renderedStart && offset < it.renderedEnd }
     val map = (if (ending) before ?: after else after ?: before) ?: return null
@@ -202,11 +214,29 @@ internal fun exactReadingSourceOffset(block: MarkdownRenderBlock, offset: Int, e
 }
 
 internal fun exactReadingSourceRange(block: MarkdownRenderBlock, start: Int, end: Int): Utf16Range? {
+    if (start < 0 || end < start || end > block.text.length) return null
     val first = exactReadingSourceOffset(block, start, false) ?: return null
     // At an invisible formatting delimiter, an insertion uses the following text's
     // source position. Nonempty selections use the inward affinity at each edge.
     val last = if (start == end) first else exactReadingSourceOffset(block, end, true) ?: return null
-    return if (last >= first) Utf16Range(first, last) else null
+    if (last < first) return null
+    var cursor = start
+    var sourceCursor = first
+    for (map in block.sourceMaps) {
+        if (map.renderedEnd <= start || map.renderedStart >= end) continue
+        val mappedStart = if (map.renderedStart < start) first else map.source.start
+        if (map.renderedStart > cursor || mappedStart < sourceCursor) return null
+        cursor = minOf(end, map.renderedEnd)
+        sourceCursor = if (cursor == end) last else map.source.end
+    }
+    if (cursor != end) return null
+    // Coarse substitutions can share provenance with visible text outside the
+    // selection. Such endpoints do not establish a unique source passage.
+    if (start < end && block.sourceMaps.any { map ->
+        (map.renderedEnd <= start || map.renderedStart >= end) &&
+            map.source.start < last && map.source.end > first
+    }) return null
+    return Utf16Range(first, last)
 }
 
 internal fun readingSearchResult(document: MarkdownPreviewDocument, unit: ReadingSearchUnit, hit: SearchHit): DocumentSearchResult {
@@ -238,10 +268,14 @@ internal fun readingSearchResult(document: MarkdownPreviewDocument, unit: Readin
     }
     val first = parts.firstOrNull()
     val last = parts.lastOrNull()
-    val sourceStart = first?.takeIf { it.exact }?.let { exactReadingSourceRange(document.blocks[it.block], it.blockStart, it.blockEnd)?.start }
-    val sourceEnd = last?.takeIf { it.exact }?.let { exactReadingSourceRange(document.blocks[it.block], it.blockStart, it.blockEnd)?.end }
-    val source = if (sourceStart != null && sourceEnd != null && sourceEnd >= sourceStart) Utf16Range(sourceStart, sourceEnd) else null
-    val owner = unit.illustration?.let { exactReadingSourceRange(document.blocks[it.block], it.start, it.end) }
+    val source = if (parts.all { it.exact } && first != null && last != null) {
+        DocumentSelection.Reading(0, ReadingPoint(first.block, first.blockStart),
+            ReadingPoint(last.block, last.blockEnd)).exactSource(document)
+    } else null
+    val owner = unit.illustration?.let { target ->
+        DocumentSelection.Reading(0, ReadingPoint(target.block, target.start),
+            ReadingPoint(target.block, target.end)).exactSource(document)
+    }
     val illustration = unit.illustration?.let { target ->
         target.copy(boxes = target.boxes.filter { box ->
             if (hit.range.start == hit.range.end) hit.range.start in box.start.toLong()..box.end.toLong()

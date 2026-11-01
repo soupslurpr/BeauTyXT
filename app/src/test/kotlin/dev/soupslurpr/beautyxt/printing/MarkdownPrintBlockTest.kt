@@ -18,6 +18,54 @@ import org.junit.Test
 
 /** Verifies bounded paragraph assembly independently from Android layout. */
 class MarkdownPrintBlockTest {
+    /** Literal tabs survive fragment joining without acquiring structural column metadata. */
+    @Test
+    fun joinsExplicitTableSeparatorsOnly() = runBlocking {
+        val first = block("lit\t").copy(kind = MarkdownBlockKind.TableRow,
+            tableCellSeparators = emptyList())
+        val next = block("eral\tend").copy(kind = MarkdownBlockKind.TableRow,
+            continuesPrevious = true)
+        val joined = readMarkdownPrintBlock(listOf(first, next), 0).block
+        assertEquals(listOf(8), joined.tableCellSeparators)
+        assertEquals(listOf("lit\teral", "end"), markdownPrintCells(joined).map { it.text })
+    }
+
+    /** Headings receive the same logical admission before normalization or PDF indexing. */
+    @Test
+    fun admitsHeadingContinuationsBeforeIndexing(): Unit = runBlocking {
+        val heading = block("a".repeat(MAXIMUM_MARKDOWN_PRINT_BLOCK_UNITS)).copy(
+            kind = MarkdownBlockKind.Heading, headingLevel = 1
+        )
+        assertEquals(mapOf(0 to heading.text), markdownPrintHeadingAnchors(listOf(heading)))
+        assertThrows(MarkdownPrintBlockLimitException::class.java) {
+            runBlocking {
+                markdownPrintHeadingAnchors(listOf(heading,
+                    heading.copy(text = "b", continuesPrevious = true)))
+            }
+        }
+        val first = heading.copy(text = "Café")
+        assertEquals(mapOf(0 to "café-title", 2 to "café-title-1"),
+            markdownPrintHeadingAnchors(listOf(first,
+                first.copy(text = " title", continuesPrevious = true),
+                first.copy(text = "Café title"))))
+    }
+
+    /** A canceled job cannot traverse a document's heading prelude before noticing cancellation. */
+    @Test
+    fun cancelsDuringHeadingPrelude(): Unit = runBlocking {
+        val heading = block("a").copy(kind = MarkdownBlockKind.Heading, headingLevel = 1)
+        var checks = 0
+        assertThrows(CancellationException::class.java) {
+            runBlocking {
+                markdownPrintHeadingAnchors(listOf(heading,
+                    heading.copy(continuesPrevious = true))) {
+                    if (++checks == 3) throw CancellationException("synthetic cancellation")
+                }
+            }
+        }
+        assertEquals(3, checks)
+    }
+
     /** Preserves complete blocks without copying or absorbing their neighbors. */
     @Test
     fun reusesCompleteBlock() = runBlocking {
@@ -95,12 +143,14 @@ class MarkdownPrintBlockTest {
         )
         val second = first.copy(
             text = "ond\t",
+            tableCellSeparators = listOf(3),
             continuesPrevious = true,
             startsTable = false,
             tableAlignments = listOf(MarkdownTableAlignment.Right, MarkdownTableAlignment.Center)
         )
         val third = second.copy(
             text = "Third",
+            tableCellSeparators = emptyList(),
             tableAlignments = listOf(MarkdownTableAlignment.Center)
         )
         val result = readMarkdownPrintBlock(listOf(first, second, third), 0)
@@ -120,7 +170,7 @@ class MarkdownPrintBlockTest {
     @Test
     fun joinsTablesWithoutExplicitAlignments() = runBlocking {
         val first = block("a\tb").copy(kind = MarkdownBlockKind.TableRow)
-        val second = first.copy(text = "c", continuesPrevious = true)
+        val second = first.copy(text = "c", continuesPrevious = true, tableCellSeparators = emptyList())
         val result = readMarkdownPrintBlock(listOf(first, second), 0)
         assertEquals(2, markdownPrintCells(result.block).size)
         assertEquals(
@@ -306,6 +356,7 @@ class MarkdownPrintBlockTest {
         listDepth = 0,
         listNumber = 0,
         text = text,
+        tableCellSeparators = text.indices.filter { text[it] == '\t' },
         metadata = "",
         spans = emptyList()
     )
