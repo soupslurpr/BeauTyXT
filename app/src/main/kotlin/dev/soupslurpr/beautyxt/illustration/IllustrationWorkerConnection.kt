@@ -7,6 +7,8 @@ import android.content.ServiceConnection
 import android.os.Binder
 import android.os.IBinder
 import android.os.Process
+import dev.soupslurpr.beautyxt.ipc.IsolatedServiceConnection
+import dev.soupslurpr.beautyxt.ipc.IsolatedServiceRegistration
 import dev.soupslurpr.beautyxt.ipc.TransferredFileDescriptor
 import dev.soupslurpr.beautyxt.ipc.newIsolatedServiceInstanceName
 import java.util.concurrent.atomic.AtomicBoolean
@@ -31,13 +33,12 @@ internal class IllustrationWorkerConnection(
     IBinder.DeathRecipient,
     AutoCloseable {
     private val application = context.applicationContext
-    private val connectionLock = Any()
-    private val connected = CompletableDeferred<IIllustrationService>()
-    private val service = AtomicReference<IIllustrationService?>()
-    private val serviceBinder = AtomicReference<IBinder?>()
+    private val connection = IsolatedServiceConnection<IIllustrationService> { cause ->
+        IllegalStateException("Illustration worker unavailable", cause)
+    }
+    private val registration = IsolatedServiceRegistration { application.unbindService(this) }
     private val pending = AtomicReference<Pending?>()
     private val closed = AtomicBoolean(false)
-    private val bound = AtomicBoolean(false)
     private val started = AtomicBoolean(false)
     private val mutex = Mutex()
     private val instanceName = newIsolatedServiceInstanceName()
@@ -79,11 +80,12 @@ internal class IllustrationWorkerConnection(
     private suspend fun renderBytes(source: ByteArray, display: Boolean): IllustrationResult {
         check(!closed.get())
         if (started.compareAndSet(false, true)) bind()
-        val remote = connected.await()
+        val remote = connection.awaitService()
         currentCoroutineContext().ensureActive()
         IllustrationPacketBuffer.create().use { output ->
             val job = Pending(nextJob++)
             check(pending.compareAndSet(null, job))
+            connection.attach(job.result)
             val callback = object : IIllustrationCallback.Stub() {
                 override fun onResult(jobId: Long, status: Int, packetBytes: Int) {
                     if (Binder.getCallingUid() == Process.myUid() || jobId != job.id ||
@@ -135,40 +137,28 @@ internal class IllustrationWorkerConnection(
             } finally {
                 if (!finished) runCatching { remote.cancel(job.id) }
                 pending.compareAndSet(job, null)
+                connection.detach(job.result)
                 job.result.cancel()
             }
         }
     }
 
     private fun bind() {
-        val accepted = application.bindIsolatedService(
-            Intent().setClassName(application, serviceName),
-            Context.BIND_AUTO_CREATE,
-            instanceName,
-            application.mainExecutor,
-            this
-        )
+        val accepted = registration.bind {
+            application.bindIsolatedService(
+                Intent().setClassName(application, serviceName),
+                Context.BIND_AUTO_CREATE,
+                instanceName,
+                application.mainExecutor,
+                this
+            )
+        }
         check(accepted) { "Illustration service unavailable" }
-        bound.set(true)
-        if (closed.get()) unbind()
+        if (closed.get()) registration.close()
     }
 
     override fun onServiceConnected(name: ComponentName, binder: IBinder) {
-        synchronized(connectionLock) {
-            if (closed.get()) return
-            try {
-                binder.linkToDeath(this, 0)
-                if (!serviceBinder.compareAndSet(null, binder)) {
-                    binder.unlinkToDeath(this, 0)
-                    return
-                }
-                val remote = IIllustrationService.Stub.asInterface(binder)
-                service.set(remote)
-                if (!connected.complete(remote)) close()
-            } catch (_: Exception) {
-                failConnection()
-            }
-        }
+        connection.connect(binder, this, IIllustrationService.Stub::asInterface)
     }
 
     override fun onServiceDisconnected(name: ComponentName) = failConnection()
@@ -177,32 +167,19 @@ internal class IllustrationWorkerConnection(
     override fun binderDied() = failConnection()
 
     private fun failConnection() {
-        val failure = IllegalStateException("Illustration worker disconnected")
-        connected.completeExceptionally(failure)
-        pending.get()?.result?.completeExceptionally(failure)
+        connection.fail()
         close()
     }
 
     override fun close() {
-        synchronized(connectionLock) {
-            if (!closed.compareAndSet(false, true)) return
-            val remote = service.getAndSet(null)
-            pending.getAndSet(null)?.let { job ->
-                runCatching { remote?.cancel(job.id) }
-                job.result.completeExceptionally(
-                    IllegalStateException("Illustration worker closed")
-                )
-            }
-            serviceBinder.getAndSet(null)?.let { binder ->
-                runCatching { binder.unlinkToDeath(this, 0) }
-            }
-            connected.completeExceptionally(IllegalStateException("Illustration connection closed"))
+        if (!closed.compareAndSet(false, true)) return
+        val remote = connection.remote
+        connection.close(this)
+        pending.getAndSet(null)?.let { job ->
+            runCatching { remote?.cancel(job.id) }
+            job.result.completeExceptionally(IllegalStateException("Illustration worker closed"))
         }
-        unbind()
-    }
-
-    private fun unbind() {
-        if (bound.compareAndSet(true, false)) runCatching { application.unbindService(this) }
+        registration.close()
     }
 
     private class Pending(val id: Long) {
