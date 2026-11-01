@@ -616,7 +616,7 @@ internal constructor(
             loadingViewportDirection = ViewportLoadDirection.Target
             editorMessage = null
             try {
-                val (cursor, snapshot) = withContext(workerDispatcher) {
+                val (match, contextSnapshot) = withContext(workerDispatcher) {
                     // Line starts are indexed natively. Binary search keeps this bounded even
                     // when the target is near the end of a document with millions of lines.
                     var line = 0L
@@ -636,18 +636,33 @@ internal constructor(
                         }
                     }
                     val cursor = ViewportCursor(revision, line, utf16Offset - lineStart)
-                    cursor to document.viewport(cursor, viewportLimits)
+                    val match = FindMatch(Utf16Range(utf16Offset, utf16Offset), cursor)
+                    match to if (cursor.utf16Offset > MATCH_PREFIX_CONTEXT_UTF16_UNITS) {
+                        document.previousViewport(cursor, matchContextLimits)
+                    } else null
                 }
                 currentCoroutineContext().ensureActive()
-                if (closeStarted.get()) return@withLock false
-                validateViewport(cursor, ViewportLoadDirection.Target, snapshot)
-                check(snapshot.blocks.firstOrNull()?.globalUtf16Start == utf16Offset) {
-                    "source viewport does not begin at its requested position"
+                if (closeStarted.get() || !canPublish()) return@withLock false
+                contextSnapshot?.let { snapshot ->
+                    validateViewport(matchContextValidationCursor(match, snapshot),
+                        ViewportLoadDirection.Previous, snapshot,
+                        limits = matchContextLimits, validateCacheJoin = false)
                 }
-                if (!canPublish()) {
-                    status = EditorDocumentStatus.Ready
-                    return@withLock false
+                // A logical line end can canonicalize to the following line, and EOF can
+                // return no blocks. Request preceding text while retaining the exact target.
+                val cursor = matchViewportCursor(match, contextSnapshot)
+                val snapshot = withContext(workerDispatcher) {
+                    document.viewport(cursor, viewportLimits)
                 }
+                currentCoroutineContext().ensureActive()
+                if (closeStarted.get() || !canPublish()) return@withLock false
+                val validationCursor = matchViewportValidationCursor(match, cursor, snapshot)
+                validateViewport(validationCursor, ViewportLoadDirection.Target, snapshot)
+                validateMatchViewport(match, cursor, validationCursor, snapshot)
+                check(snapshot.blocks.any { block ->
+                    utf16Offset in block.globalUtf16Start..block.globalUtf16End &&
+                        block.text.isScalarBoundary(Math.toIntExact(utf16Offset - block.globalUtf16Start))
+                }) { "source viewport target divides a Unicode character" }
                 applyViewport(snapshot, ViewportLoadDirection.Target)
                 true
             } catch (cancellation: CancellationException) {
@@ -694,8 +709,19 @@ internal constructor(
 
     suspend fun resolvePosition(revision: Long, offset: Long): ViewportCursor = try {
         withContext(workerDispatcher) { document.positionAt(revision, offset) }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (failure: Exception) {
-        handleStaleRevision(failure)
+        operations.withLock {
+            // Position reads run outside the operation lock. A newer successful edit may
+            // already have published the revision reported by this obsolete read.
+            val stale = failure as? StaleDocumentRevisionException
+            if (!closeStarted.get() && revision == currentRevision &&
+                stale != null && stale.actualRevision > currentRevision
+            ) {
+                handleStaleRevision(failure)
+            }
+        }
         throw failure
     }
 
@@ -867,7 +893,7 @@ internal constructor(
             }
             contextSnapshot?.let { snapshot ->
                 validateViewport(
-                    cursor = match.start,
+                    cursor = matchContextValidationCursor(match, snapshot),
                     direction = ViewportLoadDirection.Previous,
                     snapshot = snapshot,
                     limits = matchContextLimits,
@@ -2371,6 +2397,18 @@ internal constructor(
         return match.start.copy(utf16Offset = contextUtf16Offset)
     }
 
+    /** Keeps a logical line end distinct from the native reverse page's canonical end. */
+    private fun matchContextValidationCursor(match: FindMatch,
+        snapshot: ViewportSnapshot): ViewportCursor {
+        val last = snapshot.blocks.lastOrNull() ?: return match.start
+        if (match.start.line >= snapshot.metrics.lineCount - 1L) return match.start
+        val canonical = match.start.copy(line = Math.incrementExact(match.start.line), utf16Offset = 0L)
+        return if (snapshot.next == canonical && last.logicalLine == match.start.line &&
+            last.globalUtf16End == match.range.start && !last.continuesAtEnd &&
+            last.lineTerminatorUtf16Units == 1
+        ) canonical else match.start
+    }
+
     /** Returns the requested or narrowly canonicalized cursor represented by a viewport. */
     private fun matchViewportValidationCursor(
         match: FindMatch,
@@ -2545,14 +2583,16 @@ internal constructor(
         ) {
             "viewport response has cursors without a page"
         }
-        validateViewportEdges(snapshot)
+        validateViewportEdges(snapshot,
+            terminalPreviousCursor = cursor.takeIf { direction == ViewportLoadDirection.Previous })
         if (validateCacheJoin) {
             validateViewportJoin(direction = direction, snapshot = snapshot)
         }
     }
 
     /** Validates that page cursors identify the exact returned block edges. */
-    private fun validateViewportEdges(snapshot: ViewportSnapshot) {
+    private fun validateViewportEdges(snapshot: ViewportSnapshot,
+        terminalPreviousCursor: ViewportCursor? = null) {
         val first = snapshot.blocks.firstOrNull()
         if (first == null) {
             check(snapshot.previous == null && snapshot.next == null) {
@@ -2628,7 +2668,21 @@ internal constructor(
                 }
                 null
             }
-        check(snapshot.next == expectedNext) {
+        val terminalReverseEnd = terminalPreviousCursor?.takeIf { cursor ->
+            if (expectedNext != null || cursor.line != last.logicalLine ||
+                last.logicalLine != snapshot.metrics.lineCount - 1L ||
+                last.globalUtf16End != snapshot.metrics.utf16Length ||
+                last.lineTerminatorUtf16Units != 0
+            ) return@takeIf false
+            val firstOnLine = snapshot.blocks.first { it.logicalLine == last.logicalLine }
+            val startingOffset = if (firstOnLine.continuesAtStart) {
+                checkNotNull(snapshot.previous).utf16Offset
+            } else 0L
+            cursor.utf16Offset == Math.addExact(startingOffset,
+                Math.subtractExact(last.globalUtf16End, firstOnLine.globalUtf16Start))
+        }
+        check(snapshot.next == expectedNext ||
+            (terminalReverseEnd != null && snapshot.next == terminalReverseEnd)) {
             "next viewport cursor does not match the last block"
         }
     }
@@ -2980,7 +3034,6 @@ internal constructor(
             require(text.hasWellFormedUtf16()) {
                 "transient text contains an unpaired surrogate"
             }
-            require('\r' !in text) { "transient text contains a carriage return" }
             val document = RustDocument.createEmpty()
             try {
                 val metrics = appendTransientText(document = document, text = text)
@@ -3005,7 +3058,7 @@ internal constructor(
     }
 }
 
-/** Appends bounded scalar-safe chunks and returns the resulting transient document metrics. */
+/** Normalizes received line breaks and appends bounded scalar-safe chunks. */
 internal fun appendTransientText(document: EditorDocument, text: String): DocumentMetrics {
     if (text.isEmpty()) {
         return document.replace(
@@ -3014,25 +3067,18 @@ internal fun appendTransientText(document: EditorDocument, text: String): Docume
             replacement = ""
         )
     }
-    var offset = 0
     var revision = INITIAL_DOCUMENT_REVISION
     var documentEnd = 0L
     var metrics: DocumentMetrics? = null
-    while (offset < text.length) {
-        var end = minOf(Math.addExact(offset, EDIT_DRAFT_MAX_UTF16_UNITS), text.length)
-        if (end < text.length && text[end - 1].isHighSurrogate()) {
-            end -= 1
-        }
-        check(end > offset) { "transient text chunk must make progress" }
+    DocumentInsertion(text).forEachChunk { chunk ->
         metrics =
             document.replace(
                 expectedRevision = revision,
                 range = Utf16Range(start = documentEnd, end = documentEnd),
-                replacement = text.substring(offset, end)
+                replacement = chunk
             )
-        revision = metrics.revision
-        documentEnd = metrics.utf16Length
-        offset = end
+        revision = checkNotNull(metrics).revision
+        documentEnd = checkNotNull(metrics).utf16Length
     }
     return checkNotNull(metrics) { "non-empty transient text produced no document metrics" }
 }

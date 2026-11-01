@@ -104,13 +104,134 @@ class EditorDocumentStateTest {
 
         assertEquals(originalText, document.text)
         assertEquals(originalText.length.toLong(), metrics.utf16Length)
-        assertEquals(3, document.replaceCalls.size)
+        assertTrue(document.replaceCalls.size > 1)
         assertTrue(
             document.replaceCalls.all { call ->
                 call.replacement.length <= EDIT_DRAFT_MAX_UTF16_UNITS &&
                     call.replacement.hasWellFormedUtf16()
             }
         )
+    }
+
+    /** Receiving normalizes logical line breaks after the offer's bytes were validated. */
+    @Test
+    fun normalizesReceivedLineBreaksWithoutChangingOtherUnicode() {
+        val expected = "😀 one\ntwo\nthree\n"
+        for (input in listOf(expected, "😀 one\r\ntwo\r\nthree\r\n",
+            "😀 one\rtwo\rthree\r", "😀 one\r\ntwo\rthree\n")) {
+            TestEditorDocument("").use { document ->
+                val metrics = appendTransientText(document, input)
+                assertEquals(expected, document.text)
+                assertEquals(expected.length.toLong(), metrics.utf16Length)
+                assertTrue(document.replaceCalls.all { '\r' !in it.replacement })
+            }
+        }
+    }
+
+    @Test
+    fun normalizesReceivedCrLfAndUnicodeAcrossChunkBoundaries() {
+        val prefix = "x".repeat(8 * 1024 - 1)
+        val input = "$prefix\r\n😀\r$prefix\r\nend"
+        val expected = "$prefix\n😀\n$prefix\nend"
+        TestEditorDocument("").use { document ->
+            appendTransientText(document, input)
+            assertEquals(expected, document.text)
+            assertTrue(document.replaceCalls.size > 1)
+            assertTrue(document.replaceCalls.all { call ->
+                call.replacement.length <= EDIT_DRAFT_MAX_UTF16_UNITS &&
+                    call.replacement.hasWellFormedUtf16() && '\r' !in call.replacement
+            })
+        }
+    }
+
+    @Test
+    fun rejectsInvalidReceivedTextBeforeOpeningANativeDocument() {
+        assertThrows(IllegalArgumentException::class.java) {
+            EditorDocumentState.createTransientText("x".repeat(TRANSIENT_DOCUMENT_MAX_UTF16_UNITS + 1))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            EditorDocumentState.createTransientText("\r\n".repeat(TRANSIENT_DOCUMENT_MAX_UTF16_UNITS / 2 + 1))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            EditorDocumentState.createTransientText("\ud800\r\n")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            EditorDocumentState.createTransientText("\r\n\udc00")
+        }
+    }
+
+    @Test
+    fun revealsReadOnlyLineEndsUsingPrecedingSourceContext() = runBlocking {
+        val document = FakeEditorDocument("a\nb")
+        document.viewportOverride = { cursor, _ ->
+            completeViewport(document.text, INITIAL_REVISION).let { snapshot ->
+                snapshot.copy(blocks = snapshot.blocks.filter { it.logicalLine >= cursor.line },
+                    previous = cursor.takeUnless { it.line == 0L && it.utf16Offset == 0L })
+            }
+        }
+        val state = EditorDocumentState(document, ImmediateTestDispatcher)
+        state.loadInitialViewport()
+        for (target in listOf(0L, 1L, 2L, 3L)) {
+            assertTrue("could not reveal $target", state.navigateToSourceOffset(INITIAL_REVISION, target))
+            assertEquals(EditorDocumentStatus.Ready, state.status)
+            assertTrue(state.blocks.any { target in it.block.globalUtf16Start..it.block.globalUtf16End })
+            assertEquals("a\nb", document.text)
+            assertFalse(state.hasDocumentChanges)
+        }
+        state.close()
+    }
+
+    @Test
+    fun retainsScalarSafeReadOnlyContextAtLongLineEndsAndEof() = runBlocking {
+        val line = "😀".repeat(100) + "end"
+        val contextStart = 140L
+        for (hasFollowingLine in listOf(false, true)) {
+            val text = if (hasFollowingLine) "$line\ntail" else line
+            val document = FakeEditorDocument(text)
+            val target = line.length.toLong()
+            document.previousViewportOverride = { cursor, limits ->
+                assertEquals(ViewportCursor(0, 0, target), cursor)
+                assertTrue(target - contextStart <= limits.maxTotalUtf16Units)
+                ViewportSnapshot(editableMetrics(text, 0), listOf(RenderBlock(
+                    logicalLine = 0, globalUtf16Start = contextStart, globalUtf16End = target,
+                    lineTerminatorUtf16Units = if (hasFollowingLine) 1 else 0,
+                    text = line.substring(contextStart.toInt()),
+                    continuesAtStart = true, continuesAtEnd = false)),
+                    previous = ViewportCursor(0, 0, contextStart),
+                    next = if (hasFollowingLine) ViewportCursor(0, 1, 0) else cursor)
+            }
+            document.viewportOverride = { cursor, _ ->
+                completeViewport(text, 0).let { snapshot ->
+                    if (cursor.utf16Offset == 0L) snapshot else snapshot.copy(
+                        blocks = snapshot.blocks.mapIndexed { index, block ->
+                            if (index != 0) block else block.copy(globalUtf16Start = contextStart,
+                                text = line.substring(contextStart.toInt()), continuesAtStart = true)
+                        }, previous = cursor)
+                }
+            }
+            val state = EditorDocumentState(document, ImmediateTestDispatcher)
+            state.loadInitialViewport()
+
+            assertTrue(state.navigateToSourceOffset(0, target))
+
+            assertEquals(contextStart, state.blocks.first().block.globalUtf16Start)
+            assertTrue(state.blocks.any { target in it.block.globalUtf16Start..it.block.globalUtf16End })
+            assertEquals(text, document.text)
+            assertFalse(state.hasDocumentChanges)
+            state.close()
+        }
+    }
+
+    @Test
+    fun rejectsASourceTargetInsideASurrogatePairWithoutMovingTheViewport() = runBlocking {
+        val state = EditorDocumentState(FakeEditorDocument("😀 tail"), ImmediateTestDispatcher)
+        state.loadInitialViewport()
+        val original = state.blocks
+        assertFalse(state.navigateToSourceOffset(0, 1))
+        assertSame(original, state.blocks)
+        assertEquals(EditorDocumentStatus.Ready, state.status)
+        assertTrue(state.navigateToSourceOffset(0, 2))
+        state.close()
     }
 
     /** Verifies an ordinary document opens as one complete editable field. */

@@ -87,7 +87,9 @@ internal class SelectionTextMeasurement(
     val layout: TextLayoutResult,
     val position: Offset,
     val point: (Int) -> SelectionPoint,
-    val offset: (SelectionPoint) -> Int?
+    val offset: (SelectionPoint) -> Int?,
+    val sourceFindDecoration: SourceFindDecoration? = null,
+    val sourceIsCurrent: () -> Boolean = { true }
 ) {
     val bounds get() = Rect(position, androidx.compose.ui.geometry.Size(layout.size.width.toFloat(), layout.size.height.toFloat()))
     fun at(window: Offset): Int {
@@ -229,7 +231,9 @@ internal fun Modifier.documentSelectionText(
     offset: (SelectionPoint) -> Int?,
     nativeSelection: Boolean = false,
     additionalActions: List<CustomAccessibilityAction> = emptyList(),
-    contentOffset: () -> Offset = { Offset.Zero }
+    contentOffset: () -> Offset = { Offset.Zero },
+    sourceFindDecoration: SourceFindDecoration? = null,
+    sourceIsCurrent: () -> Boolean = { true }
 ): Modifier {
     val registry = LocalDocumentSelectionLayout.current
         ?: return if (additionalActions.isEmpty()) this else semantics { customActions = additionalActions }
@@ -237,11 +241,13 @@ internal fun Modifier.documentSelectionText(
     val currentContentOffset by rememberUpdatedState(contentOffset)
     val currentPoint by rememberUpdatedState(point)
     val currentOffset by rememberUpdatedState(offset)
-    LaunchedEffect(registry, key, layout, position) {
+    val currentSourceIsCurrent by rememberUpdatedState(sourceIsCurrent)
+    LaunchedEffect(registry, key, layout, position, sourceFindDecoration) {
         val origin = position ?: return@LaunchedEffect
         if (layout == null) return@LaunchedEffect
         snapshotFlow { currentContentOffset() }.collect { displacement ->
-            registry.texts[key] = SelectionTextMeasurement(layout, origin + displacement, currentPoint, currentOffset)
+            registry.texts[key] = SelectionTextMeasurement(layout, origin + displacement,
+                currentPoint, currentOffset, sourceFindDecoration, { currentSourceIsCurrent() })
         }
     }
     DisposableEffect(registry, key) { onDispose { registry.texts.remove(key) } }
@@ -392,12 +398,22 @@ internal fun DocumentSelectionHost(session: EditorSession, modifier: Modifier = 
                     drawPath(text.layout.getPathForRange(range.min, range.max), color.copy(alpha = .25f))
                 }
             }
-            if (session.isFindVisible) session.findResults.filter { it.source?.let { range -> range.start == range.end } == true }.forEach { result ->
-                val point = SelectionPoint.Source(result.source!!.start)
-                registry.texts.values.firstNotNullOfOrNull { text -> text.offset(point)?.let { offset -> text to offset } }?.let { (text, offset) ->
-                    val rect = text.layout.getCursorRect(offset)
-                    val origin = text.position - root.topLeft
-                    drawLine(color, origin + rect.topLeft, origin + rect.bottomLeft, 2.dp.toPx())
+            val revision = session.state.metrics?.revision
+            if (session.isFindVisible && !session.state.hasActiveDraftChanges && revision != null) {
+                val findTexts = registry.texts.values.filter { text ->
+                    text.sourceFindDecoration?.matchesSource(revision,
+                        text.layout.layoutInput.text, text.sourceIsCurrent()) == true
+                }
+                session.findResults.filter { it.source?.let { range -> range.start == range.end } == true }.forEach { result ->
+                    val point = SelectionPoint.Source(result.source!!.start)
+                    findTexts.firstNotNullOfOrNull { text ->
+                        text.sourceFindDecoration?.markerOffset(text.offset(point))
+                            ?.let { offset -> text to offset }
+                    }?.let { (text, offset) ->
+                        val rect = text.layout.getCursorRect(offset)
+                        val origin = text.position - root.topLeft
+                        drawLine(color, origin + rect.topLeft, origin + rect.bottomLeft, 2.dp.toPx())
+                    }
                 }
             }
         }

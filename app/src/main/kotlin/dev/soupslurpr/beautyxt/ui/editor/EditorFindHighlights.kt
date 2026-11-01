@@ -12,6 +12,17 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import dev.soupslurpr.beautyxt.document.Utf16Range
+import dev.soupslurpr.beautyxt.document.isScalarBoundary
+
+/** Binds source position decoration to the exact text that produced its offsets. */
+internal data class SourceFindDecoration(val revision: Long, val text: String) {
+    fun matchesSource(currentRevision: Long, layoutText: CharSequence,
+        isCurrent: Boolean): Boolean = revision == currentRevision && isCurrent && layoutText.contentEquals(text)
+
+    fun markerOffset(mappedOffset: Int?): Int? = mappedOffset?.takeIf {
+        it in 0..text.length && text.isScalarBoundary(it)
+    }
+}
 
 /** Keeps only the coverage belonging to this query, revision, and displayed source. */
 @Composable
@@ -20,7 +31,9 @@ internal fun rememberFindHighlights(
     revision: Long,
     range: Utf16Range
 ): List<TextRange> {
-    if (!session.isFindVisible || session.state.metrics?.revision != revision) return emptyList()
+    if (!session.isFindVisible || session.state.metrics?.revision != revision ||
+        session.state.hasActiveDraftChanges
+    ) return emptyList()
     return session.findResults.asSequence().filter { it.representation == SearchRepresentation.Source }
         .mapNotNull { result ->
             val matched = result.source ?: return@mapNotNull null

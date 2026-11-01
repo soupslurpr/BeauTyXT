@@ -109,6 +109,8 @@ internal class ActiveEditDraft(
     private var lastObservedText = initialEdit.snapshot.text
     private var lastObservedSelection = textFieldState.selection
     private var pendingHistorySelectionBefore: TextRange? = null
+    private var submittedText: String? = null
+    private var pendingRemainderSelectionBefore: TextRange? = null
     private var lastObservedComposition: TextRange? = null
     private var editorFocused by mutableStateOf(false)
     private var focusRestorationSelection = textFieldState.selection
@@ -207,6 +209,11 @@ internal class ActiveEditDraft(
             focusRestorationSelection = value.selection
         }
         if (value.text != lastObservedText) {
+            if (submittedText != null && pendingRemainderSelectionBefore == null &&
+                lastObservedText == submittedText
+            ) {
+                pendingRemainderSelectionBefore = lastObservedSelection
+            }
             if (
                 pendingHistorySelectionBefore == null &&
                 lastObservedText.contentEquals(edit.snapshot.text)
@@ -224,6 +231,9 @@ internal class ActiveEditDraft(
         }
         if (value.text.contentEquals(edit.snapshot.text)) {
             pendingHistorySelectionBefore = null
+        }
+        if (value.text == submittedText) {
+            pendingRemainderSelectionBefore = null
         }
         if (value.composition != lastObservedComposition) {
             lastObservedComposition = value.composition
@@ -243,6 +253,19 @@ internal class ActiveEditDraft(
         selection = textFieldState.selection,
         composition = textFieldState.composition
     )
+
+    /** Keeps the selection before input that arrives during this exact native submission. */
+    fun beginSynchronization(value: ActiveEditFieldValue) {
+        check(submittedText == null) { "a draft synchronization is already in flight" }
+        submittedText = value.text
+        pendingRemainderSelectionBefore = null
+    }
+
+    /** Releases submission metadata after reconciliation or a failed native operation. */
+    fun finishSynchronization() {
+        submittedText = null
+        pendingRemainderSelectionBefore = null
+    }
 
     /** Rolls back only the exact rejected submission, never text typed afterward. */
     fun rejectSubmittedChange(submitted: ActiveEditFieldValue): Boolean {
@@ -283,10 +306,16 @@ internal class ActiveEditDraft(
         if (committedEdit.snapshot.metrics.revision != edit.snapshot.metrics.revision) {
             viewportAnchor = null
         }
+        val previousText = edit.snapshot.text
         edit = committedEdit
         lastObservedText = textFieldState.text.toString()
         lastObservedSelection = textFieldState.selection
-        pendingHistorySelectionBefore = null
+        pendingHistorySelectionBefore = when {
+            lastObservedText == committedEdit.snapshot.text -> null
+            submittedText == committedEdit.snapshot.text -> pendingRemainderSelectionBefore
+            previousText == committedEdit.snapshot.text -> pendingHistorySelectionBefore
+            else -> null
+        }
     }
 
     /** Advances one clean automatic handoff without replacing Compose interaction state. */

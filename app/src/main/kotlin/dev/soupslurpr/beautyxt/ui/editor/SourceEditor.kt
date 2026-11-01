@@ -770,6 +770,7 @@ private fun ReadOnlyBlock(
             )
             ReadOnlyBlockText(
                 text = block.text,
+                revision = revision,
                 globalStart = block.globalUtf16Start,
                 highlights = highlights,
                 highlightRange = highlightRange,
@@ -790,6 +791,7 @@ private fun ReadOnlyBlock(
             )
             ReadOnlyBlockText(
                 text = block.text,
+                revision = revision,
                 globalStart = block.globalUtf16Start,
                 highlights = highlights,
                 highlightRange = highlightRange,
@@ -805,6 +807,7 @@ private fun ReadOnlyBlock(
 @Composable
 private fun ReadOnlyBlockText(
     text: String,
+    revision: Long,
     globalStart: Long,
     highlights: List<TextRange>,
     highlightRange: TextRange?,
@@ -815,7 +818,8 @@ private fun ReadOnlyBlockText(
     var selectionLayout by remember(globalStart, text) { mutableStateOf<TextLayoutResult?>(null) }
     val selectionModifier = Modifier.documentSelectionText("source-$globalStart", selectionLayout,
         point = { SelectionPoint.Source(globalStart + it) },
-        offset = { (it as? SelectionPoint.Source)?.offset?.takeIf { offset -> offset in globalStart..globalStart + text.length }?.let { (it - globalStart).toInt() } })
+        offset = { (it as? SelectionPoint.Source)?.offset?.takeIf { offset -> offset in globalStart..globalStart + text.length }?.let { (it - globalStart).toInt() } },
+        sourceFindDecoration = SourceFindDecoration(revision, text))
     val currentOnTextContentPositioned by rememberUpdatedState(onTextContentPositioned)
     val styles = findHighlightStyles()
     val renderedText =
@@ -870,7 +874,9 @@ private fun ActiveEditWindowEditor(
         point = { SelectionPoint.Source(edit.snapshot.range.start + it) },
         offset = { (it as? SelectionPoint.Source)?.offset?.takeIf { offset -> offset in edit.snapshot.range.start..edit.snapshot.range.end }
             ?.let { (it - edit.snapshot.range.start).toInt() } },
-        contentOffset = { androidx.compose.ui.geometry.Offset(selectionInset, selectionInset - draft.scrollState.value) }
+        contentOffset = { androidx.compose.ui.geometry.Offset(selectionInset, selectionInset - draft.scrollState.value) },
+        sourceFindDecoration = SourceFindDecoration(edit.snapshot.metrics.revision, edit.snapshot.text),
+        sourceIsCurrent = { draft.edit == edit && draft.textFieldState.text.contentEquals(edit.snapshot.text) }
     )
     val highlights = rememberFindHighlights(
         session = session,
