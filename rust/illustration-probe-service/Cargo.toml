@@ -1,6 +1,7 @@
 [package]
 name = "beautyxt-illustration-probe-service"
 version = "0.1.0"
+build = "../native-service/build-service.rs"
 description = "Debug-only native worker crash and hard-deadline fixture"
 edition.workspace = true
 license.workspace = true

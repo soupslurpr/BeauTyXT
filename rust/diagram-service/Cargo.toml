@@ -1,6 +1,7 @@
 [package]
 name = "beautyxt-diagram-service"
 version = "0.1.0"
+build = "../native-service/build-service.rs"
 edition.workspace = true
 license = "MIT AND Apache-2.0"
 publish.workspace = true

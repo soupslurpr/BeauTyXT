@@ -1,6 +1,7 @@
 [package]
 name = "beautyxt-export-service"
 version = "0.1.0"
+build = "../native-service/build-service.rs"
 description = "ART-free Android service for isolated BeauTyXT exports"
 edition.workspace = true
 license.workspace = true
