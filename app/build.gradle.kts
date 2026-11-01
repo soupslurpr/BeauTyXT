@@ -552,6 +552,7 @@ androidComponents {
     val rustupHome =
         System.getenv("RUSTUP_HOME")?.takeIf(String::isNotBlank)
             ?: File(userHome, ".rustup").absolutePath
+    // rustc uses the last matching prefix, so keep specific mappings last.
     val releasePathMappings =
         listOf(
             rustWorkspace.asFile.absolutePath to "beautyxt",
@@ -559,7 +560,7 @@ androidComponents {
             rustupHome to "rustup-home",
             userHome to "build-home"
         ).distinctBy { (buildPath, _) -> buildPath }
-            .sortedByDescending { (buildPath, _) -> buildPath.length }
+            .sortedBy { (buildPath, _) -> buildPath.length }
     val encodedRustFlags =
         providers.environmentVariable("CARGO_ENCODED_RUSTFLAGS").map { flags ->
             flags.split(RustFlagEncoding.SEPARATOR).filter(String::isNotBlank)
