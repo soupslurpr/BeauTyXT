@@ -188,7 +188,7 @@ the export settings with a real landscape keyboard; repeat it in a fresh
 instrumentation process at enlarged system font sizes.
 The opt-in
 `physical NFC excerpt` phase requires NFC enabled and a writable spare tag. It
-writes only `BeauTyXT NFC excerpt test.` with label `TEST`, then waits for a
+writes only `BeauTyXT NFC excerpt test.` with label `TST`, then waits for a
 second tap through the production reader and checks the exact selected text.
 
 The opt-in `staging editing profile` phase drives the separately installed

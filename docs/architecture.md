@@ -78,13 +78,14 @@ explicit share-intent integration. Only this
 Android integration layer handles a user-authorized URI. It never gives a
 worker a URI or filesystem path. It opens the URI and gives each worker only
 the job-specific descriptor and access mode that operation requires. During
-import, the integration layer retains the provider descriptor until the worker
-returns a terminal result so reliable provider errors remain authoritative,
-then closes it. The exact selected content URI remains only in the live editor
-so it can open a fresh descriptor for each source save. The application never
-persists that URI or its grant, does not copy it into Android instance state,
-and forgets the in-process capability when the editor closes. Android retains
-control of the temporary task-scoped grant; the app does not call broad
+import, a one-shot Binder parcel transfers the provider descriptor and its
+reliable status channel to the worker, closing the integration layer's local
+owner. The worker checks reliable provider errors and closes both descriptors
+at the terminal boundary. The exact selected content URI remains only in the
+live editor so it can open a fresh descriptor for each source save. The
+application never persists that URI or its grant, does not copy it into Android
+instance state, and forgets the in-process capability when the editor closes.
+Android retains control of the temporary task-scoped grant; the app does not call broad
 URI-revocation APIs that can affect other matching grants.
 
 Source and destination descriptor acquisition share four process-wide worker
@@ -106,9 +107,13 @@ source. It then gives the isolated export worker only that package, optional
 immutable backing, and one fresh source descriptor. Retained-source autosave
 requires the provider to return a seekable regular descriptor with exact
 read-write access and to support flush and filesystem synchronization. A
-provider that exposes only a pipe or does not support these operations cannot
-be an autosave source; its selected URI capability remains owned by a view-only
-editor until that editor closes. Save as editable writes and verifies a
+provider that exposes only a pipe cannot be an autosave source; its selected
+URI capability remains owned by a view-only editor until that editor closes.
+The initial non-destructive editability probe checks open flags, regular-file
+type, and seeking. Synchronization and fresh-read availability are verified
+during each save rather than promised by that initial probe; failures retain
+the in-memory revision and follow the save-recovery policy below.
+Save as editable writes and verifies a
 compatible new source before the editor accepts changes, leaving the original
 source unchanged.
 During Save a copy, the application rejects an exact retained-source URI match,
@@ -183,6 +188,15 @@ descriptor ownership, serial admission, and callback-death cancellation. The
 pinned NDK r30 targets native API 37, matching the app's minimum OS. The editor
 and print bridges still use JNI in the application process. A compromised
 worker gains neither the app's identity nor another worker's authority.
+
+Native service entry libraries, including the debug hard-stop probe, retain
+their executable and static mappings with ELF `DF_1_NODELETE` until their
+isolated process exits. The native runtime can `dlclose` its service handle
+after `onDestroy` returns; cancellation does not join detached jobs or drain
+pending Binder death-recipient callbacks. Keeping mappings resident covers
+those code lifetimes without waiting on provider I/O on the main thread.
+Fresh private worker processes bound this retention; job cancellation,
+descriptor cleanup, and process release remain separate requirements.
 
 Reliable descriptors transfer their data and status handles separately. The
 ordinary NDK parcel-file-descriptor reader detaches a reliable descriptor's
@@ -554,17 +568,42 @@ A narrow semantic HTML subset converts nested sections, paragraphs, headings,
 quotes, lists, preformatted code, tables, links, line breaks, images, emphasis,
 deletion, superscript, and subscript to the same model. Only link destinations
 and titles, image sources, alternative text and titles, and ordered-list start
-values are parsed. Image sources are discarded, never fetched, and represented
+values are parsed. Structural ordered-list numbers are limited to nine decimal
+digits, including subsequent item numbers; larger lists remain inert source.
+Image sources are discarded, never fetched, and represented
 by labeled alternative text. Unsupported tags and every other attribute,
 including CSS and event handlers, remain inert source text.
 
 Rendering is limited to 16 MiB of source, 16,384 blocks, 131,072 spans, and
 bounded nesting, metadata, links, and output size. Every worker-emitted text
 block is at most 4 KiB of UTF-8. Compose lays out those blocks and bounded table
-runs lazily. Complete supported diagram fences can join their fragments within
+runs lazily. Table rows carry explicit structural separator positions so literal
+tabs remain cell data. Source maps may leave generated text unmapped; exact
+source-selection actions require complete, monotonic coverage of the selected
+text. Structural HTML with only enclosing provenance supports approximate
+source navigation rather than an exact selected source range.
+Selected list output preserves explicit item ancestry. Placement of an untyped
+child block requires unambiguous, strict source containment; equal enclosing
+HTML ranges do not establish a parent. Such content remains standalone rather
+than acquiring an inferred list owner.
+The ephemeral render protocol uses version 6 (`BTXTMDR6`). Its 72-byte block
+header carries the alert owner's quote depth at byte offset 68, separately from
+the content's quote depth. Zero means no alert; an alert owner must be within
+the content's quote depth and the existing nesting limit. Producer and consumer
+upgrade together and reject earlier packet versions. Selected output uses this
+owner depth to retain enclosing alerts when their first selected content is
+nested more deeply, including when an inner alert returns to an outer alert.
+An item continuation whose first paragraph is absent remains ordinary prose
+at its authored quote depth, without importing the missing marker or parent.
+Complete supported diagram fences can join their fragments within
 the separate 16 KiB illustration limit. Native TeX and supported Mermaid
 appearances use the separate workers, source-preserving fallback, and
 accessibility alternatives described in [native illustrations](native-illustrations.md).
+If joining or cache eviction changes the text slots used by a reading
+selection, the selection clears with a request to select again. An affected
+captured reading Find scope pauses. Output actions check this projection before
+using it, including before the UI observes a cache update; unrelated selections
+and unchanged projections survive cache refreshes.
 
 Link destinations become accessible native Compose links. Lazy grouping and
 local heading and footnote indexes are prepared off the UI thread once per
@@ -685,6 +724,11 @@ HTML styles preserve clipped whitespace and adjacent runs. Unselected body text
 is not imported to repair links or headings. Source formatting is offered only
 for a precisely mapped visible passage. Preview additions and removed links
 are shown before handoff; document edits require an explicit preview refresh.
+Generated list markers preserve derived numbering beyond nine digits when the
+retained group begins with a supported start. If a selection instead starts a
+group above 999,999,999, formatted output requests an earlier item or text
+output rather than reparsing an invalid starting marker. Whole-source export
+and whole-document PDF do not need that generated starting marker.
 
 PDF exports reuse the native text/vector print path, with real URI and internal
 GoTo annotations. Internal links are resolved against the pages actually emitted;
@@ -727,6 +771,11 @@ or Markdown format. NFC can also receive a deliberately narrow set of standard
 NDEF text representations. The transfer service runs separately from the
 document and Markdown processes. It receives only bounded anonymous
 descriptors and has no network or storage authority.
+
+The reviewed transfer text remains exact until the user confirms Open. Opening
+it creates an unsaved editor with LF-normalized logical text, as for other
+transient documents. This does not alter the sender's bytes or a provider-backed
+source's preserved line-ending format.
 
 QR sharing accepts at most 1,536 UTF-8 bytes and returns a packed module grid
 for direct Compose drawing. Foreground scanning requires camera consent, copies
