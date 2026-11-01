@@ -1042,7 +1042,12 @@ class EditorSessionTest {
                 composition = TextRange(start = 0, end = OVERLAPPING_FIND_QUERY.length)
             )
 
-        assertTrue(session.updateFindFieldValue(composingValue))
+        session.findFieldState.edit {
+            replace(0, length, composingValue.text)
+            selection = composingValue.selection
+        }
+        session.findFieldState.retainCompositionForTest(requireNotNull(composingValue.composition))
+        session.synchronizeFindInputs()
         assertEquals(composingValue, session.findFieldValue)
         assertNull(session.findMatch)
         assertTrue(session.findResults.isNotEmpty())
@@ -1057,7 +1062,8 @@ class EditorSessionTest {
                 selection = TextRange(OVERLAPPING_FIND_QUERY.length),
                 composition = null
             )
-        assertTrue(session.updateFindFieldValue(committedValue))
+        session.findFieldState.edit { selection = committedValue.selection }
+        session.synchronizeFindInputs()
         assertEquals(committedValue, session.findFieldValue)
         assertNull(session.findMatch)
         assertTrue(session.findResults.isNotEmpty())

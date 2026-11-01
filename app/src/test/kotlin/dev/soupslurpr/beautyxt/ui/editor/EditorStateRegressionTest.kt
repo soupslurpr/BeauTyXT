@@ -1,6 +1,7 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import dev.soupslurpr.beautyxt.document.EditorDocument
 import dev.soupslurpr.beautyxt.document.ViewportCursor
 import dev.soupslurpr.beautyxt.testing.QueuedSessionTestDispatcher
@@ -12,12 +13,118 @@ import kotlinx.coroutines.CoroutineDispatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Exercises reads and input observations on both sides of native edit publication. */
 class EditorStateRegressionTest {
+    @Test
+    fun anObsoleteFindPositionFailureCannotClearANewerQuery() {
+        RegressionSession("alpha beta", failPositionRead = true).use { fixture ->
+            val session = fixture.session
+            assertTrue(session.showFind(showKeyboard = false))
+            assertTrue(session.updateFindFieldValue(TextFieldValue("beta")))
+            fixture.drain()
+            assertTrue(session.findNext())
+            assertEquals(1, fixture.worker.pendingCount)
+            assertTrue(session.updateFindFieldValue(TextFieldValue("alpha")))
+            fixture.operations.runAll()
+            while (fixture.worker.pendingCount > 1) {
+                fixture.worker.runNewest()
+                fixture.operations.runAll()
+            }
+            assertTrue(session.isFindComplete)
+            val currentResults = session.findResults
+            val currentStatus = session.findStatus
+
+            fixture.drain()
+
+            assertEquals("alpha", session.findFieldValue.text)
+            assertEquals(currentResults, session.findResults)
+            assertEquals(currentStatus, session.findStatus)
+            assertTrue(session.isFindComplete)
+            assertEquals(EditorDocumentStatus.Ready, session.state.status)
+        }
+    }
+
+    @Test
+    fun anObsoleteFindPositionCannotInvalidateANewerCommittedEditor() {
+        for (editFirst in listOf(false, true)) {
+            for (closeFind in listOf(false, true)) {
+                RegressionSession("alpha beta").use { fixture ->
+                    val session = fixture.session
+                    assertTrue(session.showFind(showKeyboard = false))
+                    assertTrue(session.updateFindFieldValue(TextFieldValue("beta")))
+                    fixture.drain()
+                    assertTrue(session.findNext())
+                    assertEquals(1, fixture.worker.pendingCount)
+                    if (closeFind) session.closeFind()
+
+                    val draft = requireNotNull(session.activeDraft)
+                    draft.textFieldState.edit { replace(0, 1, "A"); selection = TextRange(1) }
+                    session.observeActiveEdit(draft, draft.captureFieldValue())
+                    fixture.operations.runAll()
+                    assertEquals(2, fixture.worker.pendingCount)
+                    assertEquals(EditorDocumentStatus.ApplyingEdit, session.state.status)
+                    if (editFirst) {
+                        fixture.worker.runNewest()
+                        fixture.operations.runAll()
+                        assertEquals(1L, session.state.metrics?.revision)
+                        // Finish the new query while the old position read remains queued.
+                        while (fixture.worker.pendingCount > 1) {
+                            fixture.worker.runNewest()
+                            fixture.operations.runAll()
+                        }
+                    }
+                    val currentResults = session.findResults
+                    val currentStatus = session.findStatus
+                    fixture.drain()
+
+                    assertEquals("Alpha beta", fixture.document.text)
+                    assertEquals(EditorDocumentStatus.Ready, session.state.status)
+                    assertEquals(1L, session.state.metrics?.revision)
+                    assertSame(draft, session.activeDraft)
+                    assertFalse(draft.hasChanges)
+                    assertTrue(session.canUndo)
+                    if (editFirst) {
+                        assertEquals(currentResults, session.findResults)
+                        assertEquals(currentStatus, session.findStatus)
+                    }
+                    if (closeFind) {
+                        assertFalse(session.isFindVisible)
+                        assertEquals(FindStatus.Idle, session.findStatus)
+                    } else {
+                        assertTrue(session.isFindComplete)
+                        assertEquals(1, session.findResults.size)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun aCurrentFindPositionStillDetectsRealNativeDivergence() {
+        RegressionSession("alpha beta").use { fixture ->
+            val session = fixture.session
+            assertTrue(session.showFind(showKeyboard = false))
+            assertTrue(session.updateFindFieldValue(TextFieldValue("beta")))
+            fixture.drain()
+            fixture.document.advanceExternally(7)
+
+            assertTrue(session.findNext())
+            fixture.drain()
+
+            assertEquals(EditorDocumentStatus.Stale, session.state.status)
+            assertTrue(session.findStatus is FindStatus.Failed)
+            assertTrue(session.findResults.isEmpty())
+            assertNull(session.state.metrics)
+            assertNull(session.activeDraft)
+            assertEquals("alpha beta", fixture.document.text)
+        }
+    }
+
     @Test
     fun overlappingCommitsRetainTheSelectionBeforeTheRemainingEdit() {
         for (selectionBeforeSecondEdit in listOf(TextRange(0), TextRange(1, 3), TextRange(3, 1))) {
