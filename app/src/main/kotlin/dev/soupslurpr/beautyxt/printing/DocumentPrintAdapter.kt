@@ -10,6 +10,8 @@ import android.print.PrintAttributes
 import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
 import androidx.annotation.StringRes
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import dev.soupslurpr.beautyxt.R
 import java.io.BufferedOutputStream
 import java.io.IOException
@@ -62,10 +64,30 @@ internal class DocumentPrintAdapter(
     private val operationScope = CoroutineScope(SupervisorJob() + workerDispatcher)
     private var pageLayout: PrintRasterLayout? = null
     private var activeWrite: ActivePrintWrite? = null
+    private var ownerLifecycle: Lifecycle? = null
+    private val destroyObserver = LifecycleEventObserver { _, event ->
+        if (event == Lifecycle.Event.ON_DESTROY) close()
+    }
 
     init {
         require(jobName.isNotBlank()) { "print job name must not be blank" }
         require(documentName.isNotBlank()) { "printed document name must not be blank" }
+    }
+
+    /** Releases a pending snapshot if the print Activity dies before Android calls onFinish. */
+    fun closeOnLifecycleDestroy(lifecycle: Lifecycle) {
+        check(lifecycle.currentState != Lifecycle.State.DESTROYED) {
+            "print activity lifecycle is destroyed"
+        }
+        synchronized(adapterLock) {
+            check(!closed.get()) { "print adapter is closed" }
+            check(ownerLifecycle == null) { "print adapter already has an activity owner" }
+            ownerLifecycle = lifecycle
+        }
+        lifecycle.addObserver(destroyObserver)
+        if (lifecycle.currentState == Lifecycle.State.DESTROYED) close()
+        if (closed.get()) lifecycle.removeObserver(destroyObserver)
+        check(!closed.get()) { "print adapter is closed" }
     }
 
     /** Validates one printer configuration without reading document content. */
@@ -189,6 +211,8 @@ internal class DocumentPrintAdapter(
         }
         val write =
             synchronized(adapterLock) {
+                ownerLifecycle?.removeObserver(destroyObserver)
+                ownerLifecycle = null
                 pageLayout = null
                 activeWrite.also { activeWrite = null }
             }

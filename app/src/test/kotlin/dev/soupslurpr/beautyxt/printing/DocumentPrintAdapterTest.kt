@@ -9,10 +9,38 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 /** Verifies print-adapter lifecycle invariants independent of Android's hidden callbacks. */
 class DocumentPrintAdapterTest {
+    /** Neither a null result nor an exception transfers snapshot ownership to Android. */
+    @Test
+    fun rejectedPrintLaunchClosesTheResourceOnce() {
+        for (throws in listOf(false, true)) {
+            var closes = 0
+            val owner = AutoCloseable { closes++ }
+            assertThrows(IllegalStateException::class.java) {
+                handOffPrintResource<AutoCloseable, Any>(owner) {
+                    if (throws) error("synthetic print launch failure") else null
+                }
+            }
+            assertEquals(1, closes)
+        }
+    }
+
+    /** A real accepted owner retains the snapshot until its lifecycle ends. */
+    @Test
+    fun acceptedPrintLaunchTransfersOwnership() {
+        var closes = 0
+        val owner = AutoCloseable { closes++ }
+        val accepted = Any()
+        assertSame(accepted, handOffPrintResource(owner) { accepted })
+        assertEquals(0, closes)
+        owner.close()
+        assertEquals(1, closes)
+    }
+
     /** Verifies cancellation before worker entry still closes the transferred destination. */
     @Test
     fun closesDestinationWhenCancelledBeforeStarting() = runBlocking {
