@@ -5,9 +5,29 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.style.TextDecoration
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EditorFindHighlightsTest {
+    @Test
+    fun positionMarkersRequireCurrentSourceTextAndRevision() {
+        val decoration = SourceFindDecoration(4, "abc")
+        assertTrue(decoration.matchesSource(4, "abc", true))
+        assertFalse(decoration.matchesSource(5, "abc", true))
+        assertFalse(decoration.matchesSource(4, "ab", true))
+        assertFalse(decoration.matchesSource(4, "xyz", true))
+        // The old layout may still exist after the field changes.
+        assertFalse(decoration.matchesSource(4, "abc", false))
+        assertEquals(3, decoration.markerOffset(3))
+        assertNull(decoration.markerOffset(-1))
+        assertNull(decoration.markerOffset(4))
+        assertNull(decoration.markerOffset(null))
+        assertEquals(0, SourceFindDecoration(4, "").markerOffset(0))
+        assertNull(SourceFindDecoration(4, "😀").markerOffset(1))
+    }
+
     /** Verifies an active overlapping match wins without changing any source character. */
     @Test
     fun distinguishesTheCurrentMatchInsideMergedCoverage() {

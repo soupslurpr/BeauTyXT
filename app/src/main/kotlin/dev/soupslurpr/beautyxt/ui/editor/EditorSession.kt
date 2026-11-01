@@ -5358,21 +5358,27 @@ internal constructor(
                 }
                 val selection = fieldValue.selection
                 val selectionBefore = draft.historySelectionBefore()
+                draft.beginSynchronization(fieldValue)
                 val result =
-                    state.commitActiveEdit(
-                        generation = draft.edit.generation,
-                        text = fieldValue.text,
-                        selection =
-                            Utf16Range(
-                                start = selection.min.toLong(),
-                                end = selection.max.toLong()
-                            ),
-                        selectionBefore =
-                            Utf16Range(
-                                start = selectionBefore.min.toLong(),
-                                end = selectionBefore.max.toLong()
-                            )
-                    )
+                    try {
+                        state.commitActiveEdit(
+                            generation = draft.edit.generation,
+                            text = fieldValue.text,
+                            selection =
+                                Utf16Range(
+                                    start = selection.min.toLong(),
+                                    end = selection.max.toLong()
+                                ),
+                            selectionBefore =
+                                Utf16Range(
+                                    start = selectionBefore.min.toLong(),
+                                    end = selectionBefore.max.toLong()
+                                )
+                        )
+                    } catch (failure: Throwable) {
+                        draft.finishSynchronization()
+                        throw failure
+                    }
                 processedObservationVersion = submissionVersion
                 if (result == EditSynchronizationResult.RejectedBySizeLimit) {
                     if (draft.rejectSubmittedChange(fieldValue)) {
@@ -5382,6 +5388,7 @@ internal constructor(
                     isClosePending = false
                 }
                 reconcileActiveDraft()
+                draft.finishSynchronization()
                 val currentDraft = activeDraft
                 if (currentDraft != null) {
                     updateActiveDraftStatus(currentDraft)
