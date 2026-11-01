@@ -102,7 +102,7 @@ private data class HomeAction(
 
 /** Returns whether the leading icons and labels have enough room for one row. */
 internal fun usesHorizontalHomeActions(maxWidth: Dp, fontScale: Float): Boolean {
-    require(maxWidth > 0.dp) { "action width must be positive" }
+    require(maxWidth >= 0.dp) { "action width must be nonnegative" }
     require(fontScale.isFinite() && fontScale > 0f) { "font scale must be positive and finite" }
     val requiredWidth = HomeHorizontalActionsMinWidth * maxOf(1f, fontScale)
     return maxWidth >= requiredWidth &&
@@ -111,10 +111,10 @@ internal fun usesHorizontalHomeActions(maxWidth: Dp, fontScale: Float): Boolean 
 
 /** Returns whether identity and actions fit beside each other without crowding text. */
 internal fun usesWideHomeLayout(maxWidth: Dp, maxHeight: Dp, fontScale: Float): Boolean {
-    require(maxWidth > 0.dp) { "home width must be positive" }
-    require(maxHeight > 0.dp) { "home height must be positive" }
+    require(maxWidth >= 0.dp) { "home width must be nonnegative" }
+    require(maxHeight >= 0.dp) { "home height must be nonnegative" }
     require(fontScale.isFinite() && fontScale > 0f) { "font scale must be positive and finite" }
-    return maxWidth >= HomeWideLayoutMinWidth && maxWidth > maxHeight &&
+    return maxHeight > 0.dp && maxWidth >= HomeWideLayoutMinWidth && maxWidth > maxHeight &&
         fontScale <= MAX_HORIZONTAL_LAYOUT_FONT_SCALE
 }
 
