@@ -47,6 +47,7 @@ import dev.soupslurpr.beautyxt.markdown.MarkdownQuoteKind
 import dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock
 import dev.soupslurpr.beautyxt.markdown.MarkdownTableAlignment
 import dev.soupslurpr.beautyxt.markdown.markdownFootnoteNumbers
+import dev.soupslurpr.beautyxt.markdown.markdownFootnoteLabel
 import java.io.IOException
 import java.io.OutputStream
 import kotlin.coroutines.cancellation.CancellationException
@@ -188,16 +189,11 @@ internal suspend fun renderMarkdownDocumentPdf(
         )
     try {
         val footnoteNumbers = markdownFootnoteNumbers(document.blocks)
-        val headingItems = ArrayList<dev.soupslurpr.beautyxt.markdown.MarkdownPreviewHeadingItem>()
-        document.blocks.forEachIndexed { index, block ->
-            if (block.kind == MarkdownBlockKind.Heading) {
-                if (block.continuesPrevious && headingItems.isNotEmpty()) {
-                    val last = headingItems.last()
-                    headingItems[headingItems.lastIndex] = last.copy(text = last.text + block.text)
-                } else headingItems += dev.soupslurpr.beautyxt.markdown.MarkdownPreviewHeadingItem(index, true, block.text)
-            }
+        val renderContext = currentCoroutineContext()
+        val headingAnchors = markdownPrintHeadingAnchors(document.blocks, maxBlockUtf16Units) {
+            renderContext.ensureActive()
+            if (isCancelled()) throw CancellationException("print rendering was cancelled")
         }
-        val headingAnchors = dev.soupslurpr.beautyxt.markdown.MarkdownHeadingIndex(headingItems).destinations.entries.associate { it.value to it.key }
         var blockIndex = 0
         var blockOffset = 0
         while (blockIndex < document.blocks.size) {
@@ -242,7 +238,7 @@ internal suspend fun renderMarkdownDocumentPdf(
                 }
                 pages.addMarkdown(
                     block = block,
-                    anchor = headingAnchors[blockIndex] ?: if (block.kind == MarkdownBlockKind.Footnote) "footnote:${block.metadata}" else null,
+                    anchor = headingAnchors[blockIndex] ?: block.markdownFootnoteLabel()?.let { "footnote:$it" },
                     footnoteNumbers = footnoteNumbers,
                     connectsAlertSpacing = connectsAlertSpacing,
                     continuesAtEnd = current.continuesAtEnd,
@@ -540,15 +536,22 @@ private class TextPrintPages(
             "Markdown print slice must end at a logical line boundary"
         }
         val measured = if (block.kind == MarkdownBlockKind.Rule) {
-            null
+            layoutMarkdownDefinitionLabel(block, footnoteNumbers)?.let {
+                MarkdownPrintLayout(it, it.lineCount)
+            }
         } else {
             layoutMarkdownBlock(block, footnoteNumbers, continuesAtEnd, anchor)
         }
         if (measured != null) {
-            val keepHeight = if (block.kind == MarkdownBlockKind.Heading) {
-                markdownHeadingKeepHeight(measured, followingBlocks, footnoteNumbers)
-            } else {
-                measured.leadingHeight
+            val keepHeight = when (block.kind) {
+                MarkdownBlockKind.Heading ->
+                    markdownHeadingKeepHeight(measured, followingBlocks, footnoteNumbers)
+                MarkdownBlockKind.Rule -> markdownPrintDefinitionGroupHeight(
+                    labelHeightPixels = measured.text.height,
+                    contentHeightPixels = emptyLineHeight,
+                    bodyHeightPixels = layout.bodyBottomPixels - layout.bodyTopPixels
+                )
+                else -> measured.leadingHeight
             }
             if (shouldAdvanceMarkdownPrintGroup(
                     layout.bodyTopPixels,
@@ -568,6 +571,7 @@ private class TextPrintPages(
             )
         }
         if (block.kind == MarkdownBlockKind.Rule) {
+            measured?.let { addMarkdownDefinitionLabel(block, it.text) }
             addRule(block)
             return
         }
@@ -586,6 +590,34 @@ private class TextPrintPages(
                 block.kind == MarkdownBlockKind.Code ||
                     block.kind == MarkdownBlockKind.HtmlLiteral,
             textRole = markdownPdfTextRole(block)
+        )
+    }
+
+    /** Measures a real numbered definition separately from nontext rule/table content. */
+    private fun layoutMarkdownDefinitionLabel(
+        block: MarkdownRenderBlock,
+        footnoteNumbers: Map<String, Int>
+    ): StaticLayout? {
+        if (block.continuesPrevious) return null
+        val label = markdownPrintDefinitionLabel(block, footnoteNumbers) ?: return null
+        val availableWidth = layout.bodyWidthPixels - markdownBlockIndent(block)
+        check(availableWidth > 0) { "Markdown definition label has no content width" }
+        return StaticLayout.Builder
+            .obtain(label, 0, label.length, TextPaint(bodyPaint), availableWidth)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setBreakStrategy(LineBreaker.BREAK_STRATEGY_SIMPLE)
+            .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
+            .setIncludePad(false)
+            .setLineSpacing(0f, BODY_LINE_SPACING_MULTIPLIER)
+            .build()
+    }
+
+    /** Uses the normal selected-page text path for both the visible number and its destination. */
+    private fun addMarkdownDefinitionLabel(block: MarkdownRenderBlock, label: StaticLayout) {
+        addLayout(
+            textLayout = label,
+            leftInsetPixels = markdownBlockIndent(block),
+            quoteRailInsetPixels = markdownQuoteRailInset(block)
         )
     }
 
@@ -741,6 +773,9 @@ private class TextPrintPages(
             )
             return
         }
+        val definitionLabel = if (isFirstRow) {
+            layoutMarkdownDefinitionLabel(block, footnoteNumbers)
+        } else null
         if (isFirstRow && !block.continuesPrevious && bodyY > layout.bodyTopPixels) {
             addBlockSpacing(
                 quoteRailInsetPixels =
@@ -751,16 +786,29 @@ private class TextPrintPages(
             addMarkdownAlertLabel(block)
             addBlockSpacing(markdownQuoteRailInset(block))
         }
-        if (block.isTableHeader && followingRow != null) {
-            val firstRowLayout =
-                layoutMarkdownTableRow(
-                    block = followingRow,
-                    columnCount = columnCount,
-                    availableWidth = availableWidth,
-                    horizontalPadding = horizontalPadding,
-                    verticalPadding = verticalPadding,
-                    footnoteNumbers = footnoteNumbers
+        val firstRowLayout = if (block.isTableHeader && followingRow != null) {
+            layoutMarkdownTableRow(
+                block = followingRow,
+                columnCount = columnCount,
+                availableWidth = availableWidth,
+                horizontalPadding = horizontalPadding,
+                verticalPadding = verticalPadding,
+                footnoteNumbers = footnoteNumbers
+            )
+        } else null
+        if (definitionLabel != null) {
+            val keepHeight = markdownPrintDefinitionGroupHeight(
+                labelHeightPixels = definitionLabel.height,
+                contentHeightPixels = rowHeight,
+                followingHeightPixels = firstRowLayout?.heightPixels ?: 0,
+                bodyHeightPixels = layout.bodyBottomPixels - layout.bodyTopPixels
+            )
+            if (shouldAdvanceMarkdownPrintGroup(
+                    layout.bodyTopPixels, layout.bodyBottomPixels, bodyY, keepHeight
                 )
+            ) advancePage()
+            addMarkdownDefinitionLabel(block, definitionLabel)
+        } else if (firstRowLayout != null) {
             if (
                 shouldAdvanceMarkdownPrintTableHeader(
                     bodyTopPixels = layout.bodyTopPixels,
@@ -1282,6 +1330,19 @@ private data class PrintFormulaBounds(val width: Float, val height: Float)
 
 private data class MarkdownPrintText(val text: CharSequence, val contentStart: Int)
 
+/** Keeps a definition's visible number and destination independent of its content kind. */
+private fun markdownPrintDefinitionLabel(
+    block: MarkdownRenderBlock,
+    footnoteNumbers: Map<String, Int>
+): SpannableStringBuilder? {
+    val label = block.markdownFootnoteLabel() ?: return null
+    val text = SpannableStringBuilder("${footnoteNumbers[label] ?: label}.")
+    text.setSpan(StyleSpan(Typeface.BOLD), 0, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    text.setSpan(PdfAnchorSpan("footnote:$label"), 0,
+        Character.charCount(Character.codePointAt(text, 0)), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    return text
+}
+
 private fun markdownPrintText(
     block: MarkdownRenderBlock,
     footnoteNumbers: Map<String, Int>,
@@ -1303,6 +1364,9 @@ private fun markdownPrintText(
             builder.append('\n')
         }
         val prefixStart = builder.length
+        markdownPrintDefinitionLabel(block, footnoteNumbers)?.let { label ->
+            builder.append(label).append(' ')
+        }
         when (block.kind) {
             MarkdownBlockKind.ListItem ->
                 when {
@@ -1311,9 +1375,6 @@ private fun markdownPrintText(
                     block.isOrderedListItem -> builder.append("${block.listNumber}. ")
                     else -> builder.append("• ")
                 }
-
-            MarkdownBlockKind.Footnote ->
-                builder.append("${footnoteNumbers[block.metadata] ?: block.metadata}. ")
 
             MarkdownBlockKind.HtmlLiteral ->
                 builder.append(resources.getString(R.string.markdown_inert_html)).append('\n')
@@ -1362,8 +1423,21 @@ private fun markdownPrintText(
             Color.WHITE
         }
     )
-    if (anchor != null && contentStart < builder.length) builder.setSpan(
-        PdfAnchorSpan(anchor), contentStart, contentStart + Character.charCount(Character.codePointAt(builder, contentStart)), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    if (contentStart < builder.length) {
+        val footnoteAnchor = block.markdownFootnoteLabel()?.let { "footnote:$it" }
+        listOfNotNull(anchor, footnoteAnchor).distinct()
+            .forEach { name ->
+                // A heading targets its first drawn cluster even after zero-width source text.
+                // The collector admits anchors only with visible text on a selected page.
+                val anchorEnd = if (block.kind == MarkdownBlockKind.Heading && name != footnoteAnchor) {
+                    builder.length
+                } else {
+                    contentStart + Character.charCount(Character.codePointAt(builder, contentStart))
+                }
+                builder.setSpan(PdfAnchorSpan(name), contentStart,
+                    anchorEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+    }
     illustrationFallbackMessages(block.spans).forEach { message ->
         builder.append('\n')
         val start = builder.length

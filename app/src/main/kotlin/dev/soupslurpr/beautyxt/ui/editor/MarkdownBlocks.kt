@@ -98,6 +98,8 @@ import dev.soupslurpr.beautyxt.markdown.MarkdownInlineSpan
 import dev.soupslurpr.beautyxt.markdown.MarkdownQuoteKind
 import dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock
 import dev.soupslurpr.beautyxt.markdown.MarkdownTableAlignment
+import dev.soupslurpr.beautyxt.markdown.markdownTableCellRanges
+import dev.soupslurpr.beautyxt.markdown.markdownFootnoteLabel
 import dev.soupslurpr.beautyxt.markdown.markdownFootnotePresentation
 import dev.soupslurpr.beautyxt.markdown.markdownInlinePresentation
 import dev.soupslurpr.beautyxt.markdown.standaloneDisplayIllustration
@@ -350,6 +352,24 @@ private fun MarkdownBlockContent(
     showWrappedPreview: Boolean = false
 ) {
     if (block.illustrationContinuation) return
+    val label = block.markdownFootnoteLabel()
+    if (label != null && block.kind != MarkdownBlockKind.Footnote) {
+        MarkdownFootnoteDefinition(label, onInlineInteraction, canReturnToFootnoteReference, modifier) {
+            MarkdownBlockBody(block, onInlineInteraction, canReturnToFootnoteReference, it, showWrappedPreview)
+        }
+    } else {
+        MarkdownBlockBody(block, onInlineInteraction, canReturnToFootnoteReference, modifier, showWrappedPreview)
+    }
+}
+
+@Composable
+private fun MarkdownBlockBody(
+    block: MarkdownRenderBlock,
+    onInlineInteraction: (MarkdownInlineInteraction) -> Unit,
+    canReturnToFootnoteReference: Boolean,
+    modifier: Modifier,
+    showWrappedPreview: Boolean
+) {
     when (block.kind) {
         MarkdownBlockKind.Paragraph ->
             MarkdownStyledText(
@@ -404,12 +424,15 @@ private fun MarkdownBlockContent(
             )
 
         MarkdownBlockKind.Footnote ->
-            MarkdownFootnote(
-                block = block,
+            MarkdownFootnoteDefinition(
+                label = checkNotNull(block.markdownFootnoteLabel()),
                 onInlineInteraction = onInlineInteraction,
                 canReturnToReference = canReturnToFootnoteReference,
                 modifier = modifier
-            )
+            ) {
+                MarkdownStyledText(block, MaterialTheme.typography.bodyMedium,
+                    onInlineInteraction, modifier = it)
+            }
     }
 }
 
@@ -417,10 +440,12 @@ private fun MarkdownBlockContent(
 @Composable
 private fun MarkdownRule(block: MarkdownRenderBlock, modifier: Modifier = Modifier) {
     val navigationState = LocalMarkdownPreviewNavigationState.current
+    val separatorDescription = stringResource(R.string.markdown_separator)
+    val editSourceLabel = stringResource(R.string.markdown_edit_source)
     var topInWindowPixels by remember(block) { mutableStateOf<Int?>(null) }
     val navigationModifier =
         if (navigationState?.isEditable == true) {
-            Modifier.clickable(role = Role.Button) {
+            Modifier.clickable(role = Role.Button, onClickLabel = editSourceLabel) {
                 val top = topInWindowPixels ?: return@clickable
                 navigationState.editSource(
                     block = block,
@@ -438,6 +463,7 @@ private fun MarkdownRule(block: MarkdownRenderBlock, modifier: Modifier = Modifi
                 .onGloballyPositioned { coordinates ->
                     topInWindowPixels = coordinates.positionInWindow().y.roundToInt()
                 }
+                .semantics { contentDescription = separatorDescription }
                 .then(navigationModifier),
         color = MaterialTheme.colorScheme.outlineVariant
     )
@@ -1104,17 +1130,14 @@ private fun MarkdownWideTable(
 /** Returns one flattened table row's exact number of cells. */
 internal fun markdownTableColumnCount(block: MarkdownRenderBlock): Int {
     require(block.kind == MarkdownBlockKind.TableRow) { "Markdown block is not a table row" }
-    return Math.addExact(block.text.count { character -> character == '\t' }, 1)
+    return Math.addExact(block.tableCellSeparators.size, 1)
 }
 
 /** Splits one protocol table row while rebasing its inline spans per cell. */
 internal fun splitMarkdownTableRow(block: MarkdownRenderBlock): List<MarkdownTableCell> {
     require(block.kind == MarkdownBlockKind.TableRow) { "Markdown block is not a table row" }
     val cells = ArrayList<MarkdownTableCell>()
-    var cellStart = 0
-    while (cellStart <= block.text.length) {
-        val separator = block.text.indexOf('\t', cellStart)
-        val cellEnd = if (separator >= 0) separator else block.text.length
+    for ((cellStart, cellEnd) in block.markdownTableCellRanges()) {
         val cellSpans =
             buildList {
                 block.spans.forEach { span ->
@@ -1140,10 +1163,6 @@ internal fun splitMarkdownTableRow(block: MarkdownRenderBlock): List<MarkdownTab
                         MarkdownTableAlignment.None
                     }
             )
-        if (separator < 0) {
-            break
-        }
-        cellStart = separator + 1
     }
     return cells
 }
@@ -1169,18 +1188,19 @@ internal fun markdownTableTextAlign(alignment: MarkdownTableAlignment): TextAlig
 
 /** Displays one footnote definition and its bounded label. */
 @Composable
-private fun MarkdownFootnote(
-    block: MarkdownRenderBlock,
+internal fun MarkdownFootnoteDefinition(
+    label: String,
     onInlineInteraction: (MarkdownInlineInteraction) -> Unit,
     canReturnToReference: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    content: @Composable (Modifier) -> Unit
 ) {
-    val footnoteNumber = LocalMarkdownFootnoteNumbers.current[block.metadata]
+    val footnoteNumber = LocalMarkdownFootnoteNumbers.current[label]
     val referenceDescription = stringResource(R.string.markdown_return_to_reference)
     val labelModifier =
         if (canReturnToReference) {
-            Modifier.clickable(role = Role.Button) {
-                onInlineInteraction(MarkdownInlineInteraction.FootnoteDefinition(block.metadata))
+            Modifier.clickable(role = Role.Button, onClickLabel = referenceDescription) {
+                onInlineInteraction(MarkdownInlineInteraction.FootnoteDefinition(label))
             }
         } else {
             Modifier
@@ -1213,7 +1233,7 @@ private fun MarkdownFootnote(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = footnoteNumber?.toString() ?: block.metadata,
+                        text = footnoteNumber?.toString() ?: label,
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -1230,12 +1250,7 @@ private fun MarkdownFootnote(
                 }
             }
         }
-        MarkdownStyledText(
-            block = block,
-            style = MaterialTheme.typography.bodyMedium,
-            onInlineInteraction = onInlineInteraction,
-            modifier = Modifier.weight(1f)
-        )
+        content(Modifier.weight(1f))
     }
 }
 

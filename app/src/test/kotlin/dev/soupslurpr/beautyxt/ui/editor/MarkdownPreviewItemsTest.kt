@@ -15,6 +15,16 @@ import org.junit.Test
 /** Verifies bounded lazy grouping and continuation spacing for Markdown preview. */
 class MarkdownPreviewItemsTest {
     @Test
+    fun targetsNonparagraphNoteDefinitionsAndKeepsDifferentOwnersSeparate() {
+        val blocks = listOf(block(MarkdownBlockKind.Code).copy(footnoteLabel = "first"),
+            block(MarkdownBlockKind.Code, continuesPrevious = true).copy(footnoteLabel = "second"),
+            block(MarkdownBlockKind.TableRow).copy(footnoteLabel = "third"))
+        val layout = prepareMarkdownPreview(blocks)
+        assertEquals(mapOf("first" to 0, "second" to 1, "third" to 2), layout.footnotes.definitions)
+        assertEquals(listOf(1, 1, 1), layout.items.map { it.blocks.size })
+    }
+
+    @Test
     fun preparesGroupedHeadingTargetsWithoutCopyingText() {
         val blocks =
             listOf(

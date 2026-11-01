@@ -5,6 +5,8 @@ import dev.soupslurpr.beautyxt.markdown.MarkdownInlineSpan
 import dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock
 import dev.soupslurpr.beautyxt.markdown.MarkdownTableAlignment
 import dev.soupslurpr.beautyxt.markdown.markdownFootnotePresentation
+import dev.soupslurpr.beautyxt.markdown.markdownTableCellRanges
+import dev.soupslurpr.beautyxt.markdown.tableCellSeparators
 
 private const val MARKDOWN_TABLE_CELL_SEPARATOR = "  |  "
 private const val MAXIMUM_SEMANTIC_MARKDOWN_PRINT_TABLE_COLUMNS = 16
@@ -29,15 +31,17 @@ internal fun markdownPrintContent(
         markdownFootnotePresentation(block.text, block.spans, footnoteNumbers)
     val text = footnotePresentation?.text ?: block.text
     val spans = footnotePresentation?.spans ?: block.spans
-    if (block.kind != MarkdownBlockKind.TableRow || '\t' !in text) {
+    val separators = footnotePresentation?.tableCellSeparators(block) ?: block.tableCellSeparators
+    if (block.kind != MarkdownBlockKind.TableRow || separators.isEmpty()) {
         return MarkdownPrintContent(text = text, spans = spans)
     }
+    val separatorOffsets = separators.toHashSet()
     val outputOffsets = IntArray(text.length + 1)
     val printableText =
         buildString(text.length) {
             text.forEachIndexed { sourceOffset, character ->
                 outputOffsets[sourceOffset] = length
-                if (character == '\t') {
+                if (sourceOffset in separatorOffsets) {
                     append(MARKDOWN_TABLE_CELL_SEPARATOR)
                 } else {
                     append(character)
@@ -60,7 +64,7 @@ internal fun markdownPrintContent(
 /** Returns one table row's exact number of semantic cells. */
 internal fun markdownPrintTableColumnCount(block: MarkdownRenderBlock): Int {
     require(block.kind == MarkdownBlockKind.TableRow) { "Markdown block is not a table row" }
-    return Math.addExact(block.text.count { character -> character == '\t' }, 1)
+    return Math.addExact(block.tableCellSeparators.size, 1)
 }
 
 /** Returns whether a table can retain bounded equal-width semantic cells. */
@@ -110,11 +114,13 @@ internal fun markdownPrintCells(
         markdownFootnotePresentation(block.text, block.spans, footnoteNumbers)
     val text = footnotePresentation?.text ?: block.text
     val spans = footnotePresentation?.spans ?: block.spans
+    val presented = block.copy(
+        text = text, spans = spans,
+        tableCellSeparators = footnotePresentation?.tableCellSeparators(block)
+            ?: block.tableCellSeparators
+    )
     val cells = ArrayList<MarkdownPrintCell>(markdownPrintTableColumnCount(block))
-    var cellStart = 0
-    while (cellStart <= text.length) {
-        val separator = text.indexOf('\t', cellStart)
-        val cellEnd = if (separator >= 0) separator else text.length
+    for ((cellStart, cellEnd) in presented.markdownTableCellRanges()) {
         val cellSpans =
             buildList {
                 spans.forEach { span ->
@@ -139,10 +145,6 @@ internal fun markdownPrintCells(
                         MarkdownTableAlignment.None
                     }
             )
-        if (separator < 0) {
-            break
-        }
-        cellStart = separator + 1
     }
     return cells
 }

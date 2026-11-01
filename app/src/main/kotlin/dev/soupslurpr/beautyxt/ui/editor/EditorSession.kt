@@ -91,6 +91,7 @@ private const val EDIT_SYNCHRONIZATION_DELAY_MILLIS = 350L
 private const val FIND_DELAY_MILLIS = 250L
 private const val NEW_DOCUMENT_TITLE = "New document"
 private const val OPENED_DOCUMENT_TITLE = "Opened document"
+private class ReadingSelectionChangedException : IllegalStateException("Reading selection changed")
 
 /** Defines how one selected destination participates in the live document session. */
 internal enum class SaveDestinationPurpose {
@@ -751,6 +752,9 @@ internal constructor(
     private var sourceFieldSelection: DocumentSelection.Source? = null
     private var observedIllustrationRevision = -1L
     private var observedIllustrationVersion = -1L
+    private var selectedReadingProjection: ReadingSelectionProjection? = null
+    private var findReadingProjection: ReadingSelectionProjection? = null
+    private var validatedReadingProjectionVersion: Pair<MarkdownPreviewDocument, Long>? = null
 
     private var selectionReadingCache: Triple<dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument, Long, dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument>? = null
 
@@ -766,7 +770,63 @@ internal constructor(
         }).also { selectionReadingCache = Triple(ready.document, version, it) }
     }
 
+    /** Validates only retained slots, once per cache version, before any selection is consumed. */
+    fun validateReadingSelectionProjections() {
+        val selected = documentSelection as? DocumentSelection.Reading
+        val scope = capturedReadingFindScope
+        if (selected == null && scope == null) return
+        val ready = (markdownPreviewStatus as? MarkdownPreviewStatus.Ready)
+            ?.takeIf { it.revision == state.metrics?.revision } ?: return
+        val version = ready.layout.illustrationCache.version
+        validatedReadingProjectionVersion?.let {
+            if (it.first === ready.document && it.second == version) return
+        }
+        val cache = ready.layout.illustrationCache.snapshot()
+        val decorated = selectionReadingCache?.takeIf {
+            it.first === ready.document && it.second == version
+        }?.third
+        fun resolve(index: Int): dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock? =
+            decorated?.blocks?.getOrNull(index) ?: ready.document.blocks.getOrNull(index)?.let {
+                ready.layout.illustrations.decorate(index) { request -> cache[request]
+                    ?: dev.soupslurpr.beautyxt.illustration.IllustrationResult.Pending(request.kind) }
+            }
+        fun valid(selection: DocumentSelection.Reading, projection: ReadingSelectionProjection?): Boolean =
+            selection.revision == ready.revision && projection?.matches(::resolve) == true
+        if (selected != null && !valid(selected, selectedReadingProjection)) {
+            clearDocumentSelection()
+            selectionMessage = UiText.Resource(R.string.selection_preview_changed)
+        }
+        val scopeValid = when (scope) {
+            is DocumentSelection.Reading -> valid(scope, findReadingProjection)
+            is DocumentSelection.Label -> {
+                val drawing = (resolve(scope.block)?.spans?.firstOrNull { it.start == scope.spanStart }
+                    ?.illustration as? dev.soupslurpr.beautyxt.illustration.IllustrationResult.Rendered)
+                    ?.takeIf { it.kind == dev.soupslurpr.beautyxt.illustration.IllustrationKind.Diagram }?.drawing
+                scope.revision == ready.revision && drawing?.textRuns?.getOrNull(scope.run)?.text == scope.text
+            }
+            else -> true
+        }
+        if (!scopeValid) {
+            capturedReadingFindScope = null
+            capturedFindScope = null
+            findReadingProjection = null
+            isFindScopePaused = true
+            invalidateFindRequest()
+            findResults = emptyList()
+            findResultIndex = -1
+            findMatch = null
+            findResultsPage = null
+            isFindComplete = false
+            findStatus = FindStatus.Idle
+            findActionMessage = UiText.Resource(R.string.find_scope_lost)
+        }
+        validatedReadingProjectionVersion = (ready.document to version)
+            .takeIf { selectedReadingProjection != null || findReadingProjection != null ||
+                capturedReadingFindScope is DocumentSelection.Label }
+    }
+
     fun selectReading(anchor: ReadingPoint, focus: ReadingPoint): Boolean {
+        validateReadingSelectionProjections()
         val revision = state.metrics?.revision ?: return false
         val document = readingDocumentForSelection() ?: return false
         if (anchor.block !in document.blocks.indices || focus.block !in document.blocks.indices) return false
@@ -774,7 +834,10 @@ internal constructor(
         val first = atomicReadingPoint(document, anchor, ending = !forward)
         val last = atomicReadingPoint(document, focus, ending = forward)
         if (first == last) return false
-        documentSelection = DocumentSelection.Reading(revision, first, last)
+        val selected = DocumentSelection.Reading(revision, first, last)
+        documentSelection = selected
+        selectedReadingProjection = ReadingSelectionProjection(selected, document)
+        validatedReadingProjectionVersion = null
         selectionMessage = null
         return true
     }
@@ -783,6 +846,8 @@ internal constructor(
         val metrics = state.metrics ?: return false
         if (state.hasActiveDraftChanges || anchor !in 0..metrics.utf16Length || focus !in 0..metrics.utf16Length || anchor == focus) return false
         documentSelection = DocumentSelection.Source(metrics.revision, anchor, focus)
+        selectedReadingProjection = null
+        validatedReadingProjectionVersion = null
         selectionMessage = null
         return true
     }
@@ -794,6 +859,8 @@ internal constructor(
             ?.takeIf { it.kind == dev.soupslurpr.beautyxt.illustration.IllustrationKind.Diagram }?.drawing ?: return false
         val label = drawing.textRuns.getOrNull(run) ?: return false
         documentSelection = DocumentSelection.Label(state.metrics!!.revision, block, start, run, label.text)
+        selectedReadingProjection = null
+        validatedReadingProjectionVersion = null
         selectionMessage = null
         return true
     }
@@ -815,6 +882,8 @@ internal constructor(
         }
         sourceFieldSelection = null
         documentSelection = null
+        selectedReadingProjection = null
+        validatedReadingProjectionVersion = null
         selectionMessage = null
     }
 
@@ -882,12 +951,13 @@ internal constructor(
         val metrics = state.metrics ?: return false
         return if (presentation == EditorPresentation.MarkdownPreview) {
             val blocks = readingDocumentForSelection()?.blocks ?: return false
-            val last = blocks.indexOfLast { !it.illustrationContinuation && it.text.isNotEmpty() }
+            val last = blocks.indexOfLast { !it.illustrationContinuation }
             if (last < 0) false else selectReading(ReadingPoint(0, -readingListPrefix(blocks[0]).length), ReadingPoint(last, blocks[last].text.length))
         } else selectSource(0, metrics.utf16Length)
     }
 
     fun extendSelectionParagraph(forward: Boolean): Boolean {
+        validateReadingSelectionProjections()
         val selection = documentSelection as? DocumentSelection.Reading ?: return false
         val blocks = readingDocumentForSelection()?.blocks ?: return false
         return selectReading(selection.anchor, readingAdjacentParagraphBoundary(blocks, selection.focus, forward))
@@ -900,7 +970,9 @@ internal constructor(
     }
 
     suspend fun selectedPlainText(maximumBytes: Int): String {
-        val selected = documentSelection ?: throw IllegalStateException("No selection")
+        validateReadingSelectionProjections()
+        val selected = documentSelection ?: if (selectionMessage == UiText.Resource(R.string.selection_preview_changed))
+            throw ReadingSelectionChangedException() else throw IllegalStateException("No selection")
         check(selected.revision == state.metrics?.revision && !state.hasActiveDraftChanges)
         return when (selected) {
             is DocumentSelection.Source -> {
@@ -919,6 +991,7 @@ internal constructor(
         operationScope.launch {
             try { deliver(selectedPlainText(128 * 1024)); selectionMessage = null }
             catch (cancellation: CancellationException) { throw cancellation }
+            catch (_: ReadingSelectionChangedException) { /* Keep the actionable preview-change notice. */ }
             catch (_: Exception) { selectionMessage = UiText.Resource(R.string.selection_output_failed) }
         }
     }
@@ -954,6 +1027,7 @@ internal constructor(
     }
 
     private suspend fun captureSelectionExcerpt(): ExcerptCapture? {
+        validateReadingSelectionProjections()
         val selected = documentSelection ?: return null
         if (selected.revision != state.metrics?.revision || state.hasActiveDraftChanges) return null
         var context = readingDocumentForSelection()
@@ -1008,10 +1082,13 @@ internal constructor(
                 isFindWholeWord = false
                 capturedFindScope = null
                 capturedReadingFindScope = null
+                findReadingProjection = null
+                validatedReadingProjectionVersion = null
                 isFindScopePaused = false
                 findFieldValue = TextFieldValue(text)
                 refreshAdvancedFind()
             } catch (cancellation: CancellationException) { throw cancellation }
+            catch (_: ReadingSelectionChangedException) { /* Keep the actionable preview-change notice. */ }
             catch (_: Exception) { selectionMessage = UiText.Resource(R.string.selection_find_failed) }
         }
     }
@@ -2032,6 +2109,8 @@ internal constructor(
         if (!canShowTextEditor) {
             return
         }
+        validateReadingSelectionProjections()
+        val previewNotice = selectionMessage?.takeIf { it == UiText.Resource(R.string.selection_preview_changed) }
         val returnTarget = markdownPreviewReturnTarget
         pendingReadingLocation = null
         val selectionInSource = when (val selected = documentSelection) {
@@ -2043,6 +2122,7 @@ internal constructor(
             else -> pendingReadingSelection
         }?.takeIf { it.revision == state.metrics?.revision }
         clearDocumentSelection()
+        selectionMessage = previewNotice
         documentSelection = selectionInSource
         pendingReadingSelection = null
         val selectionFitsEditor = selectionInSource == null ||
@@ -2215,6 +2295,8 @@ internal constructor(
         isReplaceVisible = false
         capturedFindScope = null
         capturedReadingFindScope = null
+        findReadingProjection = null
+        validatedReadingProjectionVersion = null
         isFindScopePaused = false
         findResults = emptyList()
         findResultIndex = -1
@@ -2346,14 +2428,21 @@ internal constructor(
     fun useDocumentFindScope() {
         capturedFindScope = null
         capturedReadingFindScope = null
+        findReadingProjection = null
+        validatedReadingProjectionVersion = null
         isFindScopePaused = false
         refreshAdvancedFind()
     }
 
     fun captureSelectionFindScope(): Boolean {
+        val hadReadingSelection = documentSelection is DocumentSelection.Reading
+        validateReadingSelectionProjections()
+        if (hadReadingSelection && documentSelection == null) return false
         documentSelection?.let { selected ->
             if (presentation == EditorPresentation.MarkdownPreview && selected !is DocumentSelection.Source) {
                 capturedReadingFindScope = selected
+                findReadingProjection = selectedReadingProjection.takeIf { selected is DocumentSelection.Reading }
+                validatedReadingProjectionVersion = null
                 capturedFindScope = selected.exactSource(readingDocumentForSelection())
                 isFindScopePaused = false
                 refreshAdvancedFind()
@@ -2362,6 +2451,8 @@ internal constructor(
             val range = selected.exactSource(readingDocumentForSelection())
             if (range != null && range.start < range.end) {
                 capturedReadingFindScope = null
+                findReadingProjection = null
+                validatedReadingProjectionVersion = null
                 capturedFindScope = range
                 isFindScopePaused = false
                 refreshAdvancedFind()
@@ -2380,6 +2471,8 @@ internal constructor(
         capturedFindScope = Utf16Range(draft.edit.snapshot.range.start + selection.min,
             draft.edit.snapshot.range.start + selection.max)
         capturedReadingFindScope = null
+        findReadingProjection = null
+        validatedReadingProjectionVersion = null
         isFindScopePaused = false
         refreshAdvancedFind()
         return true
@@ -2390,6 +2483,7 @@ internal constructor(
     fun retryFind(): Boolean = refreshAdvancedFind()
 
     fun continueFind(): Boolean {
+        validateReadingSelectionProjections()
         if (!canContinueFind) return false
         return refreshAdvancedFind(continuation = findContinuation)
     }
@@ -2835,6 +2929,8 @@ internal constructor(
         val selection = if (action == EditWindowAction.Undo) entry.selectionBefore else entry.selectionAfter
         if (selection.end - selection.start > EDIT_WINDOW_UTF16_UNITS) {
             documentSelection = DocumentSelection.Source(revision, selection.start, selection.end)
+            selectedReadingProjection = null
+            validatedReadingProjectionVersion = null
         }
         historyVersion = Math.incrementExact(historyVersion)
         if (undidReplacement && isFindVisible) replacementUndoNoticeRevision = revision
@@ -2857,8 +2953,11 @@ internal constructor(
                 DocumentSelection.Source(after, range.start, range.end)
             }
         }
+        selectedReadingProjection = null
+        validatedReadingProjectionVersion = null
         if (capturedReadingFindScope != null) {
             capturedReadingFindScope = null
+            findReadingProjection = null
             if (capturedFindScope == null) isFindScopePaused = true
         }
         locations.rebase(before, after, patches)
@@ -4561,9 +4660,14 @@ internal constructor(
     }
 
     private fun restoreSelectionInReading(ready: MarkdownPreviewStatus.Ready) {
+        val document = if (pendingReadingSelection != null) readingDocumentForSelection() ?: ready.document else ready.document
         documentSelection = pendingReadingSelection?.takeIf { it.revision == ready.revision }?.let {
-            readingSelectionForSource(ready.document, it)
+            readingSelectionForSource(document, it)
         }
+        selectedReadingProjection = (documentSelection as? DocumentSelection.Reading)?.let {
+            ReadingSelectionProjection(it, document)
+        }
+        validatedReadingProjectionVersion = null
         pendingReadingSelection = null
     }
 
@@ -4576,6 +4680,7 @@ internal constructor(
         markdownPreviewJob = null
         markdownPreviewStatus = MarkdownPreviewStatus.Idle
         selectionReadingCache = null
+        validatedReadingProjectionVersion = null
     }
 
     /** Opens an empty retained Find field at one synchronized document offset. */
@@ -4703,6 +4808,8 @@ internal constructor(
         findMatch = null
         capturedFindScope = null
         capturedReadingFindScope = null
+        findReadingProjection = null
+        validatedReadingProjectionVersion = null
         isFindScopePaused = false
         excludedFindResults = emptySet()
         findCoverageMessage = null
@@ -4714,6 +4821,7 @@ internal constructor(
     /** Searches one generation progressively; inputs alone never request navigation. */
     fun onReadingIllustrationsChanged(revision: Long) {
         val ready = (markdownPreviewStatus as? MarkdownPreviewStatus.Ready)?.takeIf { it.revision == revision } ?: return
+        validateReadingSelectionProjections()
         val version = ready.layout.illustrationCache.version
         if (observedIllustrationRevision == revision && observedIllustrationVersion == version) return
         observedIllustrationRevision = revision
@@ -4725,6 +4833,7 @@ internal constructor(
     private fun refreshAdvancedFind(delayed: Boolean = false, retainExclusions: Boolean = false,
         retainNavigation: Boolean = false, advanceAfterReplacement: Pair<Long, Boolean>? = null,
         continuation: FindContinuation? = null): Boolean {
+        validateReadingSelectionProjections()
         val append = continuation != null && !continuation.replaceResults
         val retainedResults = if (append) findResults else emptyList()
         val previousResult = findResults.getOrNull(findResultIndex).takeIf { retainNavigation }
@@ -4843,11 +4952,10 @@ internal constructor(
                         cursor = page.next
                     }
                 } else if (reading != null) {
-                    val cached = reading.layout.illustrationCache.snapshot()
-                    val searchDocument = reading.document.copy(blocks = reading.document.blocks.indices.map { index ->
-                        reading.layout.illustrations.decorate(index) { request -> cached[request]
-                            ?: dev.soupslurpr.beautyxt.illustration.IllustrationResult.Pending(request.kind) }
-                    })
+                    // Compilation can suspend past a cache publication and its UI notification.
+                    validateReadingSelectionProjections()
+                    if (!owned() || isFindScopePaused) return@launch
+                    val searchDocument = readingDocumentForSelection() ?: return@launch
                     val units = readingSearchUnits(searchDocument, includeIllustrationSource)
                     val selection = capturedReadingFindScope ?: capturedFindScope?.let {
                         readingSelectionForSource(searchDocument, DocumentSelection.Source(revision, it.start, it.end))
@@ -4875,6 +4983,7 @@ internal constructor(
                         while (owned()) {
                             val page = state.searchText(search, unit.text, unitScope, cursor)
                             searchedUnit = true
+                            validateReadingSelectionProjections()
                             if (!owned()) return@launch
                             if (!accept(page.hits.map { readingSearchResult(searchDocument, unit, it) }, unitIndex)) {
                                 complete = false
@@ -4933,6 +5042,7 @@ internal constructor(
     }
 
     private fun navigateFindResults(direction: FindDirection): Boolean {
+        validateReadingSelectionProjections()
         if (!isFindVisible || findFieldValue.text.isEmpty() || isFindScopePaused) return false
         if (findStatus == FindStatus.Searching) {
             pendingFindDirection = direction
@@ -4960,6 +5070,7 @@ internal constructor(
 
     /** Explicit result selection is the only search operation that moves the passage. */
     fun selectFindResult(index: Int, wrappedAt: FindWrap? = null): Boolean {
+        validateReadingSelectionProjections()
         val result = findResults.getOrNull(index) ?: return false
         val revision = state.metrics?.revision ?: return false
         if (revision != findOriginRevision || state.hasActiveDraftChanges) return false
@@ -5105,6 +5216,7 @@ internal constructor(
         if (isFindComplete) R.string.replace_end_scope else R.string.replace_no_further_verified_match)
 
     fun applyFindReplacements(currentOnly: Boolean = false): Boolean {
+        validateReadingSelectionProjections()
         if (if (currentOnly) !canReplaceCurrent else !canApplyFindReplacements) return false
         val selected = if (currentOnly) listOfNotNull(findResults.getOrNull(findResultIndex))
             else findResults.filterIndexed { index, _ -> index !in excludedFindResults }

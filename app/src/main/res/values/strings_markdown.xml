@@ -13,6 +13,7 @@
     <string name="markdown_unsupported_markup">Unsupported markup is shown as text.</string>
     <string name="markdown_return_to_reference">Return to the first reference</string>
     <string name="markdown_edit_source">Edit source text</string>
+    <string name="markdown_separator">Separator</string>
     <string name="markdown_creating_preview">Creating Markdown preview</string>
     <string name="markdown_nothing_to_preview">Nothing to preview</string>
     <string name="markdown_no_rendered_content">This document has no rendered content.</string>

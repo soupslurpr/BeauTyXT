@@ -9,6 +9,7 @@ import dev.soupslurpr.beautyxt.markdown.MarkdownInlineDestinationKind
 import dev.soupslurpr.beautyxt.markdown.MarkdownPreviewHeadingItem
 import dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock
 import dev.soupslurpr.beautyxt.markdown.markdownFootnoteNumbers
+import dev.soupslurpr.beautyxt.markdown.markdownFootnoteLabel
 
 private const val MAX_MARKDOWN_ALERT_BLOCKS_PER_ITEM = 16
 private const val MAX_MARKDOWN_CODE_BLOCKS_PER_ITEM = 8
@@ -85,6 +86,7 @@ internal fun markdownPreviewItems(blocks: List<MarkdownRenderBlock>): List<Markd
                 endBlockIndex < blocks.size &&
                 endBlockIndex - firstBlockIndex < MAX_MARKDOWN_TABLE_ROWS_PER_ITEM &&
                 blocks[endBlockIndex].kind == MarkdownBlockKind.TableRow &&
+                blocks[endBlockIndex].markdownFootnoteLabel() == firstBlock.markdownFootnoteLabel() &&
                 !blocks[endBlockIndex].startsTable &&
                 blocks[endBlockIndex].quoteDepth == 0
             ) {
@@ -95,6 +97,7 @@ internal fun markdownPreviewItems(blocks: List<MarkdownRenderBlock>): List<Markd
                 endBlockIndex < blocks.size &&
                 endBlockIndex - firstBlockIndex < MAX_MARKDOWN_CODE_BLOCKS_PER_ITEM &&
                 blocks[endBlockIndex].kind == MarkdownBlockKind.Code &&
+                blocks[endBlockIndex].markdownFootnoteLabel() == firstBlock.markdownFootnoteLabel() &&
                 blocks[endBlockIndex].quoteDepth == 0 &&
                 blocks[endBlockIndex].continuesPrevious
             ) {
@@ -221,9 +224,7 @@ internal fun markdownFootnoteItemTargets(
     val references = LinkedHashMap<String, Int>()
     items.forEachIndexed { itemIndex, item ->
         item.blocks.forEach { block ->
-            if (block.kind == MarkdownBlockKind.Footnote) {
-                definitions.putIfAbsent(block.metadata, itemIndex)
-            }
+            block.markdownFootnoteLabel()?.let { label -> definitions.putIfAbsent(label, itemIndex) }
             block.spans.forEach { span ->
                 if (span.destinationKind == MarkdownInlineDestinationKind.FootnoteReference) {
                     span.destination?.let { label -> references.putIfAbsent(label, itemIndex) }

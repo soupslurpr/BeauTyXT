@@ -35,6 +35,10 @@ internal data class MarkdownInlinePresentation(
     )
 }
 
+/** Rebases explicit structural separators through atomic inline substitutions. */
+internal fun MarkdownInlinePresentation.tableCellSeparators(block: MarkdownRenderBlock): List<Int> =
+    block.tableCellSeparators.map { presentationUtf16OffsetForSource(it, block.text.length, block.spans) }
+
 /** A displayed formula is one object even when its exact TeX contains paragraph breaks. */
 internal fun standaloneDisplayIllustration(text: String, spans: List<MarkdownInlineSpan>): Boolean {
     val span = spans.singleOrNull() ?: return false
@@ -62,9 +66,7 @@ internal fun markdownFootnoteNumbers(blocks: Iterable<MarkdownRenderBlock>): Map
     val references = LinkedHashSet<String>()
     val definitions = LinkedHashSet<String>()
     blocks.forEach { block ->
-        if (block.kind == MarkdownBlockKind.Footnote) {
-            definitions += block.metadata
-        }
+        block.markdownFootnoteLabel()?.let(definitions::add)
         block.spans.forEach { span ->
             if (span.destinationKind == MarkdownInlineDestinationKind.FootnoteReference) {
                 span.destination?.let(references::add)

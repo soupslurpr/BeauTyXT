@@ -126,6 +126,7 @@ mod tests {
             flags: 0,
             heading_level: 0,
             quote_depth: 0,
+            quote_alert_depth: 0,
             list_depth: 0,
             list_number: 0,
             metadata: String::new(),

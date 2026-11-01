@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.markdown.MarkdownBlockKind
+import dev.soupslurpr.beautyxt.markdown.markdownFootnoteLabel
 import dev.soupslurpr.beautyxt.markdown.MarkdownInlinePresentation
 import dev.soupslurpr.beautyxt.markdown.MarkdownInlineSpan
 import dev.soupslurpr.beautyxt.markdown.MarkdownLinkAction
@@ -536,35 +537,37 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                                     .fillMaxWidth()
                             when {
                                 previewItem.isTable ->
-                                    MarkdownTable(
-                                        blocks = previewItem.blocks,
-                                        firstBlockIndex = previewItem.firstBlockIndex,
-                                        showWrappedPreview =
-                                            previewItem.showsWrappedPreview,
-                                        onInlineInteraction = { interaction ->
-                                            onInlineInteraction(interaction, itemIndex)
-                                        },
+                                    MarkdownOwnedPreviewGroup(
+                                        block = previewItem.blocks.first(),
+                                        references = footnoteTargets.references,
+                                        onInlineInteraction = { onInlineInteraction(it, itemIndex) },
                                         modifier = itemModifier
-                                    )
+                                    ) { groupModifier ->
+                                        MarkdownTable(
+                                            blocks = previewItem.blocks,
+                                            firstBlockIndex = previewItem.firstBlockIndex,
+                                            showWrappedPreview = previewItem.showsWrappedPreview,
+                                            onInlineInteraction = { onInlineInteraction(it, itemIndex) },
+                                            modifier = groupModifier
+                                        )
+                                    }
 
                                 previewItem.isCode ->
-                                    MarkdownCodeBlocks(
-                                        blocks = previewItem.blocks,
-                                        firstBlockIndex = previewItem.firstBlockIndex,
-                                        showWrappedPreview =
-                                            previewItem.showsWrappedPreview,
-                                        onInlineInteraction = { interaction ->
-                                            onInlineInteraction(interaction, itemIndex)
-                                        },
-                                        modifier =
-                                            itemModifier.padding(
-                                                start =
-                                                    markdownNestedIndent(
-                                                        (previewItem.blocks.first().listDepth - 1)
-                                                            .coerceAtLeast(0)
-                                                    )
-                                            )
-                                    )
+                                    MarkdownOwnedPreviewGroup(
+                                        block = previewItem.blocks.first(),
+                                        references = footnoteTargets.references,
+                                        onInlineInteraction = { onInlineInteraction(it, itemIndex) },
+                                        modifier = itemModifier.padding(start = markdownNestedIndent(
+                                            (previewItem.blocks.first().listDepth - 1).coerceAtLeast(0)))
+                                    ) { groupModifier ->
+                                        MarkdownCodeBlocks(
+                                            blocks = previewItem.blocks,
+                                            firstBlockIndex = previewItem.firstBlockIndex,
+                                            showWrappedPreview = previewItem.showsWrappedPreview,
+                                            onInlineInteraction = { onInlineInteraction(it, itemIndex) },
+                                            modifier = groupModifier
+                                        )
+                                    }
 
                                 previewItem.isQuoteAlert ->
                                     MarkdownQuoteAlert(
@@ -576,10 +579,7 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                                             onInlineInteraction(interaction, itemIndex)
                                         },
                                         canReturnToFootnoteReference = { block ->
-                                            block.kind == MarkdownBlockKind.Footnote &&
-                                                footnoteTargets.references.containsKey(
-                                                    block.metadata
-                                                )
+                                            block.markdownFootnoteLabel()?.let(footnoteTargets.references::containsKey) == true
                                         },
                                         modifier = itemModifier
                                     )
@@ -598,10 +598,7 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                                                 onInlineInteraction(interaction, itemIndex)
                                             },
                                             canReturnToFootnoteReference =
-                                                block.kind == MarkdownBlockKind.Footnote &&
-                                                    footnoteTargets.references.containsKey(
-                                                        block.metadata
-                                                    ),
+                                                block.markdownFootnoteLabel()?.let(footnoteTargets.references::containsKey) == true,
                                             modifier = itemModifier
                                         )
                                     }
@@ -827,4 +824,18 @@ private fun MarkdownRecoveryLayout(
             content = content
         )
     }
+}
+
+/** Grouped tables and code retain the same note number and return action as paragraphs. */
+@Composable
+private fun MarkdownOwnedPreviewGroup(
+    block: MarkdownRenderBlock,
+    references: Map<String, Int>,
+    onInlineInteraction: (MarkdownInlineInteraction) -> Unit,
+    modifier: Modifier,
+    content: @Composable (Modifier) -> Unit
+) {
+    val label = block.markdownFootnoteLabel()
+    if (label == null) content(modifier) else MarkdownFootnoteDefinition(label, onInlineInteraction,
+        references.containsKey(label), modifier, content)
 }

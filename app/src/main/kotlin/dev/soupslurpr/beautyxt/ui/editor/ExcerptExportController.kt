@@ -7,7 +7,6 @@ import android.content.Intent
 import android.net.Uri
 import android.print.PageRange
 import android.print.PrintAttributes
-import android.print.PrintManager
 import androidx.compose.runtime.*
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.document.*
@@ -272,6 +271,7 @@ internal class ExcerptExportController(
             try {
                 withContext(Dispatchers.Default) {
                     val transformed = if (formatted && !captured.wholeDocument) checkNotNull(captured.formatted()) else null
+                    transformed?.let { requireSupportedExcerptListStarts(it.document) }
                     val wholeModel = if (captured.wholeDocument && (formatted || outputFormat == ExcerptFormat.ReadingText))
                         plain.duplicate().use { checkNotNull(renderer).render(it, captured.plain.metrics.serializedByteLength) }
                         else null
@@ -319,6 +319,9 @@ internal class ExcerptExportController(
                 busy = false
                 loadTextPreview(null)
             } catch (cancel: CancellationException) { throw cancel }
+            catch (_: UnsupportedExcerptListStartException) {
+                if (request == generation) fail(R.string.excerpt_list_start_unsupported)
+            }
             catch (_: SelectionLimitException) { if (request == generation) fail(R.string.excerpt_format_limit) }
             catch (_: Exception) { if (request == generation) fail(R.string.selection_output_failed) }
             catch (_: LinkageError) { if (request == generation) fail(R.string.selection_output_failed) }
@@ -444,14 +447,14 @@ internal class ExcerptExportController(
                         val content = payload.formatted?.let(::MarkdownPrintDocumentContent)
                             ?: SourcePrintDocumentContent(payload.text.metrics, payload.text.snapshot.duplicate())
                         val adapter = DocumentPrintAdapter(fileName, fileName, content, payload.settings, activityContext.resources)
-                        try { checkNotNull(activityContext.getSystemService(PrintManager::class.java)).print(fileName, adapter, attributes) }
-                        catch (failure: Throwable) { adapter.close(); throw failure }
+                        launchDocumentPrint(activityContext, adapter, attributes)
                     }
                     ExcerptDestination.Save -> Unit
                 }
             } catch (cancel: CancellationException) { throw cancel }
             catch (_: ExcerptShareLimitException) { if (request == generation) message = UiText.Resource(R.string.excerpt_share_limit) }
             catch (_: Exception) { if (request == generation) message = UiText.Resource(R.string.selection_output_failed) }
+            catch (_: LinkageError) { if (request == generation) message = UiText.Resource(R.string.selection_output_failed) }
             finally { if (request == generation) handingOff = activeShareId != null }
         }
     }

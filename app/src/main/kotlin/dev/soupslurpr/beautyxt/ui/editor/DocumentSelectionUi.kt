@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.text.input.TextFieldValue
 import dev.soupslurpr.beautyxt.illustration.NativeIllustration
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -141,6 +142,7 @@ internal class DocumentSelectionLayout(val session: EditorSession) {
     }
 
     fun moveEndpoint(first: Boolean, forward: Boolean): Boolean {
+        session.validateReadingSelectionProjections()
         val selection = session.documentSelection ?: return false
         val endpoints = when (selection) {
             is DocumentSelection.Source -> SelectionPoint.Source(selection.range.start) to SelectionPoint.Source(selection.range.end)
@@ -439,7 +441,15 @@ internal fun DocumentSelectionHost(session: EditorSession, modifier: Modifier = 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun DocumentSelectionActions(session: EditorSession) {
-    if (session.documentSelection == null) return
+    if (session.documentSelection == null) {
+        session.selectionMessage?.let { message ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(message.asString(), Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite })
+                TextButton(onClick = session::clearDocumentSelection) { Text(stringResource(R.string.action_dismiss)) }
+            }
+        }
+        return
+    }
     val context = LocalContext.current
     val selectionTitle = stringResource(R.string.selection_title)
     var expanded by remember { mutableStateOf(false) }

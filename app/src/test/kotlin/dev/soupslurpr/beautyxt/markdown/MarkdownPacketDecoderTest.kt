@@ -21,7 +21,7 @@ private const val TEST_BLOCK_TEXT_OFFSET = 152
 private const val TEST_SPAN_END_OFFSET = 166
 private const val TEST_SOURCE_MAP_RENDERED_END_OFFSET = 190
 private const val TEST_SOURCE_MAP_SOURCE_END_OFFSET = 202
-private const val TEST_PACKET_VERSION = 4L
+private const val TEST_PACKET_VERSION = 6L
 private const val TEST_HEADER_BYTES = 80L
 private const val TEST_BLOCK_HEADER_BYTES = 72L
 private const val TEST_SPAN_HEADER_BYTES = 24L
@@ -30,6 +30,74 @@ private const val TEST_TABLE_START_FLAG = 1L shl 12
 
 /** Verifies strict decoding of the isolated Markdown render format. */
 class MarkdownPacketDecoderTest {
+    @Test
+    fun rejectsOldVersionsAndInvalidAlertOwnerDepths() {
+        val legacyMagic = createHeadingPacket()
+        legacyMagic[7] = '5'.code.toByte()
+        assertProtocolFailure("Markdown packet has invalid magic", legacyMagic)
+        val legacyVersion = createHeadingPacket()
+        legacyVersion.writeLittleEndianInt(8, 5)
+        assertProtocolFailure("unsupported Markdown packet version", legacyVersion)
+        val alert = TestBlock(MarkdownBlockKind.Paragraph, flags = 1L shl 6,
+            quoteDepth = 2, text = "deeper", quoteAlertDepth = 1)
+        for (depth in listOf(0L, 3L, 33L, 0xffff_ffffL)) {
+            assertProtocolFailure("Markdown alert owner depth is invalid",
+                createSingleBlockPacket(alert.copy(quoteAlertDepth = depth)))
+        }
+        assertProtocolFailure("Markdown alert owner depth is invalid",
+            createSingleBlockPacket(alert.copy(flags = 0)))
+        val max = MarkdownPacketDecoder.decode(createSingleBlockPacket(alert.copy(
+            quoteDepth = 32, quoteAlertDepth = 32))).blocks.single()
+        assertEquals(32, max.quoteAlertDepth)
+        assertEquals(0, MarkdownPacketDecoder.decode(createHeadingPacket()).blocks.single().quoteAlertDepth)
+    }
+
+    @Test
+    fun distinguishesLiteralTabsAndValidatesStructuralSeparators() {
+        val table = TestBlock(MarkdownBlockKind.TableRow, text = "a\tb\tc", metadata = "nr", separators = listOf(3))
+        val decoded = MarkdownPacketDecoder.decode(createSingleBlockPacket(table)).blocks.single()
+        assertEquals(listOf(3), decoded.tableCellSeparators)
+        assertEquals(listOf(MarkdownTableCellRange(0, 3), MarkdownTableCellRange(4, 5)), decoded.markdownTableCellRanges())
+        for (offsets in listOf(listOf(0), listOf(5), listOf(3, 3), listOf(3, 1))) {
+            assertProtocolFailure("Markdown table separator is invalid",
+                createSingleBlockPacket(table.copy(separators = offsets)))
+        }
+        assertProtocolFailure("Markdown table alignment count is inconsistent",
+            createSingleBlockPacket(table.copy(separators = emptyList())))
+        assertProtocolFailure("Markdown table separator count is invalid",
+            createSingleBlockPacket(table.copy(kind = MarkdownBlockKind.Paragraph)))
+    }
+
+    @Test
+    fun retainsFootnoteOwnershipWithoutChangingCodeMetadata() {
+        val block = MarkdownPacketDecoder.decode(createSingleBlockPacket(TestBlock(
+            MarkdownBlockKind.Code, text = "exact code", metadata = "rust", footnoteLabel = "note"))).blocks.single()
+        assertEquals(MarkdownBlockKind.Code, block.kind)
+        assertEquals("rust", block.metadata)
+        assertEquals("note", block.footnoteLabel)
+        assertProtocolFailure("Markdown footnote owner is inconsistent", createSingleBlockPacket(TestBlock(
+            MarkdownBlockKind.Footnote, text = "definition", metadata = "note", footnoteLabel = null)))
+    }
+
+    @Test
+    fun permitsUnmappedPresentationButRejectsOverlappingOrEmptySourceMaps() {
+        val partial = createHeadingPacket()
+        partial.writeLittleEndianInt(TEST_SOURCE_MAP_RENDERED_END_OFFSET - 4, 2)
+        assertEquals(2, MarkdownPacketDecoder.decode(partial).blocks.single().sourceMaps.single().renderedStart)
+        val empty = createHeadingPacket()
+        empty.writeLittleEndianLong(TEST_SOURCE_MAP_SOURCE_END_OFFSET, 0)
+        assertProtocolFailure("Markdown source-map source range is invalid", empty)
+        val reversed = createHeadingPacket()
+        reversed.writeLittleEndianInt(TEST_SOURCE_MAP_RENDERED_END_OFFSET - 4, 8)
+        assertProtocolFailure("Markdown source-map rendered range is invalid", reversed)
+        val heading = createHeadingPacket()
+        val overlap = heading + heading.copyOfRange(heading.size - TEST_SOURCE_MAP_HEADER_BYTES.toInt(), heading.size)
+        overlap.writeLittleEndianLong(TEST_PACKET_BYTES_OFFSET, overlap.size.toLong())
+        overlap.writeLittleEndianInt(TEST_SOURCE_MAP_COUNT_OFFSET, 2)
+        overlap.writeLittleEndianInt(TEST_HEADER_BYTES.toInt() + 64, 2)
+        assertProtocolFailure("Markdown source-map rendered range is invalid", overlap)
+    }
+
     /** Decodes one Unicode heading and its strong inline range. */
     @Test
     fun decodesValidHeadingPacket() {
@@ -173,13 +241,15 @@ class MarkdownPacketDecoderTest {
                     TestBlock(
                         kind = MarkdownBlockKind.Paragraph,
                         flags = (1L shl 6) or (1L shl 11),
-                        quoteDepth = 1L,
+                        quoteDepth = 2L,
+                        quoteAlertDepth = 1L,
                         text = "Remember this"
                     )
                 )
             ).blocks.single()
         assertEquals(MarkdownQuoteKind.Note, alert.quoteKind)
         assertTrue(alert.startsQuoteAlert)
+        assertEquals(1, alert.quoteAlertDepth)
 
         val table =
             MarkdownPacketDecoder.decode(
@@ -363,7 +433,7 @@ class MarkdownPacketDecoderTest {
         }
     }
 
-    /** Creates one deterministic packet matching the Rust version-four encoder. */
+    /** Creates one deterministic packet matching the Rust version-six encoder. */
     private fun createHeadingPacket(): ByteArray {
         val textBytes = "Hello 😀".toByteArray(Charsets.UTF_8)
         val packetBytes =
@@ -373,7 +443,7 @@ class MarkdownPacketDecoderTest {
                 TEST_SPAN_HEADER_BYTES +
                 TEST_SOURCE_MAP_HEADER_BYTES
         return ByteArrayOutputStream().apply {
-            write("BTXTMDR4".toByteArray(Charsets.US_ASCII))
+            write("BTXTMDR6".toByteArray(Charsets.US_ASCII))
             writeLittleEndianInt(TEST_PACKET_VERSION)
             writeLittleEndianInt(TEST_HEADER_BYTES)
             writeLittleEndianInt(0)
@@ -449,7 +519,7 @@ class MarkdownPacketDecoderTest {
                 textBytes.size +
                 TEST_SOURCE_MAP_HEADER_BYTES * sourceMapCount
         return ByteArrayOutputStream().apply {
-            write("BTXTMDR4".toByteArray(Charsets.US_ASCII))
+            write("BTXTMDR6".toByteArray(Charsets.US_ASCII))
             writeLittleEndianInt(TEST_PACKET_VERSION)
             writeLittleEndianInt(TEST_HEADER_BYTES)
             writeLittleEndianInt(0)
@@ -489,14 +559,16 @@ class MarkdownPacketDecoderTest {
         }.toByteArray()
     }
 
-    /** Creates one deterministic version-four packet for extended semantic fields. */
+    /** Creates one deterministic version-six packet for extended semantic fields. */
     private fun createSingleBlockPacket(block: TestBlock): ByteArray {
         val textBytes = block.text.toByteArray(Charsets.UTF_8)
         val metadataBytes = block.metadata.toByteArray(Charsets.UTF_8)
         val destinationBytes =
             block.spans.map { span -> span.destination.toByteArray(Charsets.UTF_8) }
         val spanBytes = TEST_SPAN_HEADER_BYTES * block.spans.size
-        val auxiliaryBytes = metadataBytes.size + destinationBytes.sumOf(ByteArray::size)
+        val ownerBytes = block.footnoteLabel.orEmpty().toByteArray(Charsets.UTF_8)
+        val separatorBytes = block.separators.size * Int.SIZE_BYTES
+        val auxiliaryBytes = metadataBytes.size + destinationBytes.sumOf(ByteArray::size) + ownerBytes.size + separatorBytes
         val sourceMapCount = if (block.text.isEmpty()) 0L else 1L
         val packetBytes =
             TEST_HEADER_BYTES +
@@ -506,7 +578,7 @@ class MarkdownPacketDecoderTest {
                 spanBytes +
                 TEST_SOURCE_MAP_HEADER_BYTES * sourceMapCount
         return ByteArrayOutputStream().apply {
-            write("BTXTMDR4".toByteArray(Charsets.US_ASCII))
+            write("BTXTMDR6".toByteArray(Charsets.US_ASCII))
             writeLittleEndianInt(TEST_PACKET_VERSION)
             writeLittleEndianInt(TEST_HEADER_BYTES)
             writeLittleEndianInt(0)
@@ -526,18 +598,20 @@ class MarkdownPacketDecoderTest {
             writeLittleEndianInt(0)
             writeLittleEndianInt(block.quoteDepth)
             writeLittleEndianInt(if (block.kind == MarkdownBlockKind.ListItem) 1 else 0)
-            writeLittleEndianInt(0)
+            writeLittleEndianInt(block.separators.size.toLong())
             writeLittleEndianLong(0)
             writeLittleEndianInt(textBytes.size.toLong())
             writeLittleEndianInt(metadataBytes.size.toLong())
             writeLittleEndianInt(block.spans.size.toLong())
-            writeLittleEndianInt(0)
+            writeLittleEndianInt(ownerBytes.size.toLong())
             writeLittleEndianLong(0)
             writeLittleEndianLong(block.text.length.toLong())
             writeLittleEndianInt(sourceMapCount)
-            writeLittleEndianInt(0)
+            writeLittleEndianInt(block.quoteAlertDepth)
             write(textBytes)
             write(metadataBytes)
+            write(ownerBytes)
+            block.separators.forEach { writeLittleEndianInt(it.toLong()) }
 
             block.spans.forEachIndexed { spanIndex, span ->
                 val destination = destinationBytes[spanIndex]
@@ -558,17 +632,20 @@ class MarkdownPacketDecoderTest {
         }.toByteArray()
     }
 
-    /** Describes one minimal test block for the version-four packet writer. */
+    /** Describes one minimal test block for the version-six packet writer. */
     private data class TestBlock(
         val kind: MarkdownBlockKind,
         val flags: Long = 0L,
         val quoteDepth: Long = 0L,
         val text: String,
         val metadata: String = "",
-        val spans: List<TestSpan> = emptyList()
+        val spans: List<TestSpan> = emptyList(),
+        val separators: List<Int> = if (kind == MarkdownBlockKind.TableRow) text.indices.filter { text[it] == '\t' } else emptyList(),
+        val footnoteLabel: String? = metadata.takeIf { kind == MarkdownBlockKind.Footnote },
+        val quoteAlertDepth: Long = 0L
     )
 
-    /** Describes one minimal test span for the version-four packet writer. */
+    /** Describes one minimal test span for the version-six packet writer. */
     private data class TestSpan(
         val start: Long,
         val end: Long,
