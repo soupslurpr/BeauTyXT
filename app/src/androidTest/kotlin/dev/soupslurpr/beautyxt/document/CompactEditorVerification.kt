@@ -9,7 +9,6 @@ import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Bundle
 import android.os.SystemClock
-import android.provider.Settings
 import android.view.WindowInsets
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
@@ -199,9 +198,8 @@ internal fun Instrumentation.verifyCompactEditorControls() {
 
 /** Keeps both fields and match navigation fully above a real landscape keyboard. */
 private fun Instrumentation.verifyLandscapeFindInput() {
-    val resolver = targetContext.contentResolver
-    val rotation = Settings.System.getInt(resolver, Settings.System.USER_ROTATION, 0)
-    val automatic = Settings.System.getInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 1) != 0
+    val rotation = captureFixtureRotation()
+    var primaryFailure: Throwable? = null
     try {
         startActivitySync(Intent(targetContext, HomeActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
@@ -242,9 +240,11 @@ private fun Instrumentation.verifyLandscapeFindInput() {
             requireActionableText("Review all").performRequiredClick()
             requireActionableText("Apply 2 replacements")
         }
+    } catch (failure: Throwable) {
+        primaryFailure = failure
+        throw failure
     } finally {
-        check(uiAutomation.setRotation(rotation))
-        if (automatic) check(uiAutomation.setRotation(UiAutomation.ROTATION_UNFREEZE))
+        runFixtureCleanup(primaryFailure, { restoreFixtureRotation(rotation) })
     }
 }
 

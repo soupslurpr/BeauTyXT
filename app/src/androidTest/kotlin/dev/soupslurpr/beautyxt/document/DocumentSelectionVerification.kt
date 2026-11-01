@@ -10,6 +10,8 @@ import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeInfo.CHECKED_STATE_FALSE
 import android.view.accessibility.AccessibilityNodeInfo.CHECKED_STATE_TRUE
+import dev.soupslurpr.beautyxt.R
+import dev.soupslurpr.beautyxt.ui.UiText
 import dev.soupslurpr.beautyxt.ui.editor.DocumentSelection
 import dev.soupslurpr.beautyxt.ui.editor.EditorPresentation
 import dev.soupslurpr.beautyxt.ui.editor.ExcerptFormat
@@ -20,6 +22,7 @@ import kotlinx.coroutines.runBlocking
 
 /** Exercises the production accessibility actions, keyboard routing, and frozen output chooser. */
 internal fun Instrumentation.verifyDocumentSelectionControls() {
+    verifyMarkdownSelectedOutputRoundTrips()
     // Deliberately split one extended character as if a bounded renderer had to fragment it.
     val left = dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock(dev.soupslurpr.beautyxt.markdown.MarkdownBlockKind.Paragraph,
         false, false, false, false, false, false, 0, 0, 0, 0, "Text e", "", emptyList())
@@ -117,8 +120,13 @@ internal fun Instrumentation.verifyDocumentSelectionControls() {
         }
         selectionControl("Page settings").performRequiredClick()
         waitForAccessibilityNode("expanded excerpt page settings") { it.text?.toString() == "Paper" }
+        val wrappingBefore = session.excerptExport.printDraft.wrapLongLines
+        val formattedWrapping = scrollToExcerptSwitch("Wrap long source lines")
+        check(!formattedWrapping.isEnabled) { "formatted PDF enabled source-only wrapping" }
+        check(formattedWrapping.checked == if (wrappingBefore) CHECKED_STATE_TRUE else CHECKED_STATE_FALSE)
+        // Whole-document export verifies Source mode's accessible toggle and
+        // preference retention while switching between both content modes.
         for ((label, value) in listOf<Pair<String, () -> Boolean>>(
-            "Wrap long source lines" to { session.excerptExport.printDraft.wrapLongLines },
             "File name header" to { session.excerptExport.printDraft.showFileName },
             "Page numbers" to { session.excerptExport.printDraft.showPageNumbers }
         )) {
@@ -131,6 +139,7 @@ internal fun Instrumentation.verifyDocumentSelectionControls() {
             }
             waitForExcerptSwitchState(label, checked = !before)
         }
+        check(session.excerptExport.printDraft.wrapLongLines == wrappingBefore)
         runOnMainSync {
             check(session.excerptExport.usePreparedDestination(dev.soupslurpr.beautyxt.ui.editor.ExcerptDestination.Save))
             check(session.excerptExport.chooseSaveDestination())
@@ -185,6 +194,35 @@ internal fun Instrumentation.verifyDocumentSelectionControls() {
         }
         check(session.excerptExport.prepared!!.formatted!!.blocks.single().text == "1")
         check(session.excerptExport.prepared!!.notices.isEmpty())
+    }
+    withReadingPage("999999999. first\n999999999. second\n") { _, session ->
+        runOnMainSync {
+            check(session.readingDocumentForSelection()!!.blocks[1].listNumber == 1_000_000_000L)
+            check(session.selectReading(ReadingPoint(1, 0), ReadingPoint(1, 6)))
+        }
+        selectionControl("Send/export").performRequiredClick()
+        awaitReadingCondition("wide-number text selection did not prepare") {
+            session.excerptExport.prepared != null && !session.excerptExport.busy
+        }
+        selectionControl("Markdown").performRequiredClick()
+        awaitReadingCondition("unsupported starting number did not reject formatted output") {
+            !session.excerptExport.busy && session.excerptExport.message ==
+                UiText.Resource(R.string.excerpt_list_start_unsupported)
+        }
+        check(session.excerptExport.prepared == null && !session.excerptExport.canApply)
+        waitForAccessibilityNode("unsupported starting-number explanation") {
+            it.text?.toString() == targetContext.getString(R.string.excerpt_list_start_unsupported)
+        }
+        selectionControl(targetContext.getString(R.string.excerpt_text)).performRequiredClick()
+        awaitReadingCondition("text output did not recover after unsupported formatting") {
+            session.excerptExport.prepared != null && !session.excerptExport.busy &&
+                session.excerptExport.message == null
+        }
+        val plain = checkNotNull(session.excerptExport.prepared).text
+        check(runBlocking { plain.snapshot.duplicate().use {
+            dev.soupslurpr.beautyxt.sharing.readSharedTextSnapshot(it, plain.metrics.serializedByteLength)
+        } } == "second")
+        check(!session.state.hasDocumentChanges)
     }
 }
 

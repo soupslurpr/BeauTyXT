@@ -8,8 +8,10 @@ import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
+import android.os.Process
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.view.KeyEvent
@@ -231,7 +233,7 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
         capture("export-staging-document")
         requireActionableText("Share file").performRequiredClick()
         if (app == targetContext.packageName) {
-            requireActionableText("Excerpt test receiver").performRequiredClick()
+            openStableExcerptTestReceiver()
             requireActionableText("Read excerpt now").performRequiredClick()
             val originalBytes = original.toByteArray()
             val digest = MessageDigest.getInstance("SHA-256").digest(originalBytes).joinToString("") { "%02x".format(it) }
@@ -323,4 +325,61 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
         try { resolver.delete(source, null, null) }
         finally { targetContext.revokeUriPermission(source, flags) }
     }
+}
+
+/** Selects only a stable chooser item, then verifies the actual separate-UID receiver. */
+internal fun Instrumentation.openStableExcerptTestReceiver() {
+    val label = "Excerpt test receiver"
+    val receiverPackage = "dev.soupslurpr.beautyxt.debug.test.providers"
+    fun candidate(): Pair<AccessibilityNodeInfo, List<String>>? {
+        uiAutomation.clearCache()
+        val root = uiAutomation.rootInActiveWindow ?: return null
+        if (root.packageName?.toString() in setOf(targetContext.packageName, receiverPackage)) return null
+        val text = root.findNode {
+            it.isVisibleToUser && it.isEnabled && it.text?.toString() == label
+        } ?: return null
+        val item = text.enabledClickableAncestor() ?: return null
+        val labels = linkedSetOf<String>()
+        item.findNode {
+            if (it.isVisibleToUser) it.text?.toString()?.takeIf(String::isNotBlank)?.let(labels::add)
+            false
+        }
+        val itemBounds = Rect().also(item::getBoundsInScreen)
+        val textBounds = Rect().also(text::getBoundsInScreen)
+        val allowedLabels = setOf(label, "BeauTyXT test providers")
+        File(targetContext.cacheDir, "document-experience-chooser-candidate.txt").writeText(
+            "labels=$labels; allowed=${label in labels && labels.all(allowedLabels::contains)}\n" +
+                "class=${item.className}; id=${item.viewIdResourceName}; item=$itemBounds; label=$textBounds")
+        if (label !in labels || !labels.all(allowedLabels::contains)) return null
+        return item to listOf(root.packageName.toString(), item.className.toString(),
+            item.viewIdResourceName.orEmpty(), itemBounds.flattenToString(), textBounds.flattenToString())
+    }
+    val deadline = SystemClock.uptimeMillis() + 15_000
+    var previous: List<String>? = null
+    var clicked = false
+    while (SystemClock.uptimeMillis() < deadline) {
+        uiAutomation.waitForIdle(500, 15_000)
+        val current = candidate()
+        if (current != null && current.second == previous) {
+            val confirmed = candidate()
+            if (confirmed != null && confirmed.second == current.second) {
+                File(targetContext.cacheDir, "document-experience-chooser-target.txt")
+                    .writeText(confirmed.second.joinToString("\n"))
+                confirmed.first.performRequiredClick()
+                clicked = true
+                break
+            }
+        }
+        previous = current?.second
+        SystemClock.sleep(100)
+    }
+    check(clicked) { "The exact excerpt receiver chooser item did not stabilize" }
+    val ready = waitForAccessibilityNode("separate excerpt receiver ready") {
+        it.isVisibleToUser && it.packageName?.toString() == receiverPackage &&
+            it.text?.toString()?.let { value ->
+                value.startsWith("Receiver ready; UID ") && value.endsWith("instance 0")
+            } == true
+    }
+    check(uiAutomation.rootInActiveWindow?.packageName?.toString() == receiverPackage)
+    check(ready.text.toString().substringAfter("UID ").substringBefore(';').toInt() != Process.myUid())
 }

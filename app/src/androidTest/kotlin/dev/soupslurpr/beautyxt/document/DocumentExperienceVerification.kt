@@ -25,11 +25,17 @@ internal fun verifyDocumentExperience(context: Context) = runBlocking {
         dev.soupslurpr.beautyxt.ipc.NativeServiceNames.MATH,
         dev.soupslurpr.beautyxt.illustration.IllustrationLimits.MAX_MATH_SOURCE_BYTES).use { worker ->
         val fraction = worker.render("\\frac{a}{b}", true) as dev.soupslurpr.beautyxt.illustration.IllustrationResult.Rendered
-        check(fraction.drawing.isTextComplete)
+        // KaTeX's fraction outlines overshoot their layout viewport slightly.
+        // Partially visible glyphs retain exact text with clipped highlight boxes.
+        check(!fraction.drawing.isTextComplete) { "fraction clipping was not reported" }
         check(fraction.drawing.textRuns.map { it.text }.containsAll(listOf("a", "b"))) {
             "fraction semantic runs changed: ${fraction.drawing.textRuns.map { it.text }}"
         }
         check(fraction.drawing.textRuns.all { it.boxes.isNotEmpty() })
+        check(fraction.drawing.textRuns.flatMap { it.boxes }.all {
+            it.left >= 0f && it.top >= 0f && it.right <= fraction.drawing.width &&
+                it.bottom <= fraction.drawing.height
+        }) { "fraction highlights escaped the drawing viewport" }
     }
     dev.soupslurpr.beautyxt.illustration.IllustrationWorkerConnection(context,
         dev.soupslurpr.beautyxt.ipc.NativeServiceNames.DIAGRAM,

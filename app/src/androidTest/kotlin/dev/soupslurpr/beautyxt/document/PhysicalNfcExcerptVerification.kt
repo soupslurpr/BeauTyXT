@@ -37,13 +37,15 @@ internal fun Instrumentation.verifyPhysicalNfcExcerpt() {
         awaitReadingCondition("NFC excerpt capture did not prepare") { export.canApply }
         runOnMainSync {
             export.selectDestination(ExcerptDestination.Nfc)
-            export.updateTagLabel("TEST")
+            export.updateTagLabel("TST")
+            check(export.tagLabel == "TST") { "NFC fixture label was rejected" }
         }
         awaitReadingCondition("NFC excerpt envelope did not prepare") { export.canApply }
         runOnMainSync { export.apply(activity) }
         awaitReadingCondition("NFC excerpt did not reach the writer") { session.nfcWriteStatus is NfcWriteStatus.Ready }
         val ready = session.nfcWriteStatus as NfcWriteStatus.Ready
         check(ready.textBytes == selected.toByteArray().size.toLong())
+        check(ready.tagLabel == "TST") { "NFC fixture prepared an unexpected label" }
         runOnMainSync {
             activity.setContent { BeauTyXTTheme {
                 NfcWriteScreen(adapter, ready, { session.completeNfcWrite(it) }, session::cancelNfcWrite)
@@ -61,6 +63,6 @@ internal fun Instrumentation.verifyPhysicalNfcExcerpt() {
         waitForTap("NFC WRITE VERIFIED; READ READY: remove the tag, then tap again.") { received.get() != null }
         check(received.get()?.text == selected) { "Physical NFC read included unexpected content" }
         check(received.get()?.format == DocumentFormat.PlainText)
-        check(received.get()?.nfcMetadata?.tagLabel == "TEST")
+        check(received.get()?.nfcMetadata?.tagLabel == "TST")
     }
 }

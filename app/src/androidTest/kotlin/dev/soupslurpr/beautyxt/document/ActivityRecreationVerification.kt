@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityService
 import android.app.Activity
 import android.app.Application
 import android.app.Instrumentation
+import android.app.UiAutomation
 import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Intent
@@ -12,19 +13,29 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Parcel
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.provider.MediaStore
+import android.provider.Settings
+import android.text.SpannableString
+import android.text.Spanned
+import android.util.Log
 import android.view.KeyEvent
+import android.view.Display
+import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.BaseInputConnection
+import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import androidx.activity.compose.setContent
 import androidx.camera.core.CameraSelector
@@ -70,10 +81,6 @@ private const val TEST_ACTIVITY_TIMEOUT_MILLIS = 15_000L
 private const val TEST_ACCESSIBILITY_QUIET_MILLIS = 100L
 private const val TEST_ACCESSIBILITY_POLL_MILLIS = 20L
 private const val TEST_ACCESSIBILITY_SCROLL_MILLIS = 350L
-private const val TEST_SCROLL_DRAG_STEPS = 12
-private const val TEST_SCROLL_DRAG_STEP_MILLIS = 20L
-private const val TEST_SCROLL_DRAG_START_FRACTION = 0.8f
-private const val TEST_SCROLL_DRAG_DISTANCE_FRACTION = 0.25f
 private const val TEST_RECOVERY_LAYOUT_SETTLE_MILLIS = 500L
 private const val TEST_MINIMUM_TOUCH_TARGET_DP = 48
 private const val TEST_NEW_DOCUMENT_LABEL = "New document"
@@ -283,7 +290,9 @@ internal fun Instrumentation.verifyIncomingReviewInteractions() {
         waitForEditorText(TEST_SHARED_UNICODE_TEXT)
         requireActiveActivity(activity, "unsupported incoming content closed the current document")
 
-        val replacementText = "Incoming content survives the unsaved-document handoff."
+        val replacementText = "Incoming content survives the unsaved-document handoff.\r\n" +
+            "CRLF and bare CR share the canonical LF editor form.\rA third line."
+        val openedText = replacementText.replace("\r\n", "\n").replace('\r', '\n')
         runOnMainSync {
             callActivityOnNewIntent(
                 activity,
@@ -304,11 +313,14 @@ internal fun Instrumentation.verifyIncomingReviewInteractions() {
         waitForAccessibilityNode("incoming review after discarding the previous document") { node ->
             node.text?.toString() == "Review shared text"
         }
+        waitForAccessibilityNode("canonical Android shared text before confirmation") { node ->
+            node.text?.toString() == openedText
+        }
         requireActionableText("Open").performRequiredClick()
-        waitForEditorText(replacementText)
+        waitForEditorText(openedText)
         requireActiveActivity(activity, "discarding the old document lost incoming content")
 
-        val editedText = "$replacementText Now edited."
+        val editedText = "$openedText Now edited."
         check(
             waitForEditField().performAction(
                 AccessibilityNodeInfo.ACTION_SET_TEXT,
@@ -377,10 +389,22 @@ internal fun Instrumentation.verifyComposingHistoryInteractions() {
 
         requireActionableContentDescription("Undo").performRequiredClick()
         waitForEditorText(TEST_HISTORY_WORD)
+        var branchConnection: InputConnection? = null
         editThroughInputConnection(activity) { connection ->
-            connection.setComposingText(" branch", 1)
+            branchConnection = connection
+            traceComposingHistoryInput("before branch", connection)
+            connection.setComposingText(" branch", 1).also { accepted ->
+                Log.i("BeauTyXTInputVerification", "setComposingText branch accepted=$accepted")
+                traceComposingHistoryInput("after branch command", connection)
+            }
         }
-        waitForEditorText("$TEST_HISTORY_WORD branch")
+        try {
+            waitForEditorText("$TEST_HISTORY_WORD branch")
+        } finally {
+            runOnMainSync {
+                branchConnection?.let { traceComposingHistoryInput("after branch observation", it) }
+            }
+        }
         // Await the toolbar's semantics update as well as the editor's text update.
         waitForAccessibilityNode("disabled redo after new typing") { node ->
             node.contentDescription?.toString() == "Redo" &&
@@ -428,6 +452,30 @@ internal fun Instrumentation.verifyComposingHistoryInteractions() {
             runOnMainSync(activity::finishAndRemoveTask)
             waitForAccessibilityIdle()
         }
+    }
+}
+
+/** Records only this synthetic fixture's bounded input state at its unresolved history boundary. */
+private fun traceComposingHistoryInput(label: String, connection: InputConnection) {
+    try {
+        val extracted = connection.getExtractedText(ExtractedTextRequest().apply {
+            hintMaxChars = 256
+            hintMaxLines = 4
+            flags = InputConnection.GET_TEXT_WITH_STYLES
+        }, 0)
+        val text = extracted?.text
+        val composition = (text as? Spanned)?.let {
+            SpannableString(it.subSequence(0, minOf(it.length, 256)))
+        }?.let {
+            "${BaseInputConnection.getComposingSpanStart(it)}..${BaseInputConnection.getComposingSpanEnd(it)}"
+        } ?: "not exposed by InputConnection"
+        val boundedText = text?.take(256)?.toString()?.replace("\n", "\\n")?.replace("\r", "\\r")
+        Log.i("BeauTyXTInputVerification", "$label text=$boundedText " +
+            "selection=${extracted?.selectionStart}..${extracted?.selectionEnd} " +
+            "composition=$composition startOffset=${extracted?.startOffset} " +
+            "selected=${connection.getSelectedText(0)?.take(256)}")
+    } catch (failure: Exception) {
+        Log.i("BeauTyXTInputVerification", "$label diagnostic unavailable: ${failure.javaClass.simpleName}")
     }
 }
 
@@ -518,6 +566,7 @@ internal fun Instrumentation.verifyShortDocumentEditRecovery(capturePreviews: Bo
                 }
             }
             waitForEditorText(TEST_EDIT_RECOVERY_ORIGINAL)
+            requireActiveActivity(activity, "edit recovery fixture was recreated during startup")
             waitForEditField().performRequiredClick()
             waitForImeVisibility(activity, visible = true)
             editThroughInputConnection(activity) { connection ->
@@ -562,6 +611,11 @@ internal fun Instrumentation.verifyShortDocumentEditRecovery(capturePreviews: Bo
             check(committed.text == TEST_EDIT_RECOVERY_REPLACEMENT) {
                 "edit recovery did not retain the committed native text"
             }
+        } catch (failure: Throwable) {
+            runCatching {
+                recordActivityFixtureFailure("edit-recovery-$unverifiedResult", activity, session)
+            }.exceptionOrNull()?.let(failure::addSuppressed)
+            throw failure
         } finally {
             runOnMainSync {
                 activity.finish()
@@ -701,42 +755,116 @@ internal fun Instrumentation.revealScrollableAction(text: String): Accessibility
         root.findNode { node -> node.text?.toString() == text }?.enabledClickableAncestor()
     }
 
-/** Finds a visible field or a fully exposed action using small real scroll gestures. */
+/** Finds a visible field or a fully exposed action within its own scroll ancestors. */
 internal fun Instrumentation.revealScrollableNode(
     description: String,
     allowPartialVisibility: Boolean = false,
     find: (AccessibilityNodeInfo) -> AccessibilityNodeInfo?
 ): AccessibilityNodeInfo {
     val deadline = SystemClock.uptimeMillis() + TEST_ACTIVITY_TIMEOUT_MILLIS
-    var lastActionBounds: Rect? = null
-    var lastViewportBounds: Rect? = null
+    var matchedTarget = false
+    var lastObservation = "no hierarchy observed"
+    var lastMatchedObservation: String? = null
+    var lastLoggedObservation: String? = null
+    var previousShowRequest: String? = null
+    var initialSearchAction = AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
     while (SystemClock.uptimeMillis() < deadline) {
         // Real scrolling can finish before cached accessibility bounds catch up.
         // Read the current hierarchy instead of repeatedly scrolling past the target.
         uiAutomation.clearCache()
-        val root = uiAutomation.rootInActiveWindow
+        val observedRoot = uiAutomation.rootInActiveWindow
+        val root = observedRoot?.takeIf {
+            it.packageName?.toString() == targetContext.packageName
+        }
         val action = root?.let(find)
-        val scroll = root?.findNode { node -> node.isScrollable && node.isVisibleToUser }
         if (action != null) {
+            matchedTarget = true
             val bounds = Rect().also(action::getBoundsInScreen)
-            val viewport = scroll?.let { Rect().also(it::getBoundsInScreen) }
-            lastActionBounds = bounds
-            lastViewportBounds = viewport
-            if (viewport == null || viewport.contains(bounds) ||
-                (
-                    allowPartialVisibility && action.isVisibleToUser &&
-                        Rect.intersects(viewport, bounds)
-                    )
-            ) {
+            val owners = mutableListOf<Pair<AccessibilityNodeInfo, Rect>>()
+            var parent = action.parent
+            while (parent != null && parent.windowId == action.windowId) {
+                if (parent.isScrollable && parent.isVisibleToUser) {
+                    owners += parent to Rect().also(parent::getBoundsInScreen)
+                }
+                parent = parent.parent
+            }
+            val windowBounds = Rect().also(root::getBoundsInScreen)
+            val viewports = owners.map { it.second } + windowBounds
+            fun exposed(viewport: Rect) = !viewport.isEmpty &&
+                if (allowPartialVisibility) Rect.intersects(viewport, bounds)
+                else viewport.contains(bounds)
+            if (action.isVisibleToUser && !bounds.isEmpty && viewports.all(::exposed)) {
                 return action
             }
-            dragScrollableViewport(viewport, forward = bounds.bottom > viewport.bottom)
+            // A raw downward drag can dismiss a modal sheet at its scroll limit.
+            // Ask the target or its actual clipping owner to scroll instead.
+            val geometry = "package=${root.packageName}; window=${action.windowId}; action=$bounds; " +
+                "visible=${action.isVisibleToUser}; windowBounds=$windowBounds; " +
+                "owners=${owners.map { (node, viewport) ->
+                    "${node.className}/${node.viewIdResourceName}:$viewport:" +
+                        node.actionList.map { it.id }
+                }}"
+            val showAction = AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.id
+            val showOffered = action.actionList.any { it.id == showAction }
+            val owner = owners.firstOrNull { !exposed(it.second) }
+            val scrollAction = owner?.let { (_, viewport) ->
+                if (bounds.bottom > viewport.bottom) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            }
+            val movement = when {
+                // Compose handles this public request even when it does not
+                // advertise it. A page-sized scroll can overshoot a short action.
+                previousShowRequest != geometry -> {
+                    previousShowRequest = geometry
+                    "showAdvertised=$showOffered; show=${action.performAction(showAction)}"
+                }
+                owner != null && owner.first.actionList.any { it.id == scrollAction } -> {
+                    val inputViewport = Rect(owner.second)
+                    for (viewport in viewports) {
+                        if (!inputViewport.intersect(viewport)) {
+                            inputViewport.setEmpty()
+                            break
+                        }
+                    }
+                    if (inputViewport.isEmpty) "no exposed owner input viewport"
+                    else "ownerWheel=$scrollAction:" + wheelScrollableViewport(
+                        inputViewport, owner.second, bounds, action.windowId
+                    )
+                }
+                else -> "no owner scroll offered"
+            }
+            lastObservation = "$geometry; $movement"
+            lastMatchedObservation = lastObservation
         } else {
+            lastObservation = "package=${observedRoot?.packageName}; " +
+                "window=${observedRoot?.windowId}; action=absent; matchedBefore=$matchedTarget"
+            // Before lazy content exposes the target, use only an offered scroll
+            // action in the fixture's package. A gesture in a transient sheet can
+            // hit system navigation or dismiss the sheet before its content exists.
+            // After target loss, never redirect scrolling into another surface.
+            val scroll = if (matchedTarget) null else root?.findNode { node ->
+                node.isScrollable && node.isVisibleToUser && node.actionList.any {
+                    it.id == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD ||
+                        it.id == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                }
+            }
             scroll?.let { node ->
                 val viewport = Rect().also(node::getBoundsInScreen)
-                lastViewportBounds = viewport
-                dragScrollableViewport(viewport, forward = true)
+                if (!viewport.isEmpty) {
+                    if (node.actionList.none { it.id == initialSearchAction }) {
+                        initialSearchAction = if (
+                            initialSearchAction == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                        ) AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                        else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                    }
+                    lastObservation += "; initialSearchViewport=$viewport; " +
+                        "scroll=$initialSearchAction:${node.performAction(initialSearchAction)}"
+                }
             }
+        }
+        if (lastObservation != lastLoggedObservation) {
+            Log.i("BeauTyXTScrollVerification", "$description: $lastObservation")
+            lastLoggedObservation = lastObservation
         }
         SystemClock.sleep(TEST_ACCESSIBILITY_SCROLL_MILLIS)
         waitForAccessibilityIdle()
@@ -744,42 +872,49 @@ internal fun Instrumentation.revealScrollableNode(
     captureStartupPreview("recovery-unreachable")
     error(
         "scrollable $description is not fully reachable; " +
-            "action=$lastActionBounds, viewport=$lastViewportBounds"
+            "current=$lastObservation; lastMatched=$lastMatchedObservation"
     )
 }
 
-/** Drags part of a viewport so a short window cannot skip over a complete action. */
-private fun Instrumentation.dragScrollableViewport(viewport: Rect, forward: Boolean) {
-    require(!viewport.isEmpty) { "scroll viewport must not be empty" }
-    val downTime = SystemClock.uptimeMillis()
-    val x = viewport.exactCenterX()
-    val startFraction =
-        if (forward) TEST_SCROLL_DRAG_START_FRACTION else 1f - TEST_SCROLL_DRAG_START_FRACTION
-    val startY = viewport.top + viewport.height() * startFraction
-    val distance = viewport.height() * TEST_SCROLL_DRAG_DISTANCE_FRACTION *
-        if (forward) 1f else -1f
-    for (step in 0..TEST_SCROLL_DRAG_STEPS + 1) {
-        val action = when (step) {
-            0 -> MotionEvent.ACTION_DOWN
-            TEST_SCROLL_DRAG_STEPS + 1 -> MotionEvent.ACTION_UP
-            else -> MotionEvent.ACTION_MOVE
-        }
-        val fraction = step.coerceAtMost(TEST_SCROLL_DRAG_STEPS).toFloat() / TEST_SCROLL_DRAG_STEPS
-        val event = MotionEvent.obtain(
-            downTime,
-            SystemClock.uptimeMillis(),
-            action,
-            x,
-            startY - distance * fraction,
-            0
-        )
-        try {
-            check(uiAutomation.injectInputEvent(event, true)) { "scroll drag was rejected" }
-        } finally {
-            event.recycle()
-        }
-        SystemClock.sleep(TEST_SCROLL_DRAG_STEP_MILLIS)
+/** Uses a small wheel step after page-sized semantic scrolling would overshoot. */
+private fun Instrumentation.wheelScrollableViewport(
+    inputViewport: Rect,
+    ownerViewport: Rect,
+    actionBounds: Rect,
+    windowId: Int
+): String {
+    val current = uiAutomation.rootInActiveWindow
+    if (current?.windowId != windowId ||
+        current.packageName?.toString() != targetContext.packageName
+    ) return "skipped changed window"
+    val forward = actionBounds.bottom > ownerViewport.bottom
+    val overhang = if (forward) actionBounds.bottom - ownerViewport.bottom
+        else ownerViewport.top - actionBounds.top
+    val pixels = (overhang + 4f * targetContext.resources.displayMetrics.density)
+        .coerceIn(1f, maxOf(1f, ownerViewport.height() * 0.25f))
+    val factor = ViewConfiguration.get(targetContext).scaledVerticalScrollFactor
+    check(factor.isFinite() && factor > 0f) { "invalid vertical wheel scroll factor" }
+    val axis = pixels / factor * if (forward) -1f else 1f
+    val now = SystemClock.uptimeMillis()
+    val event = MotionEvent.obtain(
+        now, now, MotionEvent.ACTION_SCROLL, 1,
+        arrayOf(MotionEvent.PointerProperties().apply {
+            id = 0
+            toolType = MotionEvent.TOOL_TYPE_MOUSE
+        }),
+        arrayOf(MotionEvent.PointerCoords().apply {
+            x = inputViewport.exactCenterX()
+            y = inputViewport.exactCenterY()
+            setAxisValue(MotionEvent.AXIS_VSCROLL, axis)
+        }),
+        0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0
+    )
+    try {
+        check(uiAutomation.injectInputEvent(event, true)) { "owner wheel input was rejected" }
+    } finally {
+        event.recycle()
     }
+    return "pixels=$pixels; axis=$axis"
 }
 
 /** Verifies label input and suggestions remain reachable without NFC hardware. */
@@ -1154,21 +1289,7 @@ internal fun Instrumentation.verifyRapidBackGuardsUnsavedDraft() {
                 activity,
                 "rapid Back attempt $attemptIndex closed the unsaved document"
             )
-            val confirmationVisible =
-                uiAutomation.rootInActiveWindow?.findNode { node ->
-                    node.text?.toString() == TEST_UNSAVED_CHANGES_TITLE
-                } != null
-            if (!confirmationVisible) {
-                waitForAccessibilityNode(
-                    "draft retained after consumed Back $attemptIndex"
-                ) { node ->
-                    node.className?.toString() == TEST_EDIT_FIELD_CLASS_NAME &&
-                        node.text?.toString() == TEST_RAPID_BACK_DRAFT
-                }
-                requireActionableContentDescription(TEST_BACK_CONTENT_DESCRIPTION)
-                    .performRequiredClick()
-            }
-
+            awaitRapidBackConfirmation(activity, attemptIndex)
             waitForAccessibilityNode("unsaved-work confirmation $attemptIndex") { node ->
                 node.text?.toString() == TEST_UNSAVED_CHANGES_TITLE
             }
@@ -1180,6 +1301,13 @@ internal fun Instrumentation.verifyRapidBackGuardsUnsavedDraft() {
             }
         }
         requireActiveActivity(activity, "keeping the rapid-back draft closed the document")
+    } catch (failure: Throwable) {
+        currentActivity?.let { activity ->
+            runCatching {
+                recordActivityFixtureFailure("rapid-back", activity)
+            }.exceptionOrNull()?.let(failure::addSuppressed)
+        }
+        throw failure
     } finally {
         val activityToFinish = currentActivity
         if (activityToFinish != null) {
@@ -1187,6 +1315,100 @@ internal fun Instrumentation.verifyRapidBackGuardsUnsavedDraft() {
             waitForAccessibilityIdle()
         }
     }
+}
+
+/** Observes either Back outcome without waiting exclusively behind an arriving dialog. */
+private fun Instrumentation.awaitRapidBackConfirmation(activity: Activity, attemptIndex: Int) {
+    val started = SystemClock.uptimeMillis()
+    val deadline = started + TEST_ACTIVITY_TIMEOUT_MILLIS
+    var fallbackAttempted = false
+    var fallbackAccepted = false
+    var lastObservation = "no active root observed"
+    while (SystemClock.uptimeMillis() < deadline) {
+        requireActiveActivity(activity, "rapid Back attempt $attemptIndex closed the document")
+        uiAutomation.clearCache()
+        val root = uiAutomation.rootInActiveWindow
+        val confirmation = root?.findNode { node ->
+            node.text?.toString() == TEST_UNSAVED_CHANGES_TITLE
+        }
+        val retainedDraft = root?.findNode { node ->
+            node.className?.toString() == TEST_EDIT_FIELD_CLASS_NAME &&
+                node.isEditable && node.text?.toString() == TEST_RAPID_BACK_DRAFT
+        }
+        lastObservation =
+            "window=${root?.windowId}, package=${root?.packageName}, " +
+                "confirmation=${confirmation != null}, exactDraft=${retainedDraft != null}"
+        if (confirmation != null) {
+            Log.i(
+                "BeauTyXTRapidBack",
+                "attempt=$attemptIndex, elapsed=${SystemClock.uptimeMillis() - started}, " +
+                    "fallbackAttempted=$fallbackAttempted, fallbackAccepted=$fallbackAccepted; " +
+                    lastObservation
+            )
+            return
+        }
+        if (!fallbackAttempted && retainedDraft != null) {
+            val back = root.findNode { node ->
+                node.contentDescription?.toString() == TEST_BACK_CONTENT_DESCRIPTION
+            }?.enabledClickableAncestor()
+            if (back != null) {
+                // Keep all observations in this fresh root and dispatch at most once.
+                fallbackAttempted = true
+                fallbackAccepted = back.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                Log.i(
+                    "BeauTyXTRapidBack",
+                    "attempt=$attemptIndex, fallbackAttempted=true, " +
+                        "fallbackAccepted=$fallbackAccepted; $lastObservation"
+                )
+            }
+        }
+        SystemClock.sleep(TEST_ACCESSIBILITY_POLL_MILLIS)
+    }
+    error(
+        "rapid Back confirmation $attemptIndex timed out; " +
+            "fallbackAttempted=$fallbackAttempted, fallbackAccepted=$fallbackAccepted; " +
+            lastObservation
+    )
+}
+
+/** Retains synthetic fixture state before cleanup can replace its Activity and window. */
+private fun Instrumentation.recordActivityFixtureFailure(
+    name: String,
+    activity: Activity,
+    session: EditorSession? = null
+) {
+    val details = StringBuilder()
+    runOnMainSync {
+        details.appendLine(
+            "activity=${System.identityHashCode(activity)}, finishing=${activity.isFinishing}, " +
+                "destroyed=${activity.isDestroyed}, changing=${activity.isChangingConfigurations}, " +
+                "focus=${activity.hasWindowFocus()}, orientation=" +
+                activity.resources.configuration.orientation
+        )
+        details.appendLine("configuration=${activity.resources.configuration}")
+        details.appendLine("textEditor=${activity.window.decorView.findTextEditorView() != null}")
+        session?.let {
+            details.appendLine(
+                "status=${it.state.status}, revision=${it.state.metrics?.revision}, " +
+                    "message=${it.state.editorMessage}"
+            )
+            details.appendLine("draft=${it.activeDraft?.textFieldState?.text?.take(200)}")
+        }
+    }
+    uiAutomation.clearCache()
+    var count = 0
+    uiAutomation.rootInActiveWindow?.findNode { node ->
+        if (count++ >= 128) return@findNode true
+        details.appendLine(
+            "window=${node.windowId}, package=${node.packageName}, class=${node.className}, " +
+                "visible=${node.isVisibleToUser}, editable=${node.isEditable}, " +
+                "focused=${node.isFocused}, text=${node.text?.take(160)}, " +
+                "description=${node.contentDescription?.take(160)}"
+        )
+        false
+    }
+    File(targetContext.cacheDir, "activity-fixture-$name.txt").writeText(details.toString())
+    Log.i("BeauTyXTActivityFixture", "captured $name before cleanup")
 }
 
 /** Verifies pausing a real editor checkpoints its latest draft into its provider source. */
@@ -2060,6 +2282,107 @@ internal fun Instrumentation.waitForAccessibilityIdle() {
         TEST_ACCESSIBILITY_QUIET_MILLIS,
         TEST_ACTIVITY_TIMEOUT_MILLIS
     )
+}
+
+/** Attempts every fixture cleanup while retaining the original failure and secondary errors. */
+internal fun runFixtureCleanup(primaryFailure: Throwable?, vararg actions: () -> Unit) {
+    var failure = primaryFailure
+    for (action in actions) {
+        try {
+            action()
+        } catch (cleanupFailure: Throwable) {
+            val first = failure
+            if (first == null) {
+                failure = cleanupFailure
+            } else if (first !== cleanupFailure) {
+                first.addSuppressed(cleanupFailure)
+            }
+        }
+    }
+    if (primaryFailure == null) failure?.let { throw it }
+}
+
+/** Keeps saved rotation policy distinct from the current sensor-selected display rotation. */
+internal data class FixtureRotationState(
+    val userRotation: Int,
+    val automatic: Boolean,
+    val displayRotation: Int,
+    val orientation: Int
+)
+
+/** Captures rotation before a fixture takes ownership of the display. */
+internal fun Instrumentation.captureFixtureRotation(): FixtureRotationState {
+    val resolver = targetContext.contentResolver
+    val display = checkNotNull(
+        targetContext.getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY)
+    )
+    return FixtureRotationState(
+        userRotation = Settings.System.getInt(resolver, Settings.System.USER_ROTATION, 0),
+        automatic = Settings.System.getInt(
+            resolver, Settings.System.ACCELEROMETER_ROTATION, 1
+        ) != 0,
+        displayRotation = display.rotation,
+        orientation = targetContext.resources.configuration.orientation
+    )
+}
+
+/** Awaits final restored policy and display state before another fixture can launch. */
+internal fun Instrumentation.restoreFixtureRotation(expected: FixtureRotationState) {
+    val deadline = SystemClock.uptimeMillis() + TEST_ACTIVITY_TIMEOUT_MILLIS
+    var observed: FixtureRotationState? = null
+    var observedPolicy: String? = null
+    val frozenPolicy = "lock ${expected.userRotation}"
+    val restoredPolicy = if (expected.automatic) "free" else frozenPolicy
+    fun readPolicy(): String {
+        val reply = readLifecycleShellOutput("wm user-rotation -d 0")
+        check(Regex("free|lock [0-3]").matches(reply)) {
+            "unexpected WindowManager user-rotation reply"
+        }
+        observedPolicy = reply
+        return reply
+    }
+    fun restored(): Boolean {
+        observed = captureFixtureRotation()
+        return readPolicy() == restoredPolicy && observed == expected
+    }
+    try {
+        check(uiAutomation.setRotation(expected.userRotation))
+        // Wait for WindowManager's cached user angle before unfreeze can reuse it.
+        // The command's mode label comes from settings; lock mode also reads the
+        // cached angle. An app may keep a different display orientation meanwhile.
+        while (readPolicy() != frozenPolicy) {
+            check(SystemClock.uptimeMillis() < deadline) {
+                "saved user angle did not reach WindowManager: expected=$frozenPolicy, observed=$observedPolicy"
+            }
+            SystemClock.sleep(TEST_ACCESSIBILITY_POLL_MILLIS)
+        }
+        Log.i("BeauTyXTRotationFixture", "saved user angle acknowledged: $observedPolicy")
+        if (expected.automatic) check(uiAutomation.setRotation(UiAutomation.ROTATION_UNFREEZE))
+        while (SystemClock.uptimeMillis() < deadline) {
+            if (restored()) {
+                val remaining = deadline - SystemClock.uptimeMillis()
+                if (remaining <= TEST_ACCESSIBILITY_QUIET_MILLIS) break
+                uiAutomation.waitForIdle(TEST_ACCESSIBILITY_QUIET_MILLIS, remaining)
+                val mainIdle = CountDownLatch(1)
+                waitForIdle { mainIdle.countDown() }
+                check(
+                    mainIdle.await(
+                        (deadline - SystemClock.uptimeMillis()).coerceAtLeast(0L),
+                        TimeUnit.MILLISECONDS
+                    )
+                ) { "Main did not become idle before rotation restoration deadline" }
+                // A queued sensor/configuration change may have arrived during the quiet wait.
+                if (restored()) return
+            }
+            SystemClock.sleep(TEST_ACCESSIBILITY_POLL_MILLIS)
+        }
+        error("rotation did not settle after restoration: expected=$expected, observed=$observed")
+    } finally {
+        Log.i(
+            "BeauTyXTRotationFixture",
+            "restoration expected=$expected, observed=$observed, policy=$observedPolicy"
+        )
+    }
 }
 
 /** Injects one complete Back key without waiting for Compose to become idle. */
