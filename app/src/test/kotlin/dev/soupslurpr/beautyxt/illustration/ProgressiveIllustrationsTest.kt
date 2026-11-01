@@ -122,6 +122,33 @@ class ProgressiveIllustrationsTest {
     }
 
     @Test
+    fun viewportThresholdLetsTheLastHealthyRequestFinish(): Unit = runBlocking {
+        var tick = 0L
+        val calls = mutableListOf<String>()
+        val first = request("first")
+        val last = request("last")
+        val deferred = request("deferred")
+        val scheduler = ProgressiveIllustrations(this, {
+            calls += it.source
+            tick += if (it == first) 11_999_000_000L else 2_000_000_000L
+            rendered()
+        }, {}, nanoTime = { tick })
+        try {
+            scheduler.updateViewport(listOf(first, last, deferred))
+            withTimeout(1_000) {
+                scheduler.results.first {
+                    it[deferred] == IllustrationResult.Fallback(IllustrationFailure.Budget)
+                }
+            }
+            assertEquals(listOf("first", "last"), calls)
+            assertTrue(scheduler.results.value[last] is IllustrationResult.Rendered)
+            assertEquals(13_999_000_000L, tick)
+        } finally {
+            scheduler.close()
+        }
+    }
+
+    @Test
     fun revisionOwnedCacheSurvivesClosingAndReopeningThePreview(): Unit = runBlocking {
         var calls = 0
         val cache = IllustrationCache()

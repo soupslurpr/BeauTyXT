@@ -25,8 +25,9 @@ bounded transparent patch. Genuinely clipped glyphs also use only their visible
 pixels, so a PDF form cannot expose their off-page outlines. Fully off-page
 glyphs create no visual resource. The Unicode layer independently excludes
 clipped text. Bitmap patches retain alpha rather than hiding backgrounds behind
-an opaque white rectangle. Neither links nor external images are fetched or
-turned into PDF actions.
+an opaque white rectangle. Neither links nor external images are fetched.
+Supported links create bounded URI or internal GoTo annotations, without
+scripted actions.
 
 Layout translations are flattened into canonical page coordinates. This avoids
 PDF matrix-rounding differences when the same logical text arrives through
@@ -37,9 +38,10 @@ than ordinary coordinates so page-scale rounding does not accumulate visibly.
 
 Only a selected page allocates drawing resources. It is written directly to the
 caller-owned destination, then closed before the next page is created. Completed
-pages retain primitive PDF object references and offsets, not text, fonts,
-bitmaps, or drawing programs. Output is not buffered as a complete document and
-no app-private temporary file is used.
+page appearances retain primitive PDF object references and offsets, not fonts,
+bitmaps, or drawing programs. Bounded link-target and heading-destination
+metadata remains until document finalization. Output is not buffered as a
+complete document and no app-private temporary file is used.
 
 Primary limits:
 

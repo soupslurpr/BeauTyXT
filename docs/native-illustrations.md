@@ -101,8 +101,12 @@ outlines. Formula runs follow layout structure: fractions, scripts, and matrix
 cells remain separate. Semantic collection verifies glyph identity and geometry
 against the actual display list. Unsupported glyphs invalidate their entire run
 instead of concatenating its neighbors into a phrase that is not displayed.
-Missing or clipped text produces explicit incomplete search coverage. Semantic
-metadata never substitutes invented TeX provenance or spoken descriptions.
+Missing or clipped text produces explicit incomplete search coverage. A formula
+run containing a wholly clipped glyph is omitted from displayed-text search.
+Partially drawn glyphs remain searchable with highlight bounds clipped to the
+viewport and incomplete coverage. Independent visible runs and exact-source
+alternatives remain available. Semantic metadata never substitutes invented
+TeX provenance or spoken descriptions.
 
 For diagrams, SVG exists only inside the isolated worker. Bounded XML/USVG
 conversion rejects external references, images, scripts, masks, filters,
@@ -123,9 +127,11 @@ Compose placeholder. Printing independently fits the available page dimensions.
 
 Preview uses a least-recently-used cache with at most 128 entries and 8 MiB of
 successful encoded packets; that byte count is not total process memory. The
-latest viewport wins the queue, with at most 128 distinct requests and 12 seconds
-of combined rendering work for that viewport. Off-screen entries can be evicted
-and rendered again when revisited. Queue exhaustion and unavailable-worker
+latest viewport wins the queue, with at most 128 distinct requests. It stops
+starting new renders after 12 seconds of combined rendering work for that
+viewport; an already started bounded request can finish beyond that threshold.
+Off-screen entries can be evicted and rendered again when revisited. Queue
+exhaustion and unavailable-worker
 results can be retried after the viewport changes rather than becoming a
 permanent property of a formula. Results wait for an active fling to finish
 before publication, preserving a source anchor when their size changes.
