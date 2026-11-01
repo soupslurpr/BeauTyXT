@@ -38,6 +38,7 @@ private const val HIGHLIGHT_SOURCE = "River river RIVER\nbanana banana\nKk K\n
 
 /** Checks real Compose layouts so highlights cannot silently disappear from editable fields. */
 internal fun Instrumentation.verifyFindHighlights(capturePreviews: Boolean = false) {
+    if (!capturePreviews) verifyEditorStateRegressions()
     val automation = if (capturePreviews) uiAutomation else null
     for (readOnly in listOf(false, true)) {
         val document = RustDocument.createEmpty()
@@ -150,6 +151,22 @@ internal fun Instrumentation.verifyFindHighlights(capturePreviews: Boolean = fal
                             "Find decoration changed the draft text"
                         }
                     }
+                    if (readOnly) {
+                        check(session.showFind(showKeyboard = false))
+                        session.updateFindRegex(true)
+                        check(session.updateFindFieldValue(TextFieldValue("(?m)$")))
+                        awaitHighlightCoverage(session)
+                        check(session.findResults.all { it.source?.let { range -> range.start == range.end } == true })
+                        for (index in session.findResults.indices) {
+                            val target = checkNotNull(session.findResults[index].source).start
+                            val revealBefore = session.findRevealRequest
+                            check(session.selectFindResult(index))
+                            withTimeout(10_000) { snapshotFlow { session.findRevealRequest }
+                                .first { it > revealBefore } }
+                            check(session.state.blocks.any { target in it.block.globalUtf16Start..it.block.globalUtf16End })
+                        }
+                        check(!session.state.hasDocumentChanges)
+                    }
                 }
             }
         } catch (failure: Exception) {
@@ -202,7 +219,7 @@ private suspend fun awaitHighlightedSource(
     error("Highlight assertion for '$content': ${highlightTextLayouts(activity.window.decorView).map { it.layoutInput.text }.filter { it.text.contains(content) }.map { it.spanStyles }}")
 }
 
-private fun highlightTextLayouts(view: View): List<TextLayoutResult> = buildList {
+internal fun highlightTextLayouts(view: View): List<TextLayoutResult> = buildList {
     if (view is ViewRootForTest) {
         view.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false).forEach { node ->
             node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(this)

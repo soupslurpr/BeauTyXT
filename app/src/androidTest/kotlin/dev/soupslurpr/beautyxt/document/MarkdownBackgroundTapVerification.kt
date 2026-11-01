@@ -6,9 +6,11 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.graphics.Rect
 import android.os.SystemClock
+import android.util.Log
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.view.WindowInsets
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
 import dev.soupslurpr.beautyxt.HomeActivity
 import dev.soupslurpr.beautyxt.R
@@ -31,6 +33,36 @@ private const val SHORT_READING_TEXT = "A short document."
 
 /** Checks empty and short pages, page gutters, scrolling, long presses, and read-only sources. */
 internal fun Instrumentation.verifyMarkdownBackgroundTaps() {
+    val separatorSource = "---\n"
+    withReadingPage(separatorSource) { _, session ->
+        val revision = checkNotNull(session.state.metrics).revision
+        val divider = waitForAccessibilityNode("named editable separator") {
+            it.contentDescription?.toString() == targetContext.getString(R.string.markdown_separator)
+        }
+        check(divider.isClickable)
+        check(divider.actionList.any {
+            it.id == AccessibilityNodeInfo.ACTION_CLICK &&
+                it.label?.toString() == targetContext.getString(R.string.markdown_edit_source)
+        }) { "separator lost its source-edit action name" }
+        divider.performRequiredClick()
+        try {
+            awaitReadingCondition("separator source-edit action did not open its source") {
+                // An empty rendered block maps its end caret to the source end.
+                session.presentation == EditorPresentation.Text &&
+                    session.activeDraft?.textFieldState?.text?.toString() == separatorSource &&
+                    session.activeDraft?.sourceCaret() == separatorSource.length.toLong()
+            }
+        } finally {
+            runOnMainSync {
+                Log.i("BeauTyXTSeparatorVerification", "presentation=${session.presentation}; " +
+                    "caret=${session.activeDraft?.sourceCaret()}; " +
+                    "textLength=${session.activeDraft?.textFieldState?.text?.length}; " +
+                    "revision=${session.state.metrics?.revision}")
+            }
+        }
+        check(session.state.metrics?.revision == revision)
+        check(!session.state.hasDocumentChanges)
+    }
     for (text in listOf(SHORT_READING_TEXT, "")) {
         withReadingPage(text) { activity, session ->
             val page = readingPageBounds()
@@ -247,6 +279,7 @@ internal fun Instrumentation.withReadingPage(
         Intent(targetContext, HomeActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
     ) as HomeActivity
+    var primaryFailure: Throwable? = null
     try {
         runOnMainSync {
             activity.setContent {
@@ -263,12 +296,17 @@ internal fun Instrumentation.withReadingPage(
         }
         waitForAccessibilityIdle()
         verify(activity, session)
+    } catch (failure: Throwable) {
+        primaryFailure = failure
+        throw failure
     } finally {
-        runOnMainSync {
-            activity.finishAndRemoveTask()
-            session.close()
-        }
-        waitForAccessibilityIdle()
+        runFixtureCleanup(
+            primaryFailure,
+            { runOnMainSync(activity::finishAndRemoveTask) },
+            { runOnMainSync(session::close) },
+            { awaitReadingCondition("reading page Activity destruction") { activity.isDestroyed } },
+            { waitForAccessibilityIdle() }
+        )
     }
 }
 

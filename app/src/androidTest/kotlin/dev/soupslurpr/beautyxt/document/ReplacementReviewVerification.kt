@@ -3,11 +3,29 @@ package dev.soupslurpr.beautyxt.document
 import android.app.Instrumentation
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.util.Log
 import android.view.KeyEvent
+import android.view.View
+import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputConnectionWrapper
+import android.view.inputmethod.TextAttribute
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.ViewRootForTest
+import androidx.compose.ui.platform.InterceptPlatformTextInput
+import androidx.compose.ui.platform.PlatformTextInputInterceptor
+import androidx.compose.ui.platform.PlatformTextInputMethodRequest
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getAllSemanticsNodes
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.input.TextFieldValue
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.ui.UiText
@@ -19,11 +37,32 @@ import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.runBlocking
 
 /** Reviews and applies a native batch, then continues using real keyboard commands. */
-internal fun Instrumentation.verifyReplacementReview() {
+internal fun Instrumentation.verifyReplacementReview(diagnoseInput: Boolean = false) {
     val original = "cat dog cat"
     withReadingPage(original, initialPresentation = EditorPresentation.Text) { activity, session ->
         fun source() = session.activeDraft?.textFieldState?.text?.toString()
         fun awaitFrames() = runBlocking { repeat(2) { awaitFrame() } }
+        fun traceInput(stage: String, event: KeyEvent? = null) {
+            try {
+                val decor = activity.window.decorView
+                Log.i("BeauTyXTReplacementInput", "$stage; event=$event; " +
+                    "activity=${System.identityHashCode(activity)}; decor=${System.identityHashCode(decor)}; " +
+                    "windowFocus=${decor.hasWindowFocus()}; viewFocus=${decor.findFocus()?.let { "${it.javaClass.name}@${System.identityHashCode(it)}" }}; " +
+                    "replacement=${session.replacementFieldValue}; query=${session.findFieldValue}; " +
+                    "source=${source()}; revision=${session.state.metrics?.revision}; " +
+                    "modelFocus=${session.findInputFocus}; revealRequest=${session.findRevealRequest}; " +
+                    "focusRequest=${session.findFocusRequest}; resultsExpanded=${session.isFindResultsExpanded}; " +
+                    "documentUndo=${session.canUndo}; documentRedo=${session.canRedo}; " +
+                    "dogxFocus=${hasComposeKeyboardFocus(decor, editableText = "dogx")}; " +
+                    "queryFocus=${hasComposeKeyboardFocus(decor, editableText = session.findFieldValue.text)}; " +
+                    "sourceFocus=${source()?.let { hasComposeKeyboardFocus(decor, editableText = it) }}; " +
+                    "documentFocus=${hasComposeKeyboardFocus(decor, documentOnly = true)}; " +
+                    "nodes=${replacementReviewFocusNodes(decor)}")
+            } catch (failure: Exception) {
+                // Logging must not replace the original verification result.
+                Log.i("BeauTyXTReplacementInput", "$stage; trace unavailable: $failure")
+            }
+        }
         awaitFrames()
         documentKey(KeyEvent.KEYCODE_H, KeyEvent.META_CTRL_ON)
         awaitReadingCondition("Ctrl+H did not open replacement input") { session.isReplaceVisible && !session.isFindResultsExpanded }
@@ -60,7 +99,45 @@ internal fun Instrumentation.verifyReplacementReview() {
         runOnMainSync {
             activity.setContent {
                 key("replacement review after Apply") {
-                    BeauTyXTTheme { DocumentEditor(session, activity::finish, closesDocumentTask = false) }
+                    BeauTyXTTheme {
+                        if (diagnoseInput) {
+                            val interceptor = remember(activity, session) {
+                                PlatformTextInputInterceptor { request, next ->
+                                    next.startInputMethod(PlatformTextInputMethodRequest { attributes ->
+                                        runCatching {
+                                            traceInput("ic-create-before; request=${System.identityHashCode(request)}; " +
+                                                "info=${System.identityHashCode(attributes)}")
+                                        }
+                                        // Call the original factory once, with its exact EditorInfo.
+                                        val originalConnection = request.createInputConnection(attributes)
+                                        val connection = traceReplacementInputConnection(originalConnection) {
+                                            traceInput(it)
+                                        }
+                                        runCatching {
+                                            traceInput("ic-create-after; request=${System.identityHashCode(request)}; " +
+                                                "info=${System.identityHashCode(attributes)}; " +
+                                                "connection=${System.identityHashCode(connection)}; " +
+                                                "target=${System.identityHashCode(originalConnection)}; " +
+                                                "selection=${attributes.initialSelStart}:${attributes.initialSelEnd}; " +
+                                                "inputType=${attributes.inputType}; imeOptions=${attributes.imeOptions}")
+                                        }
+                                        connection
+                                    })
+                                }
+                            }
+                            InterceptPlatformTextInput(interceptor) {
+                                Box(Modifier.onPreviewKeyEvent { event ->
+                                    traceInput("recreated-preview", event.nativeKeyEvent)
+                                    false
+                                }.onKeyEvent { event ->
+                                    traceInput("recreated-bubble", event.nativeKeyEvent)
+                                    false
+                                }) { DocumentEditor(session, activity::finish, closesDocumentTask = false) }
+                            }
+                        } else {
+                            DocumentEditor(session, activity::finish, closesDocumentTask = false)
+                        }
+                    }
                 }
             }
         }
@@ -79,13 +156,18 @@ internal fun Instrumentation.verifyReplacementReview() {
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, 3)
         }))
         awaitFrames()
+        if (diagnoseInput) traceInput("replacement-before-typing")
         sendStringSync("x")
         awaitReadingCondition("hardware typing did not reach replacement input") { session.replacementFieldValue.text == "dogx" }
         awaitFrames()
+        if (diagnoseInput) traceInput("replacement-before-undo")
         documentKey(KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON)
+        if (diagnoseInput) traceInput("replacement-after-undo-dispatch")
         try {
             awaitReadingCondition("replacement input lost its own Undo") { session.replacementFieldValue.text == "dog" }
+            if (diagnoseInput) traceInput("replacement-undo-observed")
         } catch (failure: AssertionError) {
+            if (diagnoseInput) traceInput("replacement-undo-failed")
             error("${failure.message}; replacement=${session.replacementFieldValue}, " +
                 "source=${source()}, focus=${session.findInputFocus}, revision=${session.state.metrics?.revision}")
         }
@@ -131,6 +213,115 @@ internal fun Instrumentation.verifyReplacementReview() {
         }
         check(session.unchangedReplacementCount == 3 && !session.canApplyFindReplacements)
     }
+}
+
+/** Observes actual platform callbacks; every operation still reaches the same connection once. */
+private fun traceReplacementInputConnection(
+    original: InputConnection,
+    trace: (String) -> Unit
+): InputConnection = object : InputConnectionWrapper(original, false) {
+    private fun logCall(stage: String, operation: String, details: () -> String) {
+        // Only diagnostic failures are contained; delegate calls stay outside this block.
+        runCatching {
+            trace("ic-$stage; connection=${System.identityHashCode(this)}; " +
+                "target=${System.identityHashCode(original)}; operation=$operation; ${details()}")
+        }
+    }
+
+    private fun <T> forward(operation: String, arguments: () -> String, call: () -> T): T {
+        logCall("before", operation, arguments)
+        return try {
+            val result = call()
+            logCall("after", operation) { "${arguments()}; result=$result" }
+            result
+        } catch (failure: Throwable) {
+            logCall("throw", operation) { "${arguments()}; exception=${failure.javaClass.name}" }
+            throw failure
+        }
+    }
+
+    override fun setComposingRegion(start: Int, end: Int): Boolean =
+        forward("setComposingRegion", { "start=$start; end=$end" }) {
+            original.setComposingRegion(start, end)
+        }
+
+    override fun setComposingRegion(start: Int, end: Int, textAttribute: TextAttribute?): Boolean =
+        forward("setComposingRegion+attribute", {
+            "start=$start; end=$end; attribute=${textAttribute?.let(System::identityHashCode)}"
+        }) { original.setComposingRegion(start, end, textAttribute) }
+
+    override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean =
+        forward("setComposingText", { "text=${text?.toString()?.take(80)}; cursor=$newCursorPosition" }) {
+            original.setComposingText(text, newCursorPosition)
+        }
+
+    override fun setComposingText(
+        text: CharSequence,
+        newCursorPosition: Int,
+        textAttribute: TextAttribute?
+    ): Boolean = forward("setComposingText+attribute", {
+        "text=${text.toString().take(80)}; cursor=$newCursorPosition; " +
+            "attribute=${textAttribute?.let(System::identityHashCode)}"
+    }) { original.setComposingText(text, newCursorPosition, textAttribute) }
+
+    override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean =
+        forward("commitText", { "text=${text?.toString()?.take(80)}; cursor=$newCursorPosition" }) {
+            original.commitText(text, newCursorPosition)
+        }
+
+    override fun commitText(
+        text: CharSequence,
+        newCursorPosition: Int,
+        textAttribute: TextAttribute?
+    ): Boolean = forward("commitText+attribute", {
+        "text=${text.toString().take(80)}; cursor=$newCursorPosition; " +
+            "attribute=${textAttribute?.let(System::identityHashCode)}"
+    }) { original.commitText(text, newCursorPosition, textAttribute) }
+
+    override fun finishComposingText(): Boolean =
+        forward("finishComposingText", { "" }) { original.finishComposingText() }
+
+    override fun setSelection(start: Int, end: Int): Boolean =
+        forward("setSelection", { "start=$start; end=$end" }) { original.setSelection(start, end) }
+
+    override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean =
+        forward("deleteSurroundingText", { "before=$beforeLength; after=$afterLength" }) {
+            original.deleteSurroundingText(beforeLength, afterLength)
+        }
+
+    override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean =
+        forward("deleteSurroundingTextInCodePoints", { "before=$beforeLength; after=$afterLength" }) {
+            original.deleteSurroundingTextInCodePoints(beforeLength, afterLength)
+        }
+
+    override fun beginBatchEdit(): Boolean =
+        forward("beginBatchEdit", { "" }) { original.beginBatchEdit() }
+
+    override fun endBatchEdit(): Boolean =
+        forward("endBatchEdit", { "" }) { original.endBatchEdit() }
+
+    override fun sendKeyEvent(event: KeyEvent?): Boolean =
+        forward("sendKeyEvent", { "event=$event" }) { original.sendKeyEvent(event) }
+
+    override fun closeConnection() =
+        forward("closeConnection", { "" }) { original.closeConnection() }
+}
+
+/** Reads field identities without moving focus, creating a connection or changing input state. */
+private fun replacementReviewFocusNodes(view: View): List<String> {
+    val nodes = if (view is ViewRootForTest) {
+        view.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false).mapNotNull { node ->
+            val focused = node.config.getOrNull(SemanticsProperties.Focused) == true
+            val editable = node.config.getOrNull(SemanticsProperties.EditableText)
+            if (!focused && editable == null) null else
+                "view=${System.identityHashCode(view)},node=${node.id},focused=$focused," +
+                    "editable=${editable?.text?.take(64)},selection=${node.config.getOrNull(SemanticsProperties.TextSelectionRange)}"
+        }
+    } else emptyList()
+    val children = if (view is ViewGroup) (0 until view.childCount).flatMap {
+        replacementReviewFocusNodes(view.getChildAt(it))
+    } else emptyList()
+    return (nodes + children).take(12)
 }
 
 /** Repeated replacement skips inserted matches and advances through zero-width positions. */

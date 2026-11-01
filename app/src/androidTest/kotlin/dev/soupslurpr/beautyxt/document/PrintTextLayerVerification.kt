@@ -440,7 +440,10 @@ internal fun verifyMarkdownPrintFragmentContinuity(context: Context) {
                 listOf(MarkdownTableAlignment.None, MarkdownTableAlignment.None)
             } else {
                 emptyList()
-            }
+            },
+            tableCellSeparators = if (source.startsWith("<table>")) {
+                expectedText.indices.filter { expectedText[it] == '\t' }
+            } else emptyList()
         )
         val whole = File(artifacts, "whole-$index.pdf")
         val fragmented = File(artifacts, "fragmented-$index.pdf")

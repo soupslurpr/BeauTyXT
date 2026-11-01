@@ -4,6 +4,7 @@ package dev.soupslurpr.beautyxt.document
 import android.app.Instrumentation
 import android.content.Intent
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.snapshotFlow
 import dev.soupslurpr.beautyxt.HomeActivity
@@ -35,17 +36,31 @@ internal fun verifyNativeSourcePositionNavigation() = runBlocking {
             0L,
             text.indexOf("😀").toLong(),
             text.indexOf("Line 19000").toLong(),
+            text.indexOf("Line 19000").toLong() + "Line 19000".length,
             text.length.toLong()
         )
         for (offset in positions) {
             check(state.navigateToSourceOffset(revision, offset)) {
                 "native source navigation failed at $offset: ${state.editorMessage}"
             }
-            check(state.blocks.first().block.globalUtf16Start == offset)
-            check(state.blocks.sumOf { it.block.text.length } <= 32 * 1024)
+            val blocks = state.blocks.map { it.block }
+            Log.i("BeauTyXTSourcePositionVerification", "target=$offset, loaded=" +
+                "${blocks.firstOrNull()?.globalUtf16Start}..${blocks.lastOrNull()?.globalUtf16End}")
+            check(blocks.any { block -> offset in block.globalUtf16Start..block.globalUtf16End &&
+                block.text.isScalarBoundary(Math.toIntExact(offset - block.globalUtf16Start)) }) {
+                "loaded source does not contain scalar-safe target $offset"
+            }
+            if (offset == 0L || text[Math.toIntExact(offset) - 1] == '\n') {
+                check(blocks.first().globalUtf16Start == offset) { "line-start target $offset shifted" }
+            }
+            check(blocks.all { block -> block.text == text.substring(
+                Math.toIntExact(block.globalUtf16Start), Math.toIntExact(block.globalUtf16End)) })
+            check(state.metrics?.revision == revision)
+            check(blocks.sumOf { it.text.length } <= 32 * 1024)
             check(state.activeEdit == null)
             check(!state.hasDocumentChanges)
         }
+        check(!state.navigateToSourceOffset(revision, text.indexOf("😀") + 1L))
         check(!state.navigateToSourceOffset(revision, text.length + 1L))
         check(!state.navigateToSourceOffset(revision - 1L, 0L))
     }

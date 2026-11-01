@@ -185,8 +185,9 @@ private const val TEST_IMPORT_TIMEOUT_MILLIS = 10_000L
 private const val TEST_BIND_TIMEOUT_MILLIS = 10_000L
 private const val TEST_CALLBACK_TIMEOUT_MILLIS = 15_000L
 private const val TEST_PROFILE_VERIFICATION_TIMEOUT_MILLIS = 15_000L
-// The complete debug-native suite needs more time on physical arm64 devices.
-private const val TEST_SUITE_TIMEOUT_MILLIS = 1_200_000L
+// More than 100 UI/native workflows can exceed 20 minutes on physical arm64.
+// This aggregate allowance leaves selected-phase and operation limits unchanged.
+private const val TEST_SUITE_TIMEOUT_MILLIS = 1_500_000L
 private const val TEST_PHASE_TIMEOUT_MILLIS = 240_000L
 private const val TEST_STATUS_STARTED = 1
 private const val TEST_STATUS_PASSED = 0
@@ -373,6 +374,7 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                     awaitRuntimeProfileMetadata()
                 }
                 verifyPhase("runtime profile metadata", ::awaitRuntimeProfileMetadata)
+                verifyPhase("storage fingerprint matching", ::verifyVerificationFileFingerprint)
                 verifyPhase("legacy private state cleanup", ::verifyLegacyPrivateStateCleanup)
                 verifyPhase("legacy cleanup link boundaries", ::verifyLegacyCleanupLinkBoundaries)
                 verifyOptInPhase("legacy cleanup timing", ::measureLegacyCleanupTraversal)
@@ -403,6 +405,10 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 verifyPhase("document selection controls") { verifyDocumentSelectionControls() }
                 verifyPhase("document keyboard journey") { verifyDocumentKeyboardJourney() }
                 verifyPhase("replacement review") { verifyReplacementReview() }
+                verifyOptInPhase("replacement input Undo diagnostics") {
+                    verifyReplacementReview(diagnoseInput = true)
+                }
+                verifyOptInPhase("Find input ownership") { verifyFindInputOwnership() }
                 verifyPhase("replacement progress") { verifyReplacementProgress() }
                 verifyPhase("new document replacement") { verifyNewDocumentReplacement() }
                 verifyPhase("navigation history controls") { verifyNavigationHistoryControls() }
@@ -419,6 +425,10 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                     verifyReadOnlySourcePosition(capturePreview = true)
                 }
                 verifyPhase("isolated Markdown preview", ::verifyIsolatedMarkdownPreview)
+                verifyPhase("print lifecycle ownership") { verifyPrintLifecycleOwnership() }
+                verifyPrintPhase("print heading destinations") {
+                    verifyPrintHeadingDestinations(targetContext)
+                }
                 verifyPrintPhase("native math") { verifyNativeMath(targetContext) }
                 verifyOptInPhase("native math UI") { verifyNativeMathUi() }
                 verifyPrintPhase("native diagrams") { verifyNativeDiagrams(targetContext) }
@@ -469,11 +479,25 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 verifyPhase("QR share dialog") { verifyQrShareDialog() }
                 verifyOptInPhase("QR share visuals") { verifyQrShareDialog(capturePreview = true) }
                 verifyOptInPhase("QR share compact visuals") {
-                    check(uiAutomation.setRotation(android.app.UiAutomation.ROTATION_FREEZE_90))
+                    val rotation = captureFixtureRotation()
+                    var primaryFailure: Throwable? = null
                     try {
+                        // Leave the launcher's NOSENSOR policy before freezing the test display.
+                        startActivitySync(
+                            Intent(targetContext, dev.soupslurpr.beautyxt.HomeActivity::class.java)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        )
+                        check(uiAutomation.setRotation(android.app.UiAutomation.ROTATION_FREEZE_90))
+                        awaitReadingCondition("compact QR share did not rotate to landscape") {
+                            targetContext.resources.configuration.orientation ==
+                                android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                        }
                         verifyQrShareDialog(capturePreview = true)
+                    } catch (failure: Throwable) {
+                        primaryFailure = failure
+                        throw failure
                     } finally {
-                        uiAutomation.setRotation(android.app.UiAutomation.ROTATION_UNFREEZE)
+                        runFixtureCleanup(primaryFailure, { restoreFixtureRotation(rotation) })
                     }
                 }
                 verifyPhase("QR image cancellation") {
@@ -1934,8 +1958,12 @@ class DocumentBridgeInstrumentation : Instrumentation() {
         metadata = metadata,
         spans = emptyList(),
         quoteKind = quoteKind,
+        quoteAlertDepth = if (quoteKind != null) quoteDepth else 0,
         startsQuoteAlert = startsQuoteAlert,
-        tableAlignments = tableAlignments
+        tableAlignments = tableAlignments,
+        tableCellSeparators =
+            if (kind == MarkdownBlockKind.TableRow) text.indices.filter { text[it] == '\t' }
+            else emptyList()
     )
 
     /** Creates complete deterministic print attributes for PDF verification. */
@@ -4902,63 +4930,15 @@ private data class StatelessSessionState(
         }
 
         /** Hashes one regular file and rejects every forbidden operation identity. */
-        private fun fingerprintRegularFile(file: File, forbiddenPatterns: List<ByteArray>): String {
-            require(forbiddenPatterns.isNotEmpty()) {
-                "forbidden storage patterns must not be empty"
-            }
-            val digest = MessageDigest.getInstance(TEST_HASH_ALGORITHM)
-            val failureTables = forbiddenPatterns.map(::patternFailureTable)
-            val matchedPatternBytes = IntArray(forbiddenPatterns.size)
-            val buffer = ByteArray(TEST_FILE_READ_BUFFER_BYTES)
+        private fun fingerprintRegularFile(file: File, forbiddenPatterns: List<ByteArray>): String =
             FileInputStream(file).use { input ->
-                while (true) {
-                    val bytesRead = input.read(buffer)
-                    if (bytesRead < 0) {
-                        break
-                    }
-                    digest.update(buffer, 0, bytesRead)
-                    repeat(bytesRead) { byteIndex ->
-                        val value = buffer[byteIndex]
-                        forbiddenPatterns.indices.forEach { patternIndex ->
-                            val pattern = forbiddenPatterns[patternIndex]
-                            val failureTable = failureTables[patternIndex]
-                            var matchedBytes = matchedPatternBytes[patternIndex]
-                            while (matchedBytes > 0 && value != pattern[matchedBytes]) {
-                                matchedBytes = failureTable[matchedBytes - 1]
-                            }
-                            if (value == pattern[matchedBytes]) {
-                                matchedBytes += 1
-                                check(matchedBytes != pattern.size) {
-                                    "operation identity entered app-owned storage"
-                                }
-                            }
-                            matchedPatternBytes[patternIndex] = matchedBytes
-                        }
-                    }
-                }
+                fingerprintVerificationStream(
+                    input,
+                    forbiddenPatterns,
+                    bufferSize = TEST_FILE_READ_BUFFER_BYTES
+                ).toLowercaseHex()
             }
-            return digest.digest().toLowercaseHex()
-        }
 
-        /** Builds the prefix fallback table for one streaming byte-pattern search. */
-        private fun patternFailureTable(pattern: ByteArray): IntArray {
-            require(pattern.isNotEmpty()) { "forbidden storage pattern must not be empty" }
-            val failure = IntArray(pattern.size)
-            var prefixBytes = 0
-            var patternIndex = 1
-            while (patternIndex < pattern.size) {
-                if (pattern[patternIndex] == pattern[prefixBytes]) {
-                    prefixBytes += 1
-                    failure[patternIndex] = prefixBytes
-                    patternIndex += 1
-                } else if (prefixBytes > 0) {
-                    prefixBytes = failure[prefixBytes - 1]
-                } else {
-                    patternIndex += 1
-                }
-            }
-            return failure
-        }
     }
 }
 

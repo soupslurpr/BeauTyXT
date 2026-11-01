@@ -30,19 +30,11 @@ import kotlinx.coroutines.withTimeout
 /** Exercises real landscape IME resizing at normal and enlarged text sizes. */
 internal fun Instrumentation.verifyCompactPrintSetup() {
     val originalFlags = uiAutomation.serviceInfo.flags
-    val originalRotation = Settings.System.getInt(
-        targetContext.contentResolver,
-        Settings.System.USER_ROTATION,
-        0
-    )
-    val automaticRotation = Settings.System.getInt(
-        targetContext.contentResolver,
-        Settings.System.ACCELEROMETER_ROTATION,
-        1
-    ) != 0
+    val originalRotation = captureFixtureRotation()
     uiAutomation.serviceInfo = uiAutomation.serviceInfo.apply {
         flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
     }
+    var primaryFailure: Throwable? = null
     try {
         // Leave the launcher's fixed orientation before locking the review window.
         startActivitySync(
@@ -62,10 +54,15 @@ internal fun Instrumentation.verifyCompactPrintSetup() {
             1f
         )
         verifyCompactPrintSetupAtScale(fontScale)
+    } catch (failure: Throwable) {
+        primaryFailure = failure
+        throw failure
     } finally {
-        uiAutomation.serviceInfo = uiAutomation.serviceInfo.apply { flags = originalFlags }
-        check(uiAutomation.setRotation(originalRotation))
-        if (automaticRotation) check(uiAutomation.setRotation(UiAutomation.ROTATION_UNFREEZE))
+        runFixtureCleanup(
+            primaryFailure,
+            { uiAutomation.serviceInfo = uiAutomation.serviceInfo.apply { flags = originalFlags } },
+            { restoreFixtureRotation(originalRotation) }
+        )
     }
 }
 
@@ -79,6 +76,7 @@ private fun Instrumentation.verifyCompactPrintSetupAtScale(fontScale: Float) {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
     ) as HomeActivity
     val density = activity.resources.displayMetrics.density
+    var primaryFailure: Throwable? = null
     try {
         check(activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
             "print fixture did not retain landscape orientation"
@@ -164,23 +162,28 @@ private fun Instrumentation.verifyCompactPrintSetupAtScale(fontScale: Float) {
         awaitPrintLayoutCondition { !session.excerptExport.visible }
         check(!session.state.hasDocumentChanges) { "print setup changed the source" }
     } catch (failure: Throwable) {
-        runCatching { capturePrintLayout("$fontScale-failure") }
-        val nodes = StringBuilder()
-        uiAutomation.rootInActiveWindow?.findNode { node ->
-            nodes.appendLine(node.toString())
-            false
-        }
-        File(
-            targetContext.cacheDir,
-            "print-setup-layout/$fontScale-failure.txt"
-        ).writeText(nodes.toString())
+        primaryFailure = failure
+        runCatching {
+            capturePrintLayout("$fontScale-failure")
+            val nodes = StringBuilder()
+            uiAutomation.rootInActiveWindow?.findNode { node ->
+                nodes.appendLine(node.toString())
+                false
+            }
+            File(
+                targetContext.cacheDir,
+                "print-setup-layout/$fontScale-failure.txt"
+            ).writeText(nodes.toString())
+        }.exceptionOrNull()?.let(failure::addSuppressed)
         throw failure
     } finally {
-        runOnMainSync {
-            activity.finishAndRemoveTask()
-            session.close()
-        }
-        waitForAccessibilityIdle()
+        runFixtureCleanup(
+            primaryFailure,
+            { runOnMainSync(activity::finishAndRemoveTask) },
+            { runOnMainSync(session::close) },
+            { awaitPrintLayoutCondition { activity.isDestroyed } },
+            { waitForAccessibilityIdle() }
+        )
     }
 }
 

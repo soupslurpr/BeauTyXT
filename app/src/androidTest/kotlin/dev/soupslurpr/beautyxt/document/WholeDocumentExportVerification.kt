@@ -5,10 +5,12 @@ import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import dev.soupslurpr.beautyxt.exporting.client.StatelessExportTestSinks
 import dev.soupslurpr.beautyxt.ipc.SealedInput
 import dev.soupslurpr.beautyxt.markdown.client.IsolatedMarkdownRenderer
+import dev.soupslurpr.beautyxt.printing.PrintContentMode
 import dev.soupslurpr.beautyxt.sharing.readSharedTextSnapshot
 import dev.soupslurpr.beautyxt.ui.editor.*
 import java.io.File
@@ -18,6 +20,7 @@ import kotlinx.coroutines.*
 
 /** Uses the real editor, immutable native snapshots, PDF renderer, and a separate-UID save sink. */
 internal fun Instrumentation.verifyWholeDocumentExport() {
+    verifyExportSourceWrappingControl()
     verifyNewDocumentMarkdownExport()
     verifyWholeSourceBytes("Exact.md")
     verifyWholeSourceBytes("Exact.txt")
@@ -154,7 +157,7 @@ private fun Instrumentation.verifyNewDocumentMarkdownExport() {
             }
         } finally { screenshot.recycle() }
         requireActionableText("Share file").performRequiredClick()
-        requireActionableText("Excerpt test receiver").performRequiredClick()
+        openStableExcerptTestReceiver()
         requireActionableText("Read excerpt now").performRequiredClick()
         val bytes = source.toByteArray()
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
@@ -209,6 +212,83 @@ private fun Instrumentation.verifyWholeSourceBytes(title: String) {
         check(!export.isSharingSourceFile && export.prepared?.pdf != null)
         check(!session.state.hasDocumentChanges)
     } finally { runOnMainSync { session.close() } }
+}
+
+/** The source wrapping preference is editable only in the representation that consumes it. */
+private fun Instrumentation.verifyExportSourceWrappingControl() {
+    withReadingPage("# Wrapping\n\nA short **formatted** paragraph.") { activity, session ->
+        val export = session.excerptExport
+        fun findWrappingSwitch(root: AccessibilityNodeInfo) =
+            root.findNode { node ->
+                node.isCheckable && node.findNode {
+                    it.text?.toString() == "Wrap long source lines"
+                } != null
+            }
+        fun wrappingSwitch() = revealScrollableNode("source wrapping setting", find = ::findWrappingSwitch)
+        var expectedMode = PrintContentMode.FormattedMarkdown
+        val diagnostics = StringBuilder()
+        fun recordWrappingState(label: String) {
+            try {
+                uiAutomation.clearCache()
+                val root = uiAutomation.rootInActiveWindow
+                val wrapping = root?.let(::findWrappingSwitch)
+                fun selected(text: String) = root?.findNode {
+                    it.text?.toString() == text
+                }?.enabledClickableAncestor()?.isSelected
+                var model = ""
+                runOnMainSync {
+                    val current = export.printDraft
+                    model = "expectedMode=$expectedMode; contentMode=${current.contentMode}; draft=$current"
+                }
+                val line = "$label: $model; wrapChecked=${wrapping?.checked}; " +
+                    "wrapEnabled=${wrapping?.isEnabled}; sourceSelected=${selected("Source-text PDF")}; " +
+                    "formattedSelected=${selected("Formatted PDF")}"
+                diagnostics.appendLine(line)
+                Log.i("BeauTyXTWrappingVerification", line)
+                File(targetContext.cacheDir, "whole-document-export-wrapping.txt").writeText(diagnostics.toString())
+            } catch (failure: Exception) {
+                Log.i("BeauTyXTWrappingVerification", "$label diagnostic unavailable: ${failure.javaClass.simpleName}")
+            }
+        }
+        try {
+            runOnMainSync { check(session.openDocumentExport(activity)) }
+            awaitExport(export)
+            runOnMainSync { export.selectFormat(ExcerptFormat.Pdf) }
+            awaitExport(export)
+            revealScrollableAction("Preview and page settings").performRequiredClick()
+            revealScrollableAction("Page settings").performRequiredClick()
+            recordWrappingState("initial formatted")
+            check(export.printDraft.contentMode == PrintContentMode.FormattedMarkdown)
+            check(!wrappingSwitch().isEnabled)
+            revealScrollableAction("Source-text PDF").performRequiredClick()
+            expectedMode = PrintContentMode.Source
+            awaitExport(export)
+            val sourceWrapping = wrappingSwitch()
+            recordWrappingState("before source wrapping toggle")
+            check(export.printDraft.contentMode == PrintContentMode.Source)
+            check(sourceWrapping.isEnabled)
+            val original = export.printDraft.wrapLongLines
+            sourceWrapping.performRequiredClick()
+            awaitReadingCondition("source wrapping setting did not change") {
+                export.printDraft.wrapLongLines != original
+            }
+            revealScrollableAction("Formatted PDF").performRequiredClick()
+            expectedMode = PrintContentMode.FormattedMarkdown
+            awaitExport(export)
+            recordWrappingState("after rapid formatted switch")
+            check(export.printDraft.contentMode == PrintContentMode.FormattedMarkdown)
+            check(!wrappingSwitch().isEnabled)
+            check(export.printDraft.wrapLongLines != original)
+            revealScrollableAction("Source-text PDF").performRequiredClick()
+            expectedMode = PrintContentMode.Source
+            awaitExport(export)
+            recordWrappingState("after source return")
+            check(export.printDraft.contentMode == PrintContentMode.Source)
+            check(wrappingSwitch().isEnabled && export.printDraft.wrapLongLines != original)
+        } finally {
+            recordWrappingState("before teardown")
+        }
+    }
 }
 
 private fun Instrumentation.awaitExport(export: ExcerptExportController) {

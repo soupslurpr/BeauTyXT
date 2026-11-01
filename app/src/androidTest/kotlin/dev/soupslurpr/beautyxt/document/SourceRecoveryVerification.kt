@@ -8,7 +8,6 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.SystemClock
-import android.provider.Settings
 import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
@@ -44,9 +43,7 @@ internal fun Instrumentation.verifySourceRecovery(
     capturePreviews: Boolean = false,
     landscape: Boolean = false
 ) {
-    val resolver = targetContext.contentResolver
-    val originalRotation = Settings.System.getInt(resolver, Settings.System.USER_ROTATION, 0)
-    val autoRotation = Settings.System.getInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 1) != 0
+    val originalRotation = captureFixtureRotation()
     val intent = Intent(targetContext, HomeActivity::class.java)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
     // The launcher's NOSENSOR request can undo a rotation lock during app startup.
@@ -67,6 +64,7 @@ internal fun Instrumentation.verifySourceRecovery(
     }
     waitForIdleSync()
     val activity = startActivitySync(intent) as HomeActivity
+    var primaryFailure: Throwable? = null
     try {
         val failures = listOf(
             DocumentExportFailure.SOURCE_CONFLICT,
@@ -224,10 +222,16 @@ internal fun Instrumentation.verifySourceRecovery(
                 runOnMainSync { session.close() }
             }
         }
+    } catch (failure: Throwable) {
+        primaryFailure = failure
+        throw failure
     } finally {
-        runOnMainSync { activity.finishAndRemoveTask() }
-        check(uiAutomation.setRotation(originalRotation))
-        if (autoRotation) check(uiAutomation.setRotation(UiAutomation.ROTATION_UNFREEZE))
+        runFixtureCleanup(
+            primaryFailure,
+            { runOnMainSync(activity::finishAndRemoveTask) },
+            { awaitReadingCondition("source recovery Activity destruction") { activity.isDestroyed } },
+            { restoreFixtureRotation(originalRotation) }
+        )
     }
 }
 

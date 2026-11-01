@@ -9,7 +9,6 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.SystemClock
-import android.provider.Settings
 import android.view.WindowInsets
 import androidx.activity.compose.setContent
 import androidx.compose.ui.text.input.TextFieldValue
@@ -28,11 +27,10 @@ import kotlinx.coroutines.runBlocking
 
 /** Exercises retry, malformed regex, bad capture references, and correction above the IME. */
 internal fun Instrumentation.verifyFindRetry(capturePreviews: Boolean = false) {
-    val resolver = targetContext.contentResolver
-    val originalRotation = Settings.System.getInt(resolver, Settings.System.USER_ROTATION, 0)
-    val automatic = Settings.System.getInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 1) != 0
+    val originalRotation = captureFixtureRotation()
     val intent = Intent(targetContext, HomeActivity::class.java)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+    var primaryFailure: Throwable? = null
     try {
         for ((rotation, orientation, name) in listOf(
             Triple(UiAutomation.ROTATION_FREEZE_0, Configuration.ORIENTATION_PORTRAIT, "portrait"),
@@ -56,6 +54,7 @@ internal fun Instrumentation.verifyFindRetry(capturePreviews: Boolean = false) {
                     }
                 }, initialRevision = metrics.revision))
             val activity = startActivitySync(intent) as HomeActivity
+            var iterationFailure: Throwable? = null
             try {
                 runOnMainSync {
                     activity.setContent { BeauTyXTTheme {
@@ -107,16 +106,26 @@ internal fun Instrumentation.verifyFindRetry(capturePreviews: Boolean = false) {
                 assertFindRecoveryReachable(activity, "(alpha)", failed = false)
                 if (capturePreviews) captureRecoveryScreen("find-recovered-$name")
             } catch (failure: Throwable) {
-                runCatching { captureRecoveryScreen("find-recovery-failure-$name") }
+                iterationFailure = failure
+                runCatching {
+                    captureRecoveryScreen("find-recovery-failure-$name")
+                }.exceptionOrNull()?.let(failure::addSuppressed)
                 throw failure
             } finally {
-                runOnMainSync { activity.finishAndRemoveTask(); session.close() }
-                waitForAccessibilityIdle()
+                runFixtureCleanup(
+                    iterationFailure,
+                    { runOnMainSync(activity::finishAndRemoveTask) },
+                    { runOnMainSync(session::close) },
+                    { awaitReadingCondition("Find recovery Activity destruction") { activity.isDestroyed } },
+                    { waitForAccessibilityIdle() }
+                )
             }
         }
+    } catch (failure: Throwable) {
+        primaryFailure = failure
+        throw failure
     } finally {
-        check(uiAutomation.setRotation(originalRotation))
-        if (automatic) check(uiAutomation.setRotation(UiAutomation.ROTATION_UNFREEZE))
+        runFixtureCleanup(primaryFailure, { restoreFixtureRotation(originalRotation) })
     }
 }
 

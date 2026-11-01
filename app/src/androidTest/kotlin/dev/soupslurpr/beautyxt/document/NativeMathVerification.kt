@@ -354,6 +354,19 @@ internal fun verifyNativeMath(context: Context) = runBlocking {
                     check(worker.render("x", false) is IllustrationResult.Rendered) {
                         "an unsupported expression poisoned subsequent formulas"
                     }
+                    for (formula in listOf("\\kern{-2em}a\\kern{3em}b", "abc\\kern{-1em}", "ab")) {
+                        val rendered = worker.render(formula, true) as? IllustrationResult.Rendered
+                            ?: error("clipping fixture did not render")
+                        check(!rendered.drawing.isTextComplete)
+                        check(rendered.drawing.textRuns.map { it.text } ==
+                            if (formula == "ab") listOf("ab") else emptyList<String>()) {
+                            "formula semantics retained wholly hidden letters: $formula"
+                        }
+                        check(rendered.drawing.textRuns.flatMap { it.boxes }.all {
+                            it.left >= 0 && it.top >= 0 && it.right <= rendered.drawing.width &&
+                                it.bottom <= rendered.drawing.height
+                        }) { "formula highlight escaped its drawing viewport" }
+                    }
                 }
             }
         }.awaitAll()
@@ -610,10 +623,14 @@ private fun Instrumentation.verifyIllustrationUi(
             node.isEditable && node.text?.toString()?.contains(expectedEditedSource) == true &&
                 node.textSelectionStart == node.text.toString().indexOf(expectedEditedSource)
         }
+        waitForAccessibilityNode("Read action") { node ->
+            (node.text?.toString() == "Read" ||
+                node.contentDescription?.toString() == "Preview Markdown") &&
+                node.enabledClickableAncestor() != null
+        }.enabledClickableAncestor()!!.performRequiredClick()
         runBlocking {
             withContext(Dispatchers.Main) {
                 check(session.state.metrics?.revision == metrics.revision)
-                check(session.showMarkdownPreview())
                 withTimeout(15_000) {
                     snapshotFlow {
                         session.markdownPreviewStatus
