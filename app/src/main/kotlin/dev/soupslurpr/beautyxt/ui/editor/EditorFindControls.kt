@@ -13,8 +13,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,6 +36,8 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
+import dev.soupslurpr.beautyxt.document.MAX_FIND_QUERY_UTF16_UNITS
+import dev.soupslurpr.beautyxt.document.MAX_REPLACEMENT_REVIEW_UNITS
 import dev.soupslurpr.beautyxt.ui.asString
 import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceButtons
 import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceOption
@@ -52,6 +54,10 @@ internal fun EditorFindChrome(
     val replacementFocus = remember(session) { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
+    val queryInput = remember(session) {
+        findInputTransformation(MAX_FIND_QUERY_UTF16_UNITS) { session.isFindVisible }
+    }
+    val replacementInput = remember(session) { findInputTransformation(MAX_REPLACEMENT_REVIEW_UNITS) }
     var menu by remember(session) { mutableStateOf(false) }
     fun dismissInput() { focus.clearFocus(force = true); keyboard?.hide() }
     fun focusDocument() { dismissInput(); session.focusFindDocument() }
@@ -94,11 +100,12 @@ internal fun EditorFindChrome(
             unfocusedIndicatorColor = Color.Transparent
         )
         @Composable fun replacement(modifier: Modifier) {
-            TextField(session.replacementFieldValue, session::updateReplacementFieldValue,
+            TextField(state = session.replacementFieldState,
                 modifier = modifier.focusRequester(replacementFocus)
                     .onFocusChanged { if (it.isFocused) session.recordFindInputFocus(FindInputFocus.Replacement) },
                 label = { Text(stringResource(R.string.replace_with)) },
-                maxLines = if (useInlineStatus) 1 else 3,
+                inputTransformation = replacementInput,
+                lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = if (useInlineStatus) 1 else 3),
                 shape = MaterialTheme.shapes.large, colors = fieldColors,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default, showKeyboardOnFocus = session.findRequestsKeyboard))
         }
@@ -137,7 +144,7 @@ internal fun EditorFindChrome(
                 verticalAlignment = Alignment.CenterVertically) {
                 FindIcon(R.drawable.ic_close, stringResource(R.string.find_close), onClose)
                 val queryLabel = stringResource(R.string.find_in_document)
-                TextField(session.findFieldValue, { session.updateFindFieldValue(it) },
+                TextField(state = session.findFieldState,
                     modifier = Modifier.weight(1f).focusRequester(queryFocus)
                         .onFocusChanged { if (it.isFocused) session.recordFindInputFocus(FindInputFocus.Query) }
                         .semantics { contentDescription = queryLabel }
@@ -151,7 +158,8 @@ internal fun EditorFindChrome(
                     label = { Text(stringResource(if (session.presentation == EditorPresentation.MarkdownPreview)
                         R.string.find_in_reading else R.string.find_in_source),
                         maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    maxLines = if (useInlineStatus) 1 else 3,
+                    inputTransformation = queryInput,
+                    lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = if (useInlineStatus) 1 else 3),
                     shape = MaterialTheme.shapes.extraLarge, colors = fieldColors,
                     trailingIcon = if (session.findFieldValue.text.isNotEmpty()) ({
                         FindIcon(R.drawable.ic_close, stringResource(R.string.find_clear_query), {
@@ -161,7 +169,7 @@ internal fun EditorFindChrome(
                         })
                     }) else null,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, showKeyboardOnFocus = session.findRequestsKeyboard),
-                    keyboardActions = KeyboardActions(onSearch = { session.findNext() }))
+                    onKeyboardAction = { session.findNext() })
                 if (wide && session.isReplaceVisible) {
                     Spacer(Modifier.width(8.dp))
                     replacement(Modifier.weight(1f))

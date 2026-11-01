@@ -1,12 +1,14 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import dev.soupslurpr.beautyxt.R
@@ -702,8 +704,8 @@ internal constructor(
     var isFindVisible by mutableStateOf(false)
         private set
 
-    var findFieldValue by mutableStateOf(TextFieldValue())
-        private set
+    val findFieldState = TextFieldState()
+    val findFieldValue: TextFieldValue get() = findFieldState.captureFindFieldValue()
     var findFocusRequest by mutableLongStateOf(0L)
         private set
     var findRequestsKeyboard by mutableStateOf(true)
@@ -736,7 +738,8 @@ internal constructor(
     private var findContinuation by mutableStateOf<FindContinuation?>(null)
     var hasEarlierFindResults by mutableStateOf(false)
         private set
-    val canContinueFind get() = findContinuation != null && findStatus != FindStatus.Searching
+    val canContinueFind get() = findContinuation != null && findStatus != FindStatus.Searching &&
+        hasCurrentFindInputs
     var findCoverageMessage by mutableStateOf<UiText?>(null)
         private set
     var isFindRegex by mutableStateOf(false)
@@ -936,8 +939,8 @@ internal constructor(
 
     /** Provider reload carries editable inputs only; all content-bound state belongs to the new session. */
     fun inheritFindInputs(previous: EditorSession) {
-        findFieldValue = previous.findFieldValue
-        replacementFieldValue = previous.replacementFieldValue
+        findFieldState.resetFindInput(previous.findFieldValue)
+        replacementFieldState.resetFindInput(previous.replacementFieldValue)
         isFindCaseSensitive = previous.isFindCaseSensitive
         isFindWholeWord = previous.isFindWholeWord
         isFindRegex = previous.isFindRegex
@@ -1085,7 +1088,7 @@ internal constructor(
                 findReadingProjection = null
                 validatedReadingProjectionVersion = null
                 isFindScopePaused = false
-                findFieldValue = TextFieldValue(text)
+                findFieldState.updateCommittedFindInput(TextFieldValue(text))
                 refreshAdvancedFind()
             } catch (cancellation: CancellationException) { throw cancellation }
             catch (_: ReadingSelectionChangedException) { /* Keep the actionable preview-change notice. */ }
@@ -1094,8 +1097,8 @@ internal constructor(
     }
     var isReplaceVisible by mutableStateOf(false)
         private set
-    var replacementFieldValue by mutableStateOf(TextFieldValue())
-        private set
+    val replacementFieldState = TextFieldState()
+    val replacementFieldValue: TextFieldValue get() = replacementFieldState.captureFindFieldValue()
     var capturedFindScope by mutableStateOf<Utf16Range?>(null)
         private set
     var capturedReadingFindScope by mutableStateOf<DocumentSelection?>(null)
@@ -1127,6 +1130,10 @@ internal constructor(
     private var compiledFind: DocumentSearch? = null
     private var advancedFindGeneration = 0L
     private var reviewedFindRevision: Long? = null
+    private var synchronizedFindInputs = FindInputs("", "")
+    private var requestedFindInputs by mutableStateOf<FindInputs?>(null)
+    private val hasCurrentFindInputs: Boolean
+        get() = requestedFindInputs?.matches(findFieldState, replacementFieldState) == true
     private var pendingFindDirection: FindDirection? = null
     private val locations = DocumentLocations()
     private var locationVersion by mutableLongStateOf(0L)
@@ -1206,6 +1213,11 @@ internal constructor(
         require(title.isNotBlank()) { "editor title must not be blank" }
         require(sourceMetadata == null || documentSource != null) {
             "source metadata requires a document source"
+        }
+        operationScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            snapshotFlow {
+                FindInputs(findFieldState.text.toString(), replacementFieldState.text.toString())
+            }.collect { synchronizeFindInputs() }
         }
     }
 
@@ -1642,6 +1654,7 @@ internal constructor(
         get() =
             isFindVisible &&
                 findFieldValue.text.isNotEmpty() &&
+                hasCurrentFindInputs &&
                 findStatus != FindStatus.Searching &&
                 !isClosePending &&
                 !isSaveBusy &&
@@ -1892,7 +1905,7 @@ internal constructor(
         findFocusIntentVersion++
         findRequestsKeyboard = showKeyboard
         findFocusRequest++
-        findFieldValue = findFieldValue.copy(selection = androidx.compose.ui.text.TextRange(0, findFieldValue.text.length))
+        findFieldState.edit { selection = TextRange(0, length) }
         if (isFindVisible) return true
         if (!canShowFind) {
             return false
@@ -2313,14 +2326,23 @@ internal constructor(
         locations.endFindExcursion()
     }
 
-    /** Refreshes matches without moving the passage or changing editable selection. */
+    /** Applies committed programmatic query input; the IME owns composition in its state. */
     fun updateFindFieldValue(candidate: TextFieldValue): Boolean {
-        if (!isFindVisible || candidate.text.length > MAX_FIND_QUERY_UTF16_UNITS ||
-            '\r' in candidate.text || !candidate.text.hasWellFormedUtf16()) return false
-        val changed = candidate.text != findFieldValue.text
-        findFieldValue = candidate
-        if (changed) { findActionMessage = null; refreshAdvancedFind(delayed = true) }
+        if (!isFindVisible || candidate.composition != null ||
+            !validFindInput(candidate.text, MAX_FIND_QUERY_UTF16_UNITS)) return false
+        findFieldState.updateCommittedFindInput(candidate)
+        synchronizeFindInputs()
         return true
+    }
+
+    /** Refreshes actual field text without writing an observation back into either field. */
+    fun synchronizeFindInputs() {
+        val inputs = FindInputs(findFieldState.text.toString(), replacementFieldState.text.toString())
+        val previous = synchronizedFindInputs
+        if (inputs == previous) return
+        val queryChanged = inputs.query != previous.query
+        if (queryChanged) findActionMessage = null
+        refreshAdvancedFind(delayed = queryChanged, retainExclusions = !queryChanged)
     }
 
     fun updateFindCaseSensitivity(matchCase: Boolean): Boolean {
@@ -2345,11 +2367,9 @@ internal constructor(
     }
 
     fun updateReplacementFieldValue(value: TextFieldValue) {
-        if (value.text.length > MAX_REPLACEMENT_REVIEW_UNITS || '\r' in value.text ||
-            !value.text.hasWellFormedUtf16()) return
-        val changed = value.text != replacementFieldValue.text
-        replacementFieldValue = value
-        if (changed) refreshAdvancedFind(retainExclusions = true)
+        if (value.composition != null || !validFindInput(value.text, MAX_REPLACEMENT_REVIEW_UNITS)) return
+        replacementFieldState.updateCommittedFindInput(value)
+        synchronizeFindInputs()
     }
 
     fun showReplace(showKeyboard: Boolean = findRequestsKeyboard) {
@@ -2421,7 +2441,7 @@ internal constructor(
         if (findResultsOpenedAtReveal < findRevealRequest) findResultsPage = null
     }
     fun toggleFindResultIncluded(index: Int) {
-        if (index in findResults.indices) excludedFindResults =
+        if (hasCurrentFindInputs && index in findResults.indices) excludedFindResults =
             if (index in excludedFindResults) excludedFindResults - index else excludedFindResults + index
     }
 
@@ -4388,7 +4408,7 @@ internal constructor(
             return
         }
         clearDocumentExperienceReferences()
-        replacementFieldValue = TextFieldValue()
+        replacementFieldState.resetFindInput()
         excerptExport.close()
         isFindRegex = false
         isFindWholeWord = false
@@ -4449,7 +4469,8 @@ internal constructor(
         markdownPreviewStatus = MarkdownPreviewStatus.Idle
         markdownPreviewReturnTarget = null
         isFindVisible = false
-        findFieldValue = TextFieldValue()
+        findFieldState.resetFindInput()
+        synchronizedFindInputs = FindInputs("", "")
         findStatus = FindStatus.Idle
         findMatch = null
         findOriginRevision = 0L
@@ -4785,6 +4806,7 @@ internal constructor(
     /** Cancels one superseded Find generation without publishing its result. */
     private fun invalidateFindRequest() {
         advancedFindGeneration++
+        requestedFindInputs = null
         findContinuation = null
         compiledFind?.close()
         compiledFind = null
@@ -4834,6 +4856,8 @@ internal constructor(
         retainNavigation: Boolean = false, advanceAfterReplacement: Pair<Long, Boolean>? = null,
         continuation: FindContinuation? = null): Boolean {
         validateReadingSelectionProjections()
+        val inputs = FindInputs(findFieldState.text.toString(), replacementFieldState.text.toString())
+        synchronizedFindInputs = inputs
         val append = continuation != null && !continuation.replaceResults
         val retainedResults = if (append) findResults else emptyList()
         val previousResult = findResults.getOrNull(findResultIndex).takeIf { retainNavigation }
@@ -4846,7 +4870,7 @@ internal constructor(
         isFindComplete = false
         findCoverageMessage = null
         if (!retainExclusions && !append) excludedFindResults = emptySet()
-        if (!isFindVisible || findFieldValue.text.isEmpty() || isFindScopePaused || closeStarted.get()) {
+        if (!isFindVisible || inputs.query.isEmpty() || isFindScopePaused || closeStarted.get()) {
             findStatus = FindStatus.Idle
             return false
         }
@@ -4854,7 +4878,7 @@ internal constructor(
         val generation = advancedFindGeneration
         val focusIntentAtRequest = findFocusIntentVersion
         val domain = presentation
-        val query = findFieldValue.text
+        val query = inputs.query
         val options = SearchOptions(isFindRegex, isFindCaseSensitive, isFindWholeWord)
         if (presentation == EditorPresentation.Text && capturedReadingFindScope != null && capturedFindScope == null) {
             isFindScopePaused = true
@@ -4862,12 +4886,14 @@ internal constructor(
             return false
         }
         val scope = capturedFindScope ?: Utf16Range(0, state.metrics!!.utf16Length)
-        val replacement = replacementFieldValue.text.takeIf { isReplaceVisible && domain == EditorPresentation.Text }
+        val replacement = inputs.replacement.takeIf { isReplaceVisible && domain == EditorPresentation.Text }
         val reading = (markdownPreviewStatus as? MarkdownPreviewStatus.Ready)?.takeIf { it.revision == revision }
         findStatus = FindStatus.Searching
         findOriginRevision = revision
+        requestedFindInputs = inputs
         fun owned() = generation == advancedFindGeneration && isFindVisible &&
-            state.metrics?.revision == revision && presentation == domain && !closeStarted.get()
+            state.metrics?.revision == revision && presentation == domain && !closeStarted.get() &&
+            inputs.matches(findFieldState, replacementFieldState)
         findJob = operationScope.launch {
             var search: DocumentSearch? = null
             try {
@@ -5042,8 +5068,9 @@ internal constructor(
     }
 
     private fun navigateFindResults(direction: FindDirection): Boolean {
+        synchronizeFindInputs()
         validateReadingSelectionProjections()
-        if (!isFindVisible || findFieldValue.text.isEmpty() || isFindScopePaused) return false
+        if (!isFindVisible || findFieldValue.text.isEmpty() || isFindScopePaused || !hasCurrentFindInputs) return false
         if (findStatus == FindStatus.Searching) {
             pendingFindDirection = direction
             return true
@@ -5071,6 +5098,8 @@ internal constructor(
     /** Explicit result selection is the only search operation that moves the passage. */
     fun selectFindResult(index: Int, wrappedAt: FindWrap? = null): Boolean {
         validateReadingSelectionProjections()
+        val inputs = requestedFindInputs ?: return false
+        if (isFindScopePaused || !inputs.matches(findFieldState, replacementFieldState)) return false
         val result = findResults.getOrNull(index) ?: return false
         val revision = state.metrics?.revision ?: return false
         if (revision != findOriginRevision || state.hasActiveDraftChanges) return false
@@ -5089,23 +5118,32 @@ internal constructor(
         } else {
             val generation = advancedFindGeneration
             launchOperation(operation = { state ->
+                val ownsRequest = { generation == advancedFindGeneration && isFindVisible &&
+                    findResultIndex == index && findOriginRevision == revision && !closeStarted.get() &&
+                    inputs.matches(findFieldState, replacementFieldState) }
+                val canPublish = { ownsRequest() && state.metrics?.revision == revision &&
+                    !state.hasActiveDraftChanges }
+                if (!canPublish()) return@launchOperation
                 val position = try { state.resolvePosition(revision, result.navigationOffset) }
+                    catch (cancellation: CancellationException) { throw cancellation }
                     catch (_: Exception) {
-                        findMatch = null
-                        findResults = emptyList()
-                        isFindComplete = false
-                        findStatus = FindStatus.Failed(UiText.Resource(R.string.operation_find_interrupted))
+                        // True divergence clears metrics before this read returns. Its owned
+                        // Find state still needs clearing; superseded requests remain silent.
+                        if (canPublish() || (ownsRequest() && state.status == EditorDocumentStatus.Stale)) {
+                            findMatch = null
+                            findResults = emptyList()
+                            isFindComplete = false
+                            findStatus = FindStatus.Failed(UiText.Resource(R.string.operation_find_interrupted))
+                        }
                         return@launchOperation
                     }
-                val canPublish = { generation == advancedFindGeneration && isFindVisible && findResultIndex == index }
+                if (!canPublish()) return@launchOperation
                 val matched = FindMatch(result.source ?: result.hit.range, position)
                 val moved = if (isViewOnly && matched.range.start != matched.range.end)
                     state.navigateToMatch(matched, canPublish) == MatchViewportResult.Published
                 else if (isViewOnly) state.navigateToSourceOffset(revision, result.navigationOffset, canPublish)
-                else state.openSourceCaret(revision, result.navigationOffset) {
-                        generation == advancedFindGeneration && isFindVisible && findResultIndex == index
-                    }
-                if (moved && generation == advancedFindGeneration && state.metrics?.revision == revision) {
+                else state.openSourceCaret(revision, result.navigationOffset, canPublish)
+                if (moved && canPublish()) {
                     findMatch = matched
                     findStatus = FindStatus.Match(findMatch!!, wrappedAt)
                     pendingEditWindowScrollRestoration = EditWindowScrollRestoration(SemanticViewportAnchor(revision, target.offset, 0))
@@ -5199,13 +5237,13 @@ internal constructor(
         index !in excludedFindResults && result.source != null && result.hit.replacement == result.hit.text
     }
 
-    val canApplyFindReplacements: Boolean get() = isReplaceVisible && isFindComplete &&
+    val canApplyFindReplacements: Boolean get() = isReplaceVisible && isFindComplete && hasCurrentFindInputs &&
         reviewedFindRevision == state.metrics?.revision && !isFindScopePaused && !isViewOnly &&
         presentation == EditorPresentation.Text && !state.hasActiveDraftChanges &&
         state.status == EditorDocumentStatus.Ready && !isSaveBusy && !isSourceReloading &&
         includedReplacementCount > 0
 
-    val canReplaceCurrent: Boolean get() = isReplaceVisible && !isFindScopePaused && !isViewOnly &&
+    val canReplaceCurrent: Boolean get() = isReplaceVisible && !isFindScopePaused && !isViewOnly && hasCurrentFindInputs &&
         presentation == EditorPresentation.Text && findOriginRevision == state.metrics?.revision &&
         !state.hasActiveDraftChanges && state.status == EditorDocumentStatus.Ready &&
         !isSaveBusy && !isSourceReloading && findResults.getOrNull(findResultIndex)?.let {
@@ -5242,6 +5280,7 @@ internal constructor(
         val revision = if (currentOnly) findOriginRevision else reviewedFindRevision ?: return false
         val findGenerationAtApply = advancedFindGeneration
         val focusIntentAtApply = findFocusIntentVersion
+        val inputsAtApply = requestedFindInputs ?: return false
         val before = currentDocumentLocation().caret
         val caret = patches.first().range.start + patches.first().inserted.length
         val selectionAfter = Utf16Range(caret, caret)
@@ -5254,11 +5293,13 @@ internal constructor(
                     val first = patches.first()
                     // A committed edit survives a new query, but its automatic jump does not.
                     val advance = currentOnly && isFindVisible && isReplaceVisible &&
-                        advancedFindGeneration == findGenerationAtApply && findFocusIntentVersion == focusIntentAtApply
+                        advancedFindGeneration == findGenerationAtApply && findFocusIntentVersion == focusIntentAtApply &&
+                        inputsAtApply.matches(findFieldState, replacementFieldState)
                     // Return only the review that committed this batch to the document.
                     // A newer query or navigation choice must keep its own destination.
                     if (!currentOnly && findResultsPage == FindResultsPage.Replacements &&
-                        advancedFindGeneration == findGenerationAtApply && findFocusIntentVersion == focusIntentAtApply) {
+                        advancedFindGeneration == findGenerationAtApply && findFocusIntentVersion == focusIntentAtApply &&
+                        inputsAtApply.matches(findFieldState, replacementFieldState)) {
                         findResultsPage = null
                         findInputFocus = FindInputFocus.Document
                         findRequestsKeyboard = false
