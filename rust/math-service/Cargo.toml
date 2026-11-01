@@ -1,6 +1,7 @@
 [package]
 name = "beautyxt-math-service"
 version = "0.1.0"
+build = "../native-service/build-service.rs"
 description = "Isolated ART-free math service for BeauTyXT"
 edition.workspace = true
 license.workspace = true

@@ -1,4 +1,8 @@
 //! One active job per service, with cancellation on unbind and callback death.
+//!
+//! Service entry cdylibs must retain their mappings through process exit. Their
+//! shared build script sets `NODELETE`: cancellation does not join a detached
+//! worker or drain pending NDK death-recipient callbacks.
 use crate::{Binder, binder::check, ffi};
 use std::ffi::c_void;
 use std::ptr::NonNull;
