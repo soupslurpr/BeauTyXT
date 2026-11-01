@@ -88,6 +88,10 @@ private val PrintSetupPinnedActionsMinimumHeight = 480.dp
 @Composable
 internal fun PrintSetupSheet(session: EditorSession) {
     val draft = session.printSetupDraft ?: return
+    fun updateDraft(transform: (PrintSetupDraft) -> PrintSetupDraft) {
+        val current = session.printSetupDraft ?: return
+        session.updatePrintSetup(transform(current))
+    }
     val validation = validatePrintSetup(draft)
     val density = LocalDensity.current
     val windowHeight = with(density) { LocalWindowInfo.current.containerSize.height.toDp() }
@@ -156,9 +160,9 @@ internal fun PrintSetupSheet(session: EditorSession) {
                                         label = stringResource(R.string.print_source_text),
                                         selected = draft.contentMode == PrintContentMode.Source,
                                         onClick = {
-                                            session.updatePrintSetup(
-                                                draft.copy(contentMode = PrintContentMode.Source)
-                                            )
+                                            updateDraft {
+                                                it.copy(contentMode = PrintContentMode.Source)
+                                            }
                                         }
                                     ),
                                     SingleChoiceOption(
@@ -167,11 +171,11 @@ internal fun PrintSetupSheet(session: EditorSession) {
                                             draft.contentMode == PrintContentMode.FormattedMarkdown,
                                         enabled = session.canPrintFormattedMarkdown,
                                         onClick = {
-                                            session.updatePrintSetup(
-                                                draft.copy(
+                                            updateDraft {
+                                                it.copy(
                                                     contentMode = PrintContentMode.FormattedMarkdown
                                                 )
-                                            )
+                                            }
                                         }
                                     )
                                 )
@@ -220,24 +224,24 @@ internal fun PrintSetupSheet(session: EditorSession) {
                                         label = stringResource(R.string.print_inches),
                                         selected = draft.marginUnit == PrintMarginUnit.Inches,
                                         onClick = {
-                                            session.updatePrintSetup(
+                                            updateDraft {
                                                 convertPrintMarginUnit(
-                                                    draft,
+                                                    it,
                                                     PrintMarginUnit.Inches
                                                 )
-                                            )
+                                            }
                                         }
                                     ),
                                     SingleChoiceOption(
                                         label = stringResource(R.string.print_millimetres),
                                         selected = draft.marginUnit == PrintMarginUnit.Millimetres,
                                         onClick = {
-                                            session.updatePrintSetup(
+                                            updateDraft {
                                                 convertPrintMarginUnit(
-                                                    draft,
+                                                    it,
                                                     PrintMarginUnit.Millimetres
                                                 )
-                                            )
+                                            }
                                         }
                                     )
                                 )
@@ -251,7 +255,7 @@ internal fun PrintSetupSheet(session: EditorSession) {
                             secondField = PrintMarginField.Bottom,
                             secondValue = draft.bottomMargin,
                             invalidFields = validation.invalidMarginFields,
-                            onChange = session::updatePrintSetup
+                            onChange = ::updateDraft
                         )
                     }
                     val horizontalMarginControls: @Composable () -> Unit = {
@@ -262,7 +266,7 @@ internal fun PrintSetupSheet(session: EditorSession) {
                             secondField = PrintMarginField.Right,
                             secondValue = draft.rightMargin,
                             invalidFields = validation.invalidMarginFields,
-                            onChange = session::updatePrintSetup
+                            onChange = ::updateDraft
                         )
                         Text(
                             text = stringResource(R.string.print_minimum_margin),
@@ -310,9 +314,7 @@ internal fun PrintSetupSheet(session: EditorSession) {
                                         label = family.label,
                                         selected = draft.fontFamily == family,
                                         onClick = {
-                                            session.updatePrintSetup(
-                                                draft.copy(fontFamily = family)
-                                            )
+                                            updateDraft { it.copy(fontFamily = family) }
                                         }
                                     )
                                 }
@@ -322,7 +324,7 @@ internal fun PrintSetupSheet(session: EditorSession) {
                         OutlinedTextField(
                             value = draft.fontSize,
                             onValueChange = { value ->
-                                session.updatePrintSetup(draft.copy(fontSize = value))
+                                updateDraft { it.copy(fontSize = value) }
                             },
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text(stringResource(R.string.print_text_size)) },
@@ -358,7 +360,7 @@ internal fun PrintSetupSheet(session: EditorSession) {
                             checked = draft.wrapLongLines,
                             enabled = draft.contentMode == PrintContentMode.Source,
                             onCheckedChange = { checked ->
-                                session.updatePrintSetup(draft.copy(wrapLongLines = checked))
+                                updateDraft { it.copy(wrapLongLines = checked) }
                             }
                         )
                     }
@@ -382,14 +384,14 @@ internal fun PrintSetupSheet(session: EditorSession) {
                             label = stringResource(R.string.print_file_name_header),
                             checked = draft.showFileName,
                             onCheckedChange = { checked ->
-                                session.updatePrintSetup(draft.copy(showFileName = checked))
+                                updateDraft { it.copy(showFileName = checked) }
                             }
                         )
                         PrintSetupToggleItem(
                             label = stringResource(R.string.print_page_numbers),
                             checked = draft.showPageNumbers,
                             onCheckedChange = { checked ->
-                                session.updatePrintSetup(draft.copy(showPageNumbers = checked))
+                                updateDraft { it.copy(showPageNumbers = checked) }
                             }
                         )
                     }
@@ -568,7 +570,7 @@ private fun MarginFieldRow(
     secondField: PrintMarginField,
     secondValue: String,
     invalidFields: Set<PrintMarginField>,
-    onChange: (PrintSetupDraft) -> Unit
+    onChange: ((PrintSetupDraft) -> PrintSetupDraft) -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -579,7 +581,7 @@ private fun MarginFieldRow(
             value = firstValue,
             unit = draft.marginUnit,
             isError = firstField in invalidFields,
-            onValueChange = { value -> onChange(draft.withMargin(firstField, value)) },
+            onValueChange = { value -> onChange { current -> current.withMargin(firstField, value) } },
             modifier = Modifier.weight(1f)
         )
         PrintMarginTextField(
@@ -587,7 +589,7 @@ private fun MarginFieldRow(
             value = secondValue,
             unit = draft.marginUnit,
             isError = secondField in invalidFields,
-            onValueChange = { value -> onChange(draft.withMargin(secondField, value)) },
+            onValueChange = { value -> onChange { current -> current.withMargin(secondField, value) } },
             modifier = Modifier.weight(1f)
         )
     }
