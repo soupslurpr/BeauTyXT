@@ -408,6 +408,9 @@ private fun ExcerptToggle(label: String, checked: Boolean, enabled: Boolean = tr
 @Composable
 private fun ExcerptPrintSettings(controller: ExcerptExportController) {
     val draft = controller.printDraft
+    fun updateDraft(transform: (PrintSetupDraft) -> PrintSetupDraft) {
+        controller.updatePrintDraft(transform(controller.printDraft))
+    }
     val validation = validatePrintSetup(draft)
     val enabled = controller.canConfigure
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -415,7 +418,7 @@ private fun ExcerptPrintSettings(controller: ExcerptExportController) {
             SingleChoiceButtons(PrintContentMode.entries.map { mode ->
                 SingleChoiceOption(
                     stringResource(if (mode == PrintContentMode.Source) R.string.excerpt_pdf_source else R.string.excerpt_pdf_formatted),
-                    draft.contentMode == mode, { controller.updatePrintDraft(draft.copy(contentMode = mode)) }, enabled)
+                    draft.contentMode == mode, { updateDraft { it.copy(contentMode = mode) } }, enabled)
             })
             Text(stringResource(if (draft.contentMode == PrintContentMode.Source)
                 R.string.print_source_description else R.string.print_formatted_description),
@@ -436,27 +439,31 @@ private fun ExcerptPrintSettings(controller: ExcerptExportController) {
                 PrintFontFamily.SansSerif -> R.string.print_font_sans
                 PrintFontFamily.Serif -> R.string.print_font_serif
                 PrintFontFamily.Monospace -> R.string.print_font_mono
-            }), draft.fontFamily == family, { controller.updatePrintDraft(draft.copy(fontFamily = family)) }, enabled)
+            }), draft.fontFamily == family, { updateDraft { it.copy(fontFamily = family) } }, enabled)
         })
-        OutlinedTextField(draft.fontSize, { controller.updatePrintDraft(draft.copy(fontSize = it)) }, enabled = enabled,
+        OutlinedTextField(draft.fontSize, { value -> updateDraft { it.copy(fontSize = value) } }, enabled = enabled,
             label = { Text(stringResource(R.string.print_text_size)) }, suffix = { Text(stringResource(R.string.print_point_unit)) },
             isError = validation.isFontSizeInvalid,
             supportingText = if (validation.isFontSizeInvalid) ({ Text(stringResource(R.string.print_text_size_error)) }) else null,
             singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-        ExcerptToggle(stringResource(R.string.print_wrap_source_lines), draft.wrapLongLines, enabled) {
-            controller.updatePrintDraft(draft.copy(wrapLongLines = it))
+        ExcerptToggle(stringResource(R.string.print_wrap_source_lines), draft.wrapLongLines,
+            enabled && draft.contentMode == PrintContentMode.Source) { checked ->
+            updateDraft { it.copy(wrapLongLines = checked) }
         }
-        ExcerptToggle(stringResource(R.string.print_file_name_header), draft.showFileName, enabled) {
-            controller.updatePrintDraft(draft.copy(showFileName = it))
+        Text(stringResource(if (draft.contentMode == PrintContentMode.Source)
+            R.string.print_source_wrapping_description else R.string.print_markdown_wrapping_description),
+            style = MaterialTheme.typography.bodySmall)
+        ExcerptToggle(stringResource(R.string.print_file_name_header), draft.showFileName, enabled) { checked ->
+            updateDraft { it.copy(showFileName = checked) }
         }
-        ExcerptToggle(stringResource(R.string.print_page_numbers), draft.showPageNumbers, enabled) {
-            controller.updatePrintDraft(draft.copy(showPageNumbers = it))
+        ExcerptToggle(stringResource(R.string.print_page_numbers), draft.showPageNumbers, enabled) { checked ->
+            updateDraft { it.copy(showPageNumbers = checked) }
         }
         Text(stringResource(R.string.print_margins), style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.semantics { heading() })
         SingleChoiceButtons(PrintMarginUnit.entries.map { unit ->
             SingleChoiceOption(stringResource(if (unit == PrintMarginUnit.Inches) R.string.print_inches else R.string.print_millimetres),
-                draft.marginUnit == unit, { controller.updatePrintDraft(convertPrintMarginUnit(draft, unit)) }, enabled)
+                draft.marginUnit == unit, { updateDraft { convertPrintMarginUnit(it, unit) } }, enabled)
         })
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(Triple(PrintMarginField.Top, R.string.print_margin_top, draft.topMargin),
@@ -465,12 +472,12 @@ private fun ExcerptPrintSettings(controller: ExcerptExportController) {
                 Triple(PrintMarginField.Right, R.string.print_margin_right, draft.rightMargin)).forEach { (field, label, value) ->
                 val unit = stringResource(if (draft.marginUnit == PrintMarginUnit.Inches) R.string.print_inch_unit else R.string.print_millimetre_unit)
                 val invalid = field in validation.invalidMarginFields
-                OutlinedTextField(value, { value -> controller.updatePrintDraft(when (field) {
-                    PrintMarginField.Top -> draft.copy(topMargin = value)
-                    PrintMarginField.Bottom -> draft.copy(bottomMargin = value)
-                    PrintMarginField.Left -> draft.copy(leftMargin = value)
-                    PrintMarginField.Right -> draft.copy(rightMargin = value)
-                }) }, enabled = enabled, label = { Text(stringResource(label)) }, suffix = { Text(unit) }, singleLine = true,
+                OutlinedTextField(value, { value -> updateDraft { current -> when (field) {
+                    PrintMarginField.Top -> current.copy(topMargin = value)
+                    PrintMarginField.Bottom -> current.copy(bottomMargin = value)
+                    PrintMarginField.Left -> current.copy(leftMargin = value)
+                    PrintMarginField.Right -> current.copy(rightMargin = value)
+                } } }, enabled = enabled, label = { Text(stringResource(label)) }, suffix = { Text(unit) }, singleLine = true,
                     isError = invalid, supportingText = if (invalid) ({
                         Text(stringResource(R.string.print_margin_error, maximumPrintMarginText(draft.marginUnit), unit))
                     }) else null,
