@@ -44,6 +44,12 @@ pub fn render_math(source: &str, display: bool) -> Result<Vec<u8>, DrawingError>
         return Err(DrawingError::Limit);
     }
     let mut drawing = Drawing::new(list.width, list.total_height(), list.height)?;
+    let viewport = [
+        0.0,
+        0.0,
+        coordinate(list.width)?,
+        coordinate(list.total_height())?,
+    ];
     let mut semantic_nodes = nodes;
     let mut semantics =
         semantics::Semantics::from_nodes(&mut semantic_nodes, &options, &list.items).ok();
@@ -116,14 +122,23 @@ pub fn render_math(source: &str, display: bool) -> Result<Vec<u8>, DrawingError>
             }
         }
     }
+    publish_semantics(&mut drawing, semantics, viewport)?;
+    drawing.encode()
+}
+
+fn publish_semantics(
+    drawing: &mut Drawing,
+    semantics: Option<semantics::Semantics>,
+    viewport: [f32; 4],
+) -> Result<(), DrawingError> {
     if let Some(semantics) = semantics {
-        let (complete, runs) = semantics.finish()?;
+        let (complete, runs) = semantics.finish(viewport)?;
         drawing.set_text_complete(complete);
         for run in runs {
             drawing.push_text(run)?;
         }
     }
-    drawing.encode()
+    Ok(())
 }
 
 fn append_path(
@@ -295,6 +310,27 @@ fn math_color(color: ratex_types::color::Color) -> Result<u32, DrawingError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clipped_formula_text_never_claims_complete_search_coverage() {
+        for source in [r"\kern{-2em}a\kern{3em}b", r"abc\kern{-1em}"] {
+            let packet = render_math(source, true).unwrap();
+            assert_eq!(
+                u32::from_le_bytes(packet[56..60].try_into().unwrap()),
+                0,
+                "{source}"
+            );
+            assert_eq!(
+                u32::from_le_bytes(packet[48..52].try_into().unwrap()),
+                0,
+                "{source}"
+            );
+        }
+        let packet = render_math("ab", true).unwrap();
+        // Normal font overshoot is partially clipped, but the letters remain drawn/searchable.
+        assert_eq!(u32::from_le_bytes(packet[56..60].try_into().unwrap()), 0);
+        assert_eq!(u32::from_le_bytes(packet[48..52].try_into().unwrap()), 1);
+    }
 
     #[test]
     fn renders_the_supported_formula_families_as_closed_paths() {
