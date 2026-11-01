@@ -83,6 +83,15 @@ class HomePresentationTest {
         assertFalse(usesWideHomeLayout(840.dp, 360.dp, 2f))
     }
 
+    /** Temporarily empty local bounds select the compact layout without aborting measurement. */
+    @Test
+    fun handlesEmptyHomeBounds() {
+        assertFalse(usesHorizontalHomeActions(0.dp, 1f))
+        assertFalse(usesWideHomeLayout(0.dp, 360.dp, 1f))
+        assertFalse(usesWideHomeLayout(840.dp, 0.dp, 1f))
+        assertFalse(usesWideHomeLayout(0.dp, 0.dp, 1f))
+    }
+
     /** Verifies compatible text providers remain discoverable without a universal filter. */
     @Test
     fun discoversCommonTextAndMarkdownMimeTypes() {
