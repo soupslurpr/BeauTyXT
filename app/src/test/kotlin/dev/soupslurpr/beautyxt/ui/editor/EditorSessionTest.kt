@@ -87,26 +87,25 @@ private fun TextFieldState.retainCompositionForTest(composition: TextRange) {
     require(composition.min >= 0 && composition.max <= text.length) {
         "test composition exceeds the text field"
     }
-    val mainBuffer =
-        javaClass
-            .getMethod("getMainBuffer\$foundation")
-            .invoke(this)
+    val retainedText = text.toString()
+    val retainedSelection = selection
     val setComposition =
-        mainBuffer.javaClass.methods.single { method ->
-            method.name == "setComposition\$foundation"
+        TextFieldBuffer::class.java.methods.single { method ->
+            method.name.startsWith("setComposition\$") &&
+                method.parameterTypes.contentEquals(arrayOf(Integer.TYPE, Integer.TYPE, List::class.java))
         }
-    setComposition.invoke(
-        mainBuffer,
-        composition.start,
-        composition.end,
-        emptyList<Any>()
-    )
     val publishUserEdit =
         javaClass.methods.single { method ->
-            method.name == "editWithNoSideEffects\$foundation"
+            method.name.startsWith("editWithNoSideEffects\$") && method.parameterCount == 1
         }
-    publishUserEdit.invoke(this, { _: TextFieldBuffer -> Unit })
+    publishUserEdit.invoke(this, { buffer: TextFieldBuffer ->
+        setComposition.invoke(buffer, composition.start, composition.end, emptyList<Any>())
+        Unit
+    })
     check(this.composition == composition) { "test composition was not retained" }
+    check(text.contentEquals(retainedText) && selection == retainedSelection) {
+        "test composition changed the field text or selection"
+    }
 }
 
 
