@@ -106,6 +106,17 @@ Debug/staging APK assembly and signing configuration are unchanged. The ZIP
 compression implementation comes from the build JVM, so use the same toolchain
 for both builds.
 
+AGP 9.5.0 includes R8 9.5.28, which can nondeterministically strengthen the
+Continuation parameter of `FlowKt__LimitKt.emitAbort$FlowKt__LimitKt` even
+with identical compiler inputs. Its synthetic accessor has the same issue.
+`app/proguard-rules.pro` disables optimization for those two methods in release
+and staging builds while still allowing shrinking and obfuscation. This retains
+a small amount of code without restricting build parallelism.
+A [related upstream correction][r8-argument-narrowing] exists;
+remove the workaround only after verifying a stable compiler update without
+the rule. Compare repeated R8 executions, separate clean builds, and a real
+incremental edit followed by a clean build using raw bundle comparisons.
+
 Always require a passing raw `cmp`; matching uncompressed entries alone is not
 byte-for-byte reproducibility. Repeat this comparison on the final approved
 release commit, not just a development snapshot. Record which Gradle, Cargo,
@@ -172,3 +183,4 @@ complete publishing path supports them.
 [accrescent-build]: https://accrescent.app/docs/guide/getting-started/building.html
 [accrescent-requirements]: https://accrescent.app/docs/guide/appendix/requirements.html
 [bundletool-passwords]: https://developer.android.com/tools/bundletool#generate_apks
+[r8-argument-narrowing]: https://r8.googlesource.com/r8/+/953faf495b999d7e4e677aa0d62c5818cd3d2602
