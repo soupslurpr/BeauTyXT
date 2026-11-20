@@ -17,6 +17,9 @@ Requires **Android 17 / API 37**. The interface is currently English-only.
   browser or JavaScript.
 - Move between rendered Markdown and source editing while keeping your place.
   Navigate long documents with Contents, document-wide Find, and Go to line.
+- Set fonts, text size, spacing, and column layout in **Text appearance**.
+  Plain text/source and rendered Markdown have independent preferences that
+  apply across documents. Android's theme and font-size setting still apply.
 - Keep Find and Replace above the document. Open Search options directly,
   browse Results with surrounding text, and review or exclude replacements
   before applying a batch. **Undo replacement** reverses the applied change.

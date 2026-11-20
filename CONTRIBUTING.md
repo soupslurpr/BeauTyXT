@@ -186,6 +186,12 @@ switching between Share and Save retains the previewed bytes and checks a PDF
 save against the separate-UID provider's digest. `compact print setup` exercises
 the export settings with a real landscape keyboard; repeat it in a fresh
 instrumentation process at enlarged system font sizes.
+The opt-in `appearance adaptation` phase requires a phone with at least
+840 dp of landscape width after horizontal safe-drawing insets. It rotates a
+real editor with an unfinished numeric appearance draft, verifies the portrait
+modal sheet and the landscape pane beside the document, and checks that Apply
+and Cancel remain above the docked keyboard. Repeat it at enlarged system font
+sizes. The phase restores the original rotation and appearance preferences.
 The opt-in
 `physical NFC excerpt` phase requires NFC enabled and a writable spare tag. It
 writes only `BeauTyXT NFC excerpt test.` with label `TST`, then waits for a

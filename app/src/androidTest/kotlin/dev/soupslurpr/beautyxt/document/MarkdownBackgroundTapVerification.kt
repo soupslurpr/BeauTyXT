@@ -292,7 +292,7 @@ internal fun Instrumentation.withReadingPage(
         awaitReadingCondition("reading page did not become ready") {
             if (initialPresentation == EditorPresentation.MarkdownPreview)
                 session.markdownPreviewStatus is MarkdownPreviewStatus.Ready
-            else session.activeDraft != null
+            else if (viewOnly) session.state.blocks.isNotEmpty() else session.activeDraft != null
         }
         waitForAccessibilityIdle()
         verify(activity, session)

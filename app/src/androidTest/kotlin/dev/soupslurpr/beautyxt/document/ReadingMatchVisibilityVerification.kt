@@ -55,7 +55,7 @@ internal fun Instrumentation.verifyReadingMatchVisibility() {
     }
 }
 
-private fun visibleMatchBounds(view: View, needle: String): List<Pair<Rect, Rect>> = buildList {
+internal fun visibleMatchBounds(view: View, needle: String): List<Pair<Rect, Rect>> = buildList {
     if (view is ViewRootForTest) {
         view.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false).forEach { node ->
             val layouts = ArrayList<TextLayoutResult>()

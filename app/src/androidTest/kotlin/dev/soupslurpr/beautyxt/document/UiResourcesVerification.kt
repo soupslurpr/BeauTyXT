@@ -22,6 +22,10 @@ import dev.soupslurpr.beautyxt.ui.userMessage
 internal fun verifyUiResources(context: Context) {
     verifyLaunchThemes(context)
     val resources = context.resources
+    for ((count, unit) in listOf(1 to "space", 4 to "spaces")) {
+        check(resources.getQuantityString(R.plurals.appearance_value_spaces, count, count) == "$count $unit")
+        check(resources.getQuantityString(R.plurals.appearance_unit_spaces, count) == unit)
+    }
     for ((text, label) in listOf(
         "" to "0 Unicode characters",
         "a" to "1 Unicode character",
