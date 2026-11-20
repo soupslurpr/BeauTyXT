@@ -152,6 +152,15 @@ internal enum class EditorPresentation {
     MarkdownPreview
 }
 
+internal enum class RestorationReason { Navigation, Appearance }
+
+/** Each request has its own identity, even when two destinations have equal coordinates. */
+internal class ViewportRestoration(
+    val anchor: SemanticViewportAnchor,
+    val reason: RestorationReason = RestorationReason.Navigation,
+    val findRange: Utf16Range? = null
+)
+
 /** Describes the newest retained Markdown preview attempt. */
 internal sealed interface MarkdownPreviewStatus {
     /** Indicates that no preview model is currently retained. */
@@ -165,10 +174,10 @@ internal sealed interface MarkdownPreviewStatus {
         val revision: Long,
         val document: MarkdownPreviewDocument,
         val layout: MarkdownPreviewLayout,
-        val scrollRestoration: SemanticViewportAnchor?
+        val scrollRestoration: ViewportRestoration?
     ) : MarkdownPreviewStatus {
         init {
-            require(scrollRestoration == null || scrollRestoration.revision == revision) {
+            require(scrollRestoration == null || scrollRestoration.anchor.revision == revision) {
                 "Markdown preview restoration revision must match its model"
             }
         }
@@ -221,6 +230,7 @@ private data class PendingEditWindowAction(
     val automaticTransition: AutomaticEditWindowTransition?,
     val lineNavigationTarget: Long?,
     val bulkEdit: EditorBulkEdit? = null,
+    val openReplace: Boolean = false,
     val readyToExecute: Boolean = true
 ) {
     init {
@@ -698,7 +708,7 @@ internal constructor(
     var activeDraft by mutableStateOf<ActiveEditDraft?>(null)
         private set
 
-    var readOnlySourceScrollRestoration by mutableStateOf<SemanticViewportAnchor?>(null)
+    var readOnlySourceScrollRestoration by mutableStateOf<ViewportRestoration?>(null)
         private set
 
     var isFindVisible by mutableStateOf(false)
@@ -1843,6 +1853,27 @@ internal constructor(
         }
     }
 
+    /** Retains the visible source point through a document appearance reflow. */
+    fun restorePositionAfterAppearanceChange(originatingPresentation: EditorPresentation, anchor: SemanticViewportAnchor) {
+        if (closeStarted.get() || isClosePending || presentation != originatingPresentation ||
+            anchor.revision != state.metrics?.revision) return
+
+        fun reflow(previous: ViewportRestoration?): ViewportRestoration? {
+            if (previous?.reason == RestorationReason.Navigation) return null
+            return ViewportRestoration(previous?.anchor ?: anchor, RestorationReason.Appearance)
+        }
+        when (originatingPresentation) {
+            EditorPresentation.MarkdownPreview -> {
+                val ready = markdownPreviewStatus as? MarkdownPreviewStatus.Ready ?: return
+                if (ready.revision != anchor.revision) return
+                reflow(ready.scrollRestoration)?.let { markdownPreviewStatus = ready.copy(scrollRestoration = it) }
+            }
+            EditorPresentation.Text -> if (activeDraft == null) {
+                reflow(readOnlySourceScrollRestoration)?.let { readOnlySourceScrollRestoration = it }
+            }
+        }
+    }
+
     /** Navigates to a heading in the current revision using its semantic source position. */
     fun navigateToHeading(revision: Long, entry: DocumentOutlineEntry): Boolean {
         require(revision >= 0L) { "preview revision must be nonnegative" }
@@ -1857,7 +1888,7 @@ internal constructor(
         locations.record(currentDocumentLocation(), DocumentLocation(revision, presentation, entry.sourceOffset))
         locationVersion++
         markdownPreviewStatus = ready.copy(
-            scrollRestoration = SemanticViewportAnchor(revision, entry.sourceOffset, 0)
+            scrollRestoration = ViewportRestoration(SemanticViewportAnchor(revision, entry.sourceOffset, 0))
         )
         observeMarkdownPreviewViewportAnchor(revision, entry.sourceOffset)
         return true
@@ -1871,7 +1902,7 @@ internal constructor(
             presentation != EditorPresentation.MarkdownPreview) return false
         locations.record(currentDocumentLocation(), DocumentLocation(revision, presentation, block.source.start))
         locationVersion++
-        markdownPreviewStatus = ready.copy(scrollRestoration = SemanticViewportAnchor(revision, block.source.start, 0))
+        markdownPreviewStatus = ready.copy(scrollRestoration = ViewportRestoration(SemanticViewportAnchor(revision, block.source.start, 0)))
         observeMarkdownPreviewViewportAnchor(revision, block.source.start)
         return true
     }
@@ -1879,10 +1910,10 @@ internal constructor(
     /** Consumes one exact entry anchor after Compose restores the preview viewport. */
     fun consumeMarkdownPreviewScrollRestoration(
         revision: Long,
-        restoration: SemanticViewportAnchor
+        restoration: ViewportRestoration
     ): Boolean {
         require(revision >= 0L) { "Markdown preview revision must be nonnegative" }
-        require(restoration.revision == revision) {
+        require(restoration.anchor.revision == revision) {
             "Markdown preview restoration revision must match its model"
         }
         val ready = markdownPreviewStatus as? MarkdownPreviewStatus.Ready ?: return false
@@ -1890,7 +1921,7 @@ internal constructor(
             closeStarted.get() ||
             presentation != EditorPresentation.MarkdownPreview ||
             ready.revision != revision ||
-            ready.scrollRestoration != restoration
+            ready.scrollRestoration !== restoration
         ) {
             return false
         }
@@ -1899,22 +1930,23 @@ internal constructor(
     }
 
     /** Opens retained Find now or after synchronizing one active edit field. */
-    fun showFind(showKeyboard: Boolean = true): Boolean {
+    fun showFind(showKeyboard: Boolean = true, openReplace: Boolean = false): Boolean {
+        if (!isFindVisible && !canShowFind) return false
         findResultsPage = null
         findInputFocus = FindInputFocus.Query
         findFocusIntentVersion++
         findRequestsKeyboard = showKeyboard
         findFocusRequest++
         findFieldState.edit { selection = TextRange(0, length) }
-        if (isFindVisible) return true
-        if (!canShowFind) {
-            return false
+        if (!isFindVisible) {
+            val draft = activeDraft
+            if (draft != null) {
+                return requestEditWindowAction(draft, EditWindowAction.OpenFind, null, null, openReplace)
+            }
+            if (!openFind(currentDocumentLocation().offset)) return false
         }
-        val draft = activeDraft
-        if (draft != null) {
-            return requestEditWindowAction(draft = draft, action = EditWindowAction.OpenFind)
-        }
-        return openFind(currentDocumentLocation().offset)
+        if (openReplace) showReplace(showKeyboard)
+        return true
     }
 
     /** Opens Markdown preview now or after synchronizing one active edit field. */
@@ -2148,8 +2180,7 @@ internal constructor(
             sourceViewportNavigationPending = true
             launchOperation(operation = { state ->
                 if (state.navigateToSourceOffset(anchor.revision, anchor.sourceUtf16Offset)) {
-                    readOnlySourceScrollRestoration = anchor
-                    viewportListState.requestScrollToItem(0)
+                    readOnlySourceScrollRestoration = ViewportRestoration(anchor)
                     markdownPreviewReturnTarget = null
                     presentation = EditorPresentation.Text
                     invalidateMarkdownPreview()
@@ -2247,8 +2278,8 @@ internal constructor(
             ownedDocumentSource === documentSource
 
     /** Consumes only the exact read-only restoration applied by the current source layout. */
-    fun consumeReadOnlySourceScrollRestoration(anchor: SemanticViewportAnchor): Boolean {
-        if (readOnlySourceScrollRestoration !== anchor) return false
+    fun consumeReadOnlySourceScrollRestoration(restoration: ViewportRestoration): Boolean {
+        if (readOnlySourceScrollRestoration !== restoration) return false
         readOnlySourceScrollRestoration = null
         return true
     }
@@ -3005,7 +3036,8 @@ internal constructor(
         draft: ActiveEditDraft,
         action: EditWindowAction,
         automaticTransition: AutomaticEditWindowTransition?,
-        lineNavigationTarget: Long?
+        lineNavigationTarget: Long?,
+        openReplace: Boolean = false
     ): Boolean {
         val generation = draft.edit.generation
         if (
@@ -3057,7 +3089,8 @@ internal constructor(
                 phase = EditWindowActionPhase.Waiting,
                 restoreEditorFocusOnCancel = draft.shouldRestoreEditorFocus,
                 automaticTransition = automaticTransition,
-                lineNavigationTarget = lineNavigationTarget
+                lineNavigationTarget = lineNavigationTarget,
+                openReplace = openReplace
             )
         observeActiveEdit(draft = draft, value = fieldValue)
         if (fieldValue.composition == null) {
@@ -3198,6 +3231,8 @@ internal constructor(
                 !openFind(findAnchor.sourceUtf16Offset)
             ) {
                 activeDraft?.requestEditorFocusRestoration()
+            } else if (pending.openReplace) {
+                showReplace()
             }
             return
         }
@@ -4634,6 +4669,7 @@ internal constructor(
                                     markdownPreviewReturnTarget
                                         ?.viewportAnchor
                                         ?.takeIf { anchor -> anchor.revision == rendered.revision }
+                                        ?.let(::ViewportRestoration)
                             )
                             pendingReadingLocation = null
                             restoreSelectionInReading(markdownPreviewStatus as MarkdownPreviewStatus.Ready)
@@ -5109,7 +5145,8 @@ internal constructor(
         findResultIndex = index
         if (presentation == EditorPresentation.MarkdownPreview) {
             val ready = markdownPreviewStatus as? MarkdownPreviewStatus.Ready ?: return false
-            markdownPreviewStatus = ready.copy(scrollRestoration = SemanticViewportAnchor(revision, target.offset, 0))
+            markdownPreviewStatus = ready.copy(scrollRestoration = ViewportRestoration(SemanticViewportAnchor(revision, target.offset, 0),
+                findRange = result.source ?: result.hit.range))
             observeMarkdownPreviewViewportAnchor(revision, target.offset)
             locations.record(origin, target, find = true)
             locationVersion++
@@ -5146,8 +5183,9 @@ internal constructor(
                 if (moved && canPublish()) {
                     findMatch = matched
                     findStatus = FindStatus.Match(findMatch!!, wrappedAt)
-                    pendingEditWindowScrollRestoration = EditWindowScrollRestoration(SemanticViewportAnchor(revision, target.offset, 0))
-                    viewportListState.requestScrollToItem(0)
+                    val anchor = SemanticViewportAnchor(revision, target.offset, 0)
+                    if (isViewOnly) readOnlySourceScrollRestoration = ViewportRestoration(anchor, findRange = matched.range)
+                    else pendingEditWindowScrollRestoration = EditWindowScrollRestoration(anchor, findRange = matched.range)
                     locations.record(origin, target, find = true)
                     locationVersion++
                     findRevealFocusIntent = focusIntentAtNavigation
@@ -5190,7 +5228,7 @@ internal constructor(
                 val ready = markdownPreviewStatus as? MarkdownPreviewStatus.Ready
                 when {
                     ready != null -> {
-                        markdownPreviewStatus = ready.copy(scrollRestoration = SemanticViewportAnchor(target.revision, target.offset, 0))
+                        markdownPreviewStatus = ready.copy(scrollRestoration = ViewportRestoration(SemanticViewportAnchor(target.revision, target.offset, 0)))
                         observeMarkdownPreviewViewportAnchor(target.revision, target.offset)
                     }
                     markdownPreviewStatus is MarkdownPreviewStatus.Failed -> restoreDocumentLocationInSource(target, readingFallback = true)
@@ -5218,9 +5256,8 @@ internal constructor(
                 else state.openSourceCaret(target.revision, target.caret)
             if (moved) {
                 val anchor = SemanticViewportAnchor(target.revision, target.offset, 0)
-                if (isViewOnly) readOnlySourceScrollRestoration = anchor
+                if (isViewOnly) readOnlySourceScrollRestoration = ViewportRestoration(anchor)
                 else pendingEditWindowScrollRestoration = EditWindowScrollRestoration(anchor)
-                viewportListState.requestScrollToItem(0)
             }
         }, requestDraftFocus = false, onCompletion = { refreshAdvancedFind() })
     }

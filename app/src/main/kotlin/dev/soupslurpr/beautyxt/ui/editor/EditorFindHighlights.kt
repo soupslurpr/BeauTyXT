@@ -1,11 +1,8 @@
 /* Applies transient Find decoration to both source presentation paths. */
 package dev.soupslurpr.beautyxt.ui.editor
 
-import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -17,7 +14,7 @@ import dev.soupslurpr.beautyxt.document.isScalarBoundary
 /** Binds source position decoration to the exact text that produced its offsets. */
 internal data class SourceFindDecoration(val revision: Long, val text: String) {
     fun matchesSource(currentRevision: Long, layoutText: CharSequence,
-        isCurrent: Boolean): Boolean = revision == currentRevision && isCurrent && layoutText.contentEquals(text)
+        isCurrent: Boolean): Boolean = revision == currentRevision && isCurrent && sourcePresentationMatches(layoutText, text)
 
     fun markerOffset(mappedOffset: Int?): Int? = mappedOffset?.takeIf {
         it in 0..text.length && text.isScalarBoundary(it)
@@ -72,17 +69,4 @@ internal fun findHighlightedText(
     append(text)
     highlights.forEach { range -> addStyle(styles.other, range.start, range.end) }
     current?.let { range -> addStyle(styles.current, range.start, range.end) }
-}
-
-/** Adds visual spans only; the draft, clipboard, and undo history keep plain source text. */
-internal fun findHighlightTransformation(
-    expectedText: String,
-    highlights: List<TextRange>,
-    current: TextRange?,
-    styles: FindHighlightStyles
-): OutputTransformation = OutputTransformation {
-    if (asCharSequence().contentEquals(expectedText)) {
-        highlights.forEach { range -> addStyle(styles.other, range.start, range.end) }
-        current?.let { range -> addStyle(styles.current, range.start, range.end) }
-    }
 }

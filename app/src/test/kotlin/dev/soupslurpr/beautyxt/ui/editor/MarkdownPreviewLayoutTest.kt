@@ -5,6 +5,10 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.unit.dp
+import dev.soupslurpr.beautyxt.illustration.IllustrationKind
+import dev.soupslurpr.beautyxt.illustration.IllustrationResult
+import dev.soupslurpr.beautyxt.illustration.NativeIllustration
+import dev.soupslurpr.beautyxt.markdown.MARKDOWN_SPAN_STYLE_DISPLAY_MATH
 import dev.soupslurpr.beautyxt.markdown.MARKDOWN_SPAN_STYLE_CODE
 import dev.soupslurpr.beautyxt.markdown.MarkdownBlockKind
 import dev.soupslurpr.beautyxt.markdown.MarkdownInlineDestinationKind
@@ -18,6 +22,31 @@ import org.junit.Test
 
 /** Verifies bounded nesting and visible Markdown list markers. */
 class MarkdownPreviewLayoutTest {
+    @Test
+    fun continuationUsesItsOwnNumberAcrossNestedListItems() {
+        val first = listItem(isOrdered = true, listNumber = 1234).copy(listDepth = 1)
+        val nested = listItem().copy(listDepth = 2)
+        val continuation = first.copy(listNumber = 0, continuesListItem = true)
+        val fragmented = nested.copy(continuesPrevious = true)
+        val owners = markdownListContinuationOwners(listOf(first, nested, fragmented, continuation))
+        assertSame(first, owners[3])
+        assertSame(nested, owners[2])
+    }
+
+    @Test
+    fun renderedDiagramsAndDisplayMathSelectTheBodyRoleWhileLiteralsKeepCode() {
+        val drawing = NativeIllustration(2f, 1f, .8f, emptyList(), 48)
+        val block = listItem().copy(kind = MarkdownBlockKind.Code, text = "x")
+        for (kind in IllustrationKind.entries) {
+            val span = MarkdownInlineSpan(0, 1, if (kind == IllustrationKind.Math) MARKDOWN_SPAN_STYLE_DISPLAY_MATH else 0,
+                null, illustration = IllustrationResult.Rendered(drawing, kind))
+            assertEquals(MarkdownTextRole.Body, MarkdownTextRole.Code.forBlock(block.copy(spans = listOf(span))))
+            assertEquals(MarkdownTextRole.Code, MarkdownTextRole.Code.forBlock(
+                block.copy(spans = listOf(span.copy(illustration = IllustrationResult.Pending(kind))))))
+        }
+        assertEquals(MarkdownTextRole.Code, MarkdownTextRole.Code.forBlock(block))
+    }
+
     @Test
     fun boundsNestedIndent() {
         assertEquals(0.dp, markdownNestedIndent(0))

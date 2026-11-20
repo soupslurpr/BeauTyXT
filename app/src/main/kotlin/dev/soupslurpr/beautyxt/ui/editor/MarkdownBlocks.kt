@@ -53,6 +53,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -66,6 +67,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -115,7 +117,8 @@ private val MinimumMarkdownTableCellWidth = 112.dp
 
 private val MarkdownTableDividerWidth = 1.dp
 
-private val MarkdownListMarkerWidth = 24.dp
+internal fun MarkdownTextRole.forBlock(block: MarkdownRenderBlock): MarkdownTextRole =
+    if (standaloneDisplayIllustration(block.text, block.spans)) MarkdownTextRole.Body else this
 
 private val MarkdownMaximumIndent = 60.dp
 
@@ -162,7 +165,7 @@ internal fun MarkdownQuoteAlert(
                 }
                 blocks.forEachIndexed { blockIndex, block ->
                     if (blockIndex != 0 && !block.continuesPrevious) {
-                        Spacer(Modifier.height(EditorSectionSpacing))
+                        Spacer(Modifier.height(markdownParagraphGap()))
                     }
                     val quoteIndent =
                         markdownNestedIndent((block.quoteDepth - baseQuoteDepth).coerceAtLeast(0))
@@ -382,7 +385,8 @@ private fun MarkdownBlockBody(
         MarkdownBlockKind.Heading ->
             MarkdownStyledText(
                 block = block,
-                style = markdownHeadingStyle(block.headingLevel),
+                style = MaterialTheme.typography.markdownHeadingStyle(block.headingLevel),
+                role = MarkdownTextRole.Heading,
                 onInlineInteraction = onInlineInteraction,
                 modifier =
                     modifier
@@ -469,20 +473,9 @@ private fun MarkdownRule(block: MarkdownRenderBlock, modifier: Modifier = Modifi
     )
 }
 
-/** Returns the Material typography for one Markdown heading level. */
-@Composable
-private fun markdownHeadingStyle(level: Int): TextStyle = when (level) {
-    1 -> MaterialTheme.typography.headlineLarge
-    2 -> MaterialTheme.typography.headlineSmall
-    3 -> MaterialTheme.typography.titleLarge
-    4 -> MaterialTheme.typography.titleMedium
-    5 -> MaterialTheme.typography.titleSmall
-    else -> MaterialTheme.typography.labelLarge
-}.copy(letterSpacing = 0.sp)
-
 /** Returns comfortable paragraph leading without overriding the user's font scale. */
 @Composable
-private fun markdownBodyStyle(): TextStyle = MaterialTheme.typography.bodyLarge.copy(
+internal fun markdownBodyStyle(): TextStyle = MaterialTheme.typography.bodyLarge.copy(
     fontSize = 18.sp,
     lineHeight = 28.sp,
     letterSpacing = 0.sp
@@ -584,34 +577,14 @@ internal fun MarkdownCodeBlocks(
                                     Math.addExact(firstBlockIndex, blockIndex),
                                 LocalMarkdownDiagramWidth provides diagramWidth
                             ) {
+                                val role = MarkdownTextRole.Code.forBlock(block)
                                 MarkdownStyledText(
                                     block = block,
-                                    style = if (standaloneDisplayIllustration(
-                                            block.text,
-                                            block.spans
-                                        )
-                                    ) {
-                                        markdownBodyStyle().let {
-                                            if (isDiagram) {
-                                                it.copy(
-                                                    textAlign = TextAlign.Center
-                                                )
-                                            } else {
-                                                it
-                                            }
-                                        }
-                                    } else {
-                                        MaterialTheme.typography.bodyMedium
-                                    },
-                                    fontFamily = if (standaloneDisplayIllustration(
-                                            block.text,
-                                            block.spans
-                                        )
-                                    ) {
-                                        FontFamily.Default
-                                    } else {
-                                        FontFamily.Monospace
-                                    },
+                                    style = if (role == MarkdownTextRole.Body) {
+                                        val body = markdownBodyStyle()
+                                        if (isDiagram) body.copy(textAlign = TextAlign.Center) else body
+                                    } else MaterialTheme.typography.bodyMedium,
+                                    role = role,
                                     onInlineInteraction = onInlineInteraction,
                                     modifier = Modifier.widthIn(min = viewportWidth),
                                     softWrap = false
@@ -660,115 +633,119 @@ private fun MarkdownListItem(
 ) {
     val taskState = markdownTaskState(block)
     val marker = markdownListMarker(block)
-    if (taskState != null) {
-        val checked = taskState == MarkdownTaskState.Checked
-        val taskDescription = stringResource(
-            if (checked) R.string.markdown_task_completed else R.string.markdown_task_incomplete
-        )
-        val contentBlock = remember(block) { markdownTaskContent(block) }
-        Surface(
-            modifier =
-                modifier
-                    .fillMaxWidth()
-                    .semantics {
-                        stateDescription = taskDescription
-                    },
-            color = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            shape = MaterialTheme.shapes.medium
-        ) {
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            vertical = EditorCompactSpacing / 2
-                        ),
-                horizontalArrangement = Arrangement.spacedBy(EditorCompactSpacing),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box {
-                    MarkdownTaskIndicator(checked = checked)
-                    val blockIndex = LocalMarkdownPreviewBlockIndex.current
-                    var markerLayout by remember(blockIndex) { mutableStateOf<TextLayoutResult?>(null) }
-                    val selection = if (blockIndex == null) Modifier else Modifier.documentSelectionText(
-                        key = "task-marker-$blockIndex", layout = markerLayout,
-                        point = { SelectionPoint.Reading(ReadingPoint(blockIndex, it)) },
-                        offset = { point -> (point as? SelectionPoint.Reading)?.point?.takeIf {
-                            it.block == blockIndex && it.offset in 0..2
-                        }?.offset })
-                    Text(block.text.take(2), color = Color.Transparent, maxLines = 1, softWrap = false,
-                        modifier = Modifier.size(24.dp).then(selection), onTextLayout = { markerLayout = it },
-                        style = markdownBodyStyle())
-                }
-                MarkdownStyledText(
-                    block = contentBlock,
-                    sourceBlock = block,
-                    renderedOffsetBase = block.text.length - contentBlock.text.length,
-                    style = markdownBodyStyle(),
-                    onInlineInteraction = onInlineInteraction,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-        return
+    val appearance = LocalDocumentAppearances.current.markdown
+    val bodyStyle = appearance.markdownStyle(markdownBodyStyle())
+    val markerStyle = bodyStyle.copy(fontWeight = FontWeight(
+        ((bodyStyle.fontWeight ?: FontWeight.Normal).weight + 200).coerceIn(100, 1000)))
+    val owner = LocalMarkdownListContinuationOwners.current[LocalMarkdownPreviewBlockIndex.current] ?: block
+    val taskMarker = markdownTaskState(owner) != null
+    val markerText = if (taskMarker) owner.text.take(2) else markdownListMarker(owner).orEmpty()
+    val measurer = rememberTextMeasurer()
+    val measured = remember(markerText, markerStyle, measurer) {
+        measurer.measure(markerText, markerStyle, maxLines = 1).size
     }
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(EditorCompactSpacing),
-        verticalAlignment = Alignment.Top
-    ) {
-        when {
-            marker != null -> {
+    val markerWidth = with(LocalDensity.current) {
+        val minimum = (bodyStyle.fontSize.value * 24f / 18f).sp.toDp()
+        if (taskMarker) maxOf(24.dp, minimum, measured.width.toDp(), measured.height.toDp())
+        else maxOf(minimum, measured.width.toDp())
+    }
+    val contentBlock = remember(block) { if (taskState == null) block else markdownTaskContent(block) }
+    val drawMarker: @Composable (Modifier, Boolean) -> Unit = { markerModifier, stacked ->
+        if (taskState != null) {
+            val checked = taskState == MarkdownTaskState.Checked
+            Box(markerModifier.size(markerWidth), contentAlignment = Alignment.Center) {
+                MarkdownTaskIndicator(checked = checked, size = markerWidth)
                 val blockIndex = LocalMarkdownPreviewBlockIndex.current
-                var markerLayout by remember(blockIndex, marker) { mutableStateOf<TextLayoutResult?>(null) }
-                val prefix = readingListPrefix(block)
+                var markerLayout by remember(blockIndex) { mutableStateOf<TextLayoutResult?>(null) }
                 val selection = if (blockIndex == null) Modifier else Modifier.documentSelectionText(
-                    key = "list-marker-$blockIndex", layout = markerLayout,
-                    point = { SelectionPoint.Reading(ReadingPoint(blockIndex, it - prefix.length)) },
+                    key = "task-marker-$blockIndex", layout = markerLayout,
+                    point = { SelectionPoint.Reading(ReadingPoint(blockIndex, it)) },
                     offset = { point -> (point as? SelectionPoint.Reading)?.point?.takeIf {
-                        it.block == blockIndex && it.offset in -prefix.length..-1
-                    }?.let { it.offset + prefix.length } })
-                val highlights = LocalReadingFindHighlights.current[blockIndex].orEmpty()
-                val styles = findHighlightStyles()
-                val annotated = buildAnnotatedString {
-                    append(marker)
-                    highlights.forEach {
-                        val start = (it.start + prefix.length).coerceIn(0, marker.length)
-                        val end = (it.end + prefix.length).coerceIn(0, marker.length)
-                        if (start < end) addStyle(if (it.current) styles.current else styles.other, start, end)
-                    }
-                }
-                Text(
-                    text = annotated,
-                    onTextLayout = { markerLayout = it },
-                    modifier = Modifier.widthIn(min = MarkdownListMarkerWidth).then(selection),
-                    color = MaterialTheme.colorScheme.primary,
-                    style = markdownBodyStyle(),
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.End,
-                    softWrap = false,
-                    maxLines = 1
-                )
+                        it.block == blockIndex && it.offset in 0..2
+                    }?.offset })
+                Text(block.text.take(2), color = Color.Transparent, maxLines = 1, softWrap = false,
+                    modifier = Modifier.then(selection), onTextLayout = { markerLayout = it },
+                    style = markerStyle)
             }
-
-            block.continuesPrevious || block.continuesListItem ->
-                Spacer(Modifier.width(MarkdownListMarkerWidth))
+        } else if (marker != null) {
+            val blockIndex = LocalMarkdownPreviewBlockIndex.current
+            var markerLayout by remember(blockIndex, marker) { mutableStateOf<TextLayoutResult?>(null) }
+            val prefix = readingListPrefix(block)
+            val selection = if (blockIndex == null) Modifier else Modifier.documentSelectionText(
+                key = "list-marker-$blockIndex", layout = markerLayout,
+                point = { SelectionPoint.Reading(ReadingPoint(blockIndex, it - prefix.length)) },
+                offset = { point -> (point as? SelectionPoint.Reading)?.point?.takeIf {
+                    it.block == blockIndex && it.offset in -prefix.length..-1
+                }?.let { it.offset + prefix.length } })
+            val highlights = LocalReadingFindHighlights.current[blockIndex].orEmpty()
+            val styles = findHighlightStyles()
+            val annotated = buildAnnotatedString {
+                append(marker)
+                highlights.forEach {
+                    val start = (it.start + prefix.length).coerceIn(0, marker.length)
+                    val end = (it.end + prefix.length).coerceIn(0, marker.length)
+                    if (start < end) addStyle(if (it.current) styles.current else styles.other, start, end)
+                }
+            }
+            Text(
+                text = annotated,
+                onTextLayout = { markerLayout = it },
+                modifier = markerModifier.width(markerWidth).then(selection),
+                color = MaterialTheme.colorScheme.primary,
+                style = markerStyle,
+                textAlign = TextAlign.End,
+                softWrap = stacked
+            )
+        } else if (!stacked && (block.continuesPrevious || block.continuesListItem)) {
+            Spacer(Modifier.width(markerWidth))
         }
+    }
+    val body: @Composable (Modifier) -> Unit = { bodyModifier ->
         MarkdownStyledText(
-            block = block,
+            block = contentBlock,
+            sourceBlock = block,
+            renderedOffsetBase = block.text.length - contentBlock.text.length,
             style = markdownBodyStyle(),
             onInlineInteraction = onInlineInteraction,
-            modifier = Modifier.weight(1f)
+            modifier = bodyModifier
         )
+    }
+    val content: @Composable (Modifier) -> Unit = { itemModifier ->
+        BoxWithConstraints(itemModifier.fillMaxWidth()) {
+            if (maxWidth < markerWidth + EditorCompactSpacing + 96.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(EditorCompactSpacing)) {
+                    drawMarker(Modifier, true)
+                    body(Modifier.fillMaxWidth())
+                }
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(EditorCompactSpacing)) {
+                    val baseline = if (standaloneDisplayIllustration(contentBlock.text, contentBlock.spans)) Modifier
+                        else Modifier.alignByBaseline()
+                    drawMarker(baseline, false)
+                    body(Modifier.weight(1f).then(baseline))
+                }
+            }
+        }
+    }
+    if (taskState == null) {
+        content(modifier)
+    } else {
+        val description = stringResource(
+            if (taskState == MarkdownTaskState.Checked) R.string.markdown_task_completed else R.string.markdown_task_incomplete
+        )
+        Surface(modifier.fillMaxWidth().semantics { stateDescription = description },
+            color = Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurface,
+            shape = MaterialTheme.shapes.medium) {
+            content(Modifier.padding(vertical = EditorCompactSpacing / 2))
+        }
     }
 }
 
 /** Displays an inert circular state marker for one Markdown task. */
 @Composable
-private fun MarkdownTaskIndicator(checked: Boolean) {
+private fun MarkdownTaskIndicator(checked: Boolean, size: Dp) {
     Surface(
-        modifier = Modifier.size(24.dp),
+        modifier = Modifier.size(size),
         shape = CircleShape,
         color =
             if (checked) {
@@ -907,7 +884,7 @@ private fun MarkdownHtmlLiteral(
                 MarkdownStyledText(
                     block = block,
                     style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace,
+                    role = MarkdownTextRole.Code,
                     onInlineInteraction = onInlineInteraction,
                     modifier = Modifier.padding(EditorHorizontalPadding)
                 )
@@ -1113,7 +1090,7 @@ private fun MarkdownWideTable(
                                                 horizontal = EditorHorizontalPadding,
                                                 vertical = EditorCompactSpacing
                                             ),
-                                    fontFamily = FontFamily.Monospace,
+                                    role = MarkdownTextRole.Code,
                                     fontWeight =
                                         if (block.isTableHeader) FontWeight.Bold else null,
                                     softWrap = false
@@ -1196,6 +1173,7 @@ internal fun MarkdownFootnoteDefinition(
     content: @Composable (Modifier) -> Unit
 ) {
     val footnoteNumber = LocalMarkdownFootnoteNumbers.current[label]
+    val labelStyle = LocalDocumentAppearances.current.markdown.markdownStyle(MaterialTheme.typography.labelLarge)
     val referenceDescription = stringResource(R.string.markdown_return_to_reference)
     val labelModifier =
         if (canReturnToReference) {
@@ -1234,8 +1212,8 @@ internal fun MarkdownFootnoteDefinition(
                 ) {
                     Text(
                         text = footnoteNumber?.toString() ?: label,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
+                        style = labelStyle,
+                        fontWeight = FontWeight(((labelStyle.fontWeight ?: FontWeight.Normal).weight + 300).coerceAtMost(1000))
                     )
                     if (canReturnToReference) {
                         Text(
@@ -1244,7 +1222,7 @@ internal fun MarkdownFootnoteDefinition(
                                 Modifier.semantics {
                                     contentDescription = referenceDescription
                                 },
-                            style = MaterialTheme.typography.labelLarge
+                            style = labelStyle
                         )
                     }
                 }
@@ -1263,7 +1241,7 @@ private fun MarkdownStyledText(
     modifier: Modifier = Modifier,
     sourceBlock: MarkdownRenderBlock = block,
     renderedOffsetBase: Int = 0,
-    fontFamily: FontFamily? = null,
+    role: MarkdownTextRole = MarkdownTextRole.Body,
     fontWeight: FontWeight? = null,
     softWrap: Boolean = true
 ) {
@@ -1280,9 +1258,9 @@ private fun MarkdownStyledText(
                 val viewportWidth = maxWidth
                 Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                     MarkdownPresentationText(
-                        sourceBlock, block.text, block.spans, renderedOffsetBase, style,
+                        sourceBlock, block.text, block.spans, renderedOffsetBase, markdownBodyStyle(),
                         onInlineInteraction, Modifier.widthIn(min = viewportWidth),
-                        fontFamily, fontWeight, softWrap = false
+                        MarkdownTextRole.Body, softWrap = false
                     )
                 }
             }
@@ -1297,7 +1275,7 @@ private fun MarkdownStyledText(
         style = style,
         onInlineInteraction = onInlineInteraction,
         modifier = modifier,
-        fontFamily = fontFamily,
+        role = role,
         fontWeight = fontWeight,
         softWrap = softWrap
     )
@@ -1313,7 +1291,7 @@ private fun MarkdownPresentationText(
     style: TextStyle,
     onInlineInteraction: (MarkdownInlineInteraction) -> Unit,
     modifier: Modifier = Modifier,
-    fontFamily: FontFamily? = null,
+    role: MarkdownTextRole = MarkdownTextRole.Body,
     fontWeight: FontWeight? = null,
     textAlign: TextAlign? = null,
     softWrap: Boolean = true
@@ -1321,6 +1299,24 @@ private fun MarkdownPresentationText(
     require(renderedOffsetBase >= 0) { "Markdown rendered offset base must be nonnegative" }
     require(renderedOffsetBase + sourceText.length <= sourceBlock.text.length) {
         "Markdown presentation segment exceeds its source block"
+    }
+    val appearance = LocalDocumentAppearances.current.markdown
+    val isCode = role == MarkdownTextRole.Code
+    val codeWeight = appearance.value(AppearanceOption.Weight, AppearanceGroup.Markdown).toInt()
+    val effectiveStyle = appearance.markdownStyle(style, role)
+    val effectiveWeight = fontWeight?.let {
+        FontWeight((it.weight + appearance.value(AppearanceOption.Weight, AppearanceGroup.Markdown).toInt() - 400)
+            .coerceIn(100, 1000))
+    }
+    val weightAdjustment = LocalConfiguration.current.fontWeightAdjustment
+    val bodyFont = appearance.value(role.font, AppearanceGroup.Markdown)
+    val bodyWeight = (effectiveWeight ?: effectiveStyle.fontWeight ?: FontWeight.Normal).weight
+    val bodyEmphasis = remember(bodyFont, bodyWeight, weightAdjustment) {
+        markdownEmphasis(bodyFont, bodyWeight, weightAdjustment)
+    }
+    val codeFont = appearance.value(AppearanceOption.CodeFont, AppearanceGroup.Markdown)
+    val codeEmphasis = remember(codeFont, codeWeight, weightAdjustment) {
+        markdownEmphasis(codeFont, codeWeight, weightAdjustment)
     }
     val linkColor = MaterialTheme.colorScheme.primary
     val codeBackground = MaterialTheme.colorScheme.surfaceContainerHighest
@@ -1337,21 +1333,30 @@ private fun MarkdownPresentationText(
             footnotePresentation,
             linkColor,
             codeBackground,
-            linkInteractionListener
+            linkInteractionListener,
+            appearance,
+            effectiveStyle,
+            bodyEmphasis,
+            codeEmphasis,
+            isCode
         ) {
-            markdownAnnotatedStringForPresentation(
+            spacedDocumentText(markdownAnnotatedStringForPresentation(
                 text = footnotePresentation?.text ?: sourceText,
                 spans = footnotePresentation?.spans ?: sourceSpans,
                 linkColor = linkColor,
                 codeBackground = codeBackground,
-                linkInteractionListener = linkInteractionListener
-            )
+                linkInteractionListener = linkInteractionListener,
+                appearance = appearance,
+                bodyEmphasis = bodyEmphasis,
+                codeEmphasis = codeEmphasis,
+                baseSize = if (isCode) null else effectiveStyle.fontSize.value
+            ), appearance, AppearanceGroup.Markdown)
         }
     val inlineFormulas = markdownIllustrationContent(
         footnotePresentation?.spans ?: sourceSpans,
-        style,
-        fontFamily,
-        fontWeight,
+        effectiveStyle,
+        effectiveStyle.fontFamily,
+        effectiveWeight,
         sourceSpans,
         renderedOffsetBase
     )
@@ -1370,6 +1375,7 @@ private fun MarkdownPresentationText(
     }
     val navigationState = LocalMarkdownPreviewNavigationState.current
     val blockIndex = LocalMarkdownPreviewBlockIndex.current
+    val layoutGeneration = LocalMarkdownLayoutGeneration.current
     val findStyles = findHighlightStyles()
     val findRanges = LocalReadingFindHighlights.current[blockIndex].orEmpty().mapNotNull { highlight ->
         val start = maxOf(highlight.start, renderedOffsetBase) - renderedOffsetBase
@@ -1401,7 +1407,8 @@ private fun MarkdownPresentationText(
                 )
             }
         }
-    val owner = remember(key) { Any() }
+    // Rendering a standalone illustration replaces its literal text with a single placeholder.
+    val owner = remember(key, annotated.text) { Any() }
     val bringIntoViewRequester = remember(owner) { BringIntoViewRequester() }
     var layoutResult by remember(owner) { mutableStateOf<TextLayoutResult?>(null) }
     var topInWindowPixels by remember(owner) { mutableStateOf<Int?>(null) }
@@ -1435,6 +1442,7 @@ private fun MarkdownPresentationText(
         navigation.publish(
             MarkdownPreviewTextMeasurement(
                 owner = owner,
+                layoutGeneration = layoutGeneration,
                 key = measurementKey,
                 block = sourceBlock,
                 sourceText = sourceText,
@@ -1543,14 +1551,12 @@ private fun MarkdownPresentationText(
                                 drawLine(markerColor, rect.topLeft, rect.bottomLeft, 3.dp.toPx())
                             }
                         },
-                style = style,
-                fontFamily = fontFamily,
-                fontWeight = fontWeight,
+                style = effectiveStyle,
+                fontWeight = effectiveWeight,
                 textAlign = textAlign,
                 softWrap = softWrap,
                 onTextLayout = { result ->
                     layoutResult = result
-                    publishMeasurement()
                 }
             )
         }
@@ -1599,22 +1605,30 @@ internal fun markdownAnnotatedString(
 }
 
 /** Builds one interactive string after any source-label substitutions are complete. */
-private fun markdownAnnotatedStringForPresentation(
+internal fun markdownAnnotatedStringForPresentation(
     text: String,
     spans: List<MarkdownInlineSpan>,
     linkColor: androidx.compose.ui.graphics.Color,
     codeBackground: androidx.compose.ui.graphics.Color,
-    linkInteractionListener: LinkInteractionListener
+    linkInteractionListener: LinkInteractionListener,
+    appearance: TextAppearance = TextAppearance(),
+    baseSize: Float? = null,
+    bodyEmphasis: MarkdownEmphasis = MarkdownEmphasis(),
+    codeEmphasis: MarkdownEmphasis = MarkdownEmphasis()
 ): AnnotatedString = buildAnnotatedString {
     appendMarkdownIllustrationText(text, spans)
     spans.forEach { span ->
         val literalMath = span.styles and MARKDOWN_SPAN_STYLE_MATH != 0 &&
             span.illustration !is IllustrationResult.Rendered
+        val code = span.styles and MARKDOWN_SPAN_STYLE_CODE != 0 || literalMath
+        val strong = span.styles and MARKDOWN_SPAN_STYLE_STRONG != 0
+        val italic = span.styles and MARKDOWN_SPAN_STYLE_EMPHASIS != 0
+        val emphasis = if (code) codeEmphasis else bodyEmphasis
         val decorations = buildList {
             if (span.styles and MARKDOWN_SPAN_STYLE_STRIKETHROUGH != 0) {
                 add(TextDecoration.LineThrough)
             }
-            if (span.destination != null) {
+            if (span.destination != null || strong && (if (italic) emphasis.underlineItalic else emphasis.underline)) {
                 add(TextDecoration.Underline)
             }
         }
@@ -1634,10 +1648,10 @@ private fun markdownAnnotatedStringForPresentation(
                             androidx.compose.ui.graphics.Color.Unspecified
                         },
                     fontWeight =
-                        if (span.styles and MARKDOWN_SPAN_STYLE_STRONG != 0) {
-                            FontWeight.Bold
-                        } else {
-                            null
+                        when {
+                            strong -> FontWeight(emphasis.strongWeight)
+                            code -> FontWeight(emphasis.bodyWeight)
+                            else -> null
                         },
                     fontStyle =
                         if (span.styles and MARKDOWN_SPAN_STYLE_EMPHASIS != 0) {
@@ -1647,10 +1661,13 @@ private fun markdownAnnotatedStringForPresentation(
                         },
                     fontFamily =
                         if (span.styles and MARKDOWN_SPAN_STYLE_CODE != 0 || literalMath) {
-                            FontFamily.Monospace
+                            appearanceFont(appearance.value(AppearanceOption.CodeFont, AppearanceGroup.Markdown))
                         } else {
                             null
                         },
+                    fontSize = if (baseSize != null && (span.styles and MARKDOWN_SPAN_STYLE_CODE != 0 || literalMath)) {
+                        (baseSize * appearance.value(AppearanceOption.CodeScale, AppearanceGroup.Markdown) / 100f).sp
+                    } else androidx.compose.ui.unit.TextUnit.Unspecified,
                     baselineShift =
                         when {
                             span.styles and MARKDOWN_SPAN_STYLE_SUPERSCRIPT != 0 ->

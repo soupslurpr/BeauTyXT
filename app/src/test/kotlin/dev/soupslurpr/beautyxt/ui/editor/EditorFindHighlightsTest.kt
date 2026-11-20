@@ -20,6 +20,11 @@ class EditorFindHighlightsTest {
         assertFalse(decoration.matchesSource(4, "xyz", true))
         // The old layout may still exist after the field changes.
         assertFalse(decoration.matchesSource(4, "abc", false))
+        val tab = SourceFindDecoration(4, "a\t\u0301")
+        assertTrue(tab.matchesSource(4, "a \u0301", true))
+        assertFalse(tab.matchesSource(4, "a \u0301", false))
+        assertFalse(tab.matchesSource(4, "b \u0301", true))
+        assertFalse(SourceFindDecoration(4, "a b").matchesSource(4, "a\tb", true))
         assertEquals(3, decoration.markerOffset(3))
         assertNull(decoration.markerOffset(-1))
         assertNull(decoration.markerOffset(4))

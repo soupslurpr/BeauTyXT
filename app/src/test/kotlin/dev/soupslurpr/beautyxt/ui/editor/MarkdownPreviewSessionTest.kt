@@ -41,6 +41,55 @@ private const val SAVED_PREVIEW_TOP_OFFSET_PIXELS = -7
 /** Verifies retained Markdown preview transitions independently from Compose. */
 class MarkdownPreviewSessionTest {
     @Test
+    fun reflowPreservesEntrySelectionAndOnlyConsumesItsOwnPresentationRequest() {
+        createSession(TestEditorDocument(INITIAL_MARKDOWN), RecordingMarkdownRenderer()).use { session ->
+            session.openInitialEditor()
+            val selection = TextRange(1, 4)
+            requireNotNull(session.activeDraft).textFieldState.edit { this.selection = selection }
+            assertTrue(session.showMarkdownPreview())
+            fun ready() = session.markdownPreviewStatus as MarkdownPreviewStatus.Ready
+            val entry = requireNotNull(ready().scrollRestoration)
+            val anchor = SemanticViewportAnchor(ready().revision, 2, -3)
+            val preview = EditorPresentation.MarkdownPreview
+            session.restorePositionAfterAppearanceChange(preview, anchor)
+            assertSame(entry, ready().scrollRestoration)
+            assertTrue(session.consumeMarkdownPreviewScrollRestoration(anchor.revision, entry))
+            session.restorePositionAfterAppearanceChange(EditorPresentation.Text, anchor)
+            session.restorePositionAfterAppearanceChange(preview, anchor.copy(revision = anchor.revision + 1))
+            assertNull(ready().scrollRestoration)
+            session.restorePositionAfterAppearanceChange(preview, anchor)
+            val first = requireNotNull(ready().scrollRestoration)
+            session.restorePositionAfterAppearanceChange(preview, anchor.copy(sourceUtf16Offset = 0))
+            val second = requireNotNull(ready().scrollRestoration)
+            assertEquals(RestorationReason.Appearance, second.reason)
+            assertEquals(anchor, second.anchor)
+            assertFalse(session.consumeMarkdownPreviewScrollRestoration(anchor.revision, first))
+            assertTrue(session.consumeMarkdownPreviewScrollRestoration(anchor.revision, second))
+            session.showTextEditor()
+            assertEquals(selection, requireNotNull(session.activeDraft).textFieldState.selection)
+            session.restorePositionAfterAppearanceChange(preview, anchor)
+            session.restorePositionAfterAppearanceChange(EditorPresentation.Text, anchor)
+            assertNull(session.readOnlySourceScrollRestoration)
+        }
+    }
+
+    @Test
+    fun navigationReplacesEqualReflowCoordinatesAndRejectsAStaleCompletion() {
+        createSession(TestEditorDocument(INITIAL_MARKDOWN), RecordingMarkdownRenderer()).use { session ->
+            val ready = session.openScrolledPreview()
+            val entry = ready.layout.outline.single()
+            val anchor = SemanticViewportAnchor(ready.revision, entry.sourceOffset, 0)
+            session.restorePositionAfterAppearanceChange(EditorPresentation.MarkdownPreview, anchor)
+            val reflow = requireNotNull((session.markdownPreviewStatus as MarkdownPreviewStatus.Ready).scrollRestoration)
+            assertTrue(session.navigateToHeading(ready.revision, entry))
+            assertFalse(session.consumeMarkdownPreviewScrollRestoration(ready.revision, reflow))
+            val navigation = requireNotNull((session.markdownPreviewStatus as MarkdownPreviewStatus.Ready).scrollRestoration)
+            assertEquals(RestorationReason.Navigation, navigation.reason)
+            assertEquals(anchor, navigation.anchor)
+        }
+    }
+
+    @Test
     fun navigatesOnlyHeadingsFromTheCurrentPreviewRevision() {
         createSession(
             TestEditorDocument(INITIAL_MARKDOWN),
@@ -56,8 +105,8 @@ class MarkdownPreviewSessionTest {
             assertFalse(session.navigateToHeading(ready.revision, entry.copy(sourceOffset = 999)))
             assertTrue(session.navigateToHeading(ready.revision, entry))
             val navigated = session.markdownPreviewStatus as MarkdownPreviewStatus.Ready
-            assertEquals(entry.sourceOffset, navigated.scrollRestoration?.sourceUtf16Offset)
-            assertEquals(0, navigated.scrollRestoration?.viewportTopOffsetPixels)
+            assertEquals(entry.sourceOffset, navigated.scrollRestoration?.anchor?.sourceUtf16Offset)
+            assertEquals(0, navigated.scrollRestoration?.anchor?.viewportTopOffsetPixels)
 
             session.showTextEditor()
             assertEquals(TextRange.Zero, session.activeDraft?.captureFieldValue()?.selection)
@@ -746,7 +795,7 @@ class MarkdownPreviewSessionTest {
         assertEquals(EditorPresentation.MarkdownPreview, session.presentation)
         val preview = session.markdownPreviewStatus as MarkdownPreviewStatus.Ready
         assertEquals(INITIAL_MARKDOWN, preview.document.blocks.single().text)
-        assertEquals(0L, requireNotNull(preview.scrollRestoration).sourceUtf16Offset)
+        assertEquals(0L, requireNotNull(preview.scrollRestoration).anchor.sourceUtf16Offset)
         assertEquals(1, renderer.renderedTexts.size)
         assertTrue(document.capturedSnapshots.single().isClosed)
         assertTrue(session.canShowTextEditor)

@@ -5,8 +5,14 @@ import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.TransferableContent
 import androidx.compose.foundation.content.ReceiveContentListener
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.scrollableArea
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.ScrollableState
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,10 +39,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +56,17 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.FirstBaseline
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.ScrollAxisRange
+import androidx.compose.ui.semantics.horizontalScrollAxisRange
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -53,6 +74,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.pluralStringResource
@@ -78,11 +100,13 @@ import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.document.Utf16Range
 import dev.soupslurpr.beautyxt.ui.asString
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val VIEWPORT_FAILURE_ITEM_KEY = "viewport-failure"
-
-private val SourceEditorMaxWidth = 960.dp
 
 /** Contains one stable visual-line anchor selected for automatic prefetch. */
 private data class AutomaticEditWindowRequest(
@@ -93,12 +117,61 @@ private data class AutomaticEditWindowRequest(
 
 /** Stores one block's text layout and its content origin within the lazy item. */
 private data class BlockTextMeasurement(
+    val generation: Any,
+    val owner: Any,
     val layoutResult: TextLayoutResult,
     val contentTopInBlockPixels: Int
 ) {
     init {
         require(contentTopInBlockPixels >= 0) { "text content top must be nonnegative" }
     }
+}
+
+/** A recycled lazy row cannot shrink the horizontal extent of this revision's text. */
+internal class SourceHorizontalViewport(val width: Int) {
+    var maximum by mutableIntStateOf(0)
+        private set
+    var offset by mutableFloatStateOf(0f)
+        private set
+    val state = ScrollableState { delta ->
+        val previous = offset
+        offset = (offset + delta).coerceIn(0f, maximum.toFloat())
+        offset - previous
+    }
+
+    fun measure(naturalWidth: Int) {
+        maximum = maxOf(maximum, naturalWidth - width)
+    }
+
+    fun reveal(left: Float, right: Float, naturalWidth: Int, rtl: Boolean) {
+        val target = sourceFindScrollOffset(offset, width, left, right, naturalWidth, rtl)
+        offset = target.coerceIn(0f, maximum.toFloat())
+    }
+}
+
+private fun sourceFindScrollOffset(offset: Float, width: Int, left: Float, right: Float,
+    naturalWidth: Int, rtl: Boolean): Float {
+    val start = if (rtl) naturalWidth - right else left
+    val end = if (rtl) naturalWidth - left else right
+    return when {
+        start < offset || end - start >= width -> start
+        end > offset + width -> end - width
+        else -> offset
+    }
+}
+
+private fun TextLayoutResult.sourceFindRect(range: Utf16Range, sourceStart: Long): Rect {
+    val start = (range.start - sourceStart).coerceIn(0, layoutInput.text.length.toLong()).toInt()
+    val lineEnd = getLineEnd(getLineForOffset(start))
+    val end = (range.end - sourceStart).coerceIn(start.toLong(), lineEnd.toLong()).toInt()
+    return if (end == start) getCursorRect(start) else getPathForRange(start, end).getBounds()
+}
+
+internal fun sourceBlockIndexForOffset(blocks: List<EditorRenderBlock>, offset: Long): Int {
+    val start = blocks.indexOfFirst { it.block.globalUtf16Start == offset }
+    if (start >= 0) return start
+    val containing = blocks.indexOfFirst { offset in it.block.globalUtf16Start until it.block.globalUtf16End }
+    return if (containing >= 0) containing else blocks.indexOfLast { it.block.globalUtf16End == offset }
 }
 
 /** Returns the first visible laid-out source point and its vertical viewport inset. */
@@ -249,6 +322,7 @@ internal fun EditorContent(
 /** Displays the hard-bounded block cache through a virtualized lazy list. */
 @Composable
 private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifier) {
+    val appearance = LocalDocumentAppearances.current.source
     val state = session.state
     val logicalLineByBlockKey =
         remember(state.blocks) {
@@ -276,27 +350,6 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
     }
     val viewportListState = session.viewportListState
     val restoration = session.readOnlySourceScrollRestoration
-    LaunchedEffect(session, restoration) {
-        val anchor = restoration ?: return@LaunchedEffect
-        if (anchor.revision != state.metrics?.revision) {
-            session.consumeReadOnlySourceScrollRestoration(anchor)
-            return@LaunchedEffect
-        }
-        val target = snapshotFlow {
-            val index = state.blocks.indexOfFirst {
-                it.block.globalUtf16Start == anchor.sourceUtf16Offset
-            }
-            val block = state.blocks.getOrNull(index) ?: return@snapshotFlow null
-            val measurement = blockTextMeasurements[block.key] ?: return@snapshotFlow null
-            index to (
-                measurement.contentTopInBlockPixels +
-                    measurement.layoutResult.getLineTop(0).roundToInt() -
-                    anchor.viewportTopOffsetPixels
-                )
-        }.first { it != null } ?: return@LaunchedEffect
-        viewportListState.scrollToItem(target.first, target.second)
-        session.consumeReadOnlySourceScrollRestoration(anchor)
-    }
     val paginationEnabled =
         !session.isClosePending && !session.isFindVisible && restoration == null
     val canPrefetchPrevious = paginationEnabled && state.canLoadPrevious
@@ -425,8 +478,10 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
         session.findMatch
             ?.takeIf { match -> match.start.revision == metrics.revision }
             ?.range
+    val effective = remember(appearance) { appearance.effective(AppearanceGroup.Source) }
+    RestoreAfterAppearanceChange(session, EditorPresentation.Text, metrics.revision, effective, visibleViewportAnchor)
     LaunchedEffect(session, metrics.revision, visibleViewportAnchor, restoration) {
-        if (restoration != null) return@LaunchedEffect
+        if (session.readOnlySourceScrollRestoration != null) return@LaunchedEffect
         visibleViewportAnchor?.let { anchor ->
             session.observeVisibleViewportAnchor(
                 revision = anchor.revision,
@@ -440,7 +495,7 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
     val firstCachedLogicalLine = state.blocks.first().block.logicalLine
 
     Column(modifier = modifier.fillMaxSize()) {
-        BoxWithConstraints(modifier = Modifier.weight(1f)) {
+        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
             val lineNumberStyle =
                 MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace)
             val textMeasurer = rememberTextMeasurer()
@@ -458,63 +513,83 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
                     }
                 }
             val gutterWidth = lineNumberGutterWidth(measuredLabelWidth)
-            val documentContentWidth =
-                (maxWidth - EditorHorizontalPadding * 2).coerceAtLeast(0.dp)
-            val useLineNumberGutter =
-                usesLineNumberGutter(
-                    availableWidth = documentContentWidth,
-                    gutterWidth = gutterWidth
-                )
-            LazyColumn(
-                state = session.viewportListState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding =
-                    PaddingValues(
-                        horizontal = EditorHorizontalPadding,
-                        vertical = EditorVerticalPadding
-                    )
-            ) {
-                items(
-                    items = state.blocks,
-                    key = EditorRenderBlock::key,
-                    contentType = { "document-block" }
-                ) { editorBlock ->
-                    ReadOnlyBlock(
-                        session = session,
-                        revision = metrics.revision,
-                        editorBlock = editorBlock,
-                        lineNumberStyle = lineNumberStyle,
-                        lineNumberWidth = gutterWidth,
-                        useLineNumberGutter = useLineNumberGutter,
-                        matchRange = visibleMatchRange,
-                        onTextMeasurement = { measurement ->
-                            blockTextMeasurements[editorBlock.key] = measurement
-                        }
-                    )
+            val column = appearance.textColumn(AppearanceGroup.Source, maxWidth, gutterWidth)
+            val startPadding = column.textStart - column.gutter
+            val endPadding = (maxWidth - column.textStart - column.textWidth).coerceAtLeast(0.dp)
+            val viewportPixels = with(density) {
+                (constraints.maxWidth - startPadding.roundToPx() - endPadding.roundToPx() - column.gutter.roundToPx()).coerceAtLeast(0)
+            }
+            val wraps = appearance.value(AppearanceOption.Wrap, AppearanceGroup.Source) == 1f
+            val style = sourceAppearanceStyle()
+            val direction = LocalLayoutDirection.current
+            val generation = remember(metrics.revision, effective, viewportPixels, column.gutter, style, lineNumberStyle,
+                density.density, density.fontScale, direction) { Any() }
+            val horizontal = remember(metrics.revision, wraps, style, viewportPixels, direction, density,
+                appearance.value(AppearanceOption.TabWidth, AppearanceGroup.Source),
+                appearance.value(AppearanceOption.WordSpacing, AppearanceGroup.Source)) {
+                if (wraps) null else SourceHorizontalViewport(viewportPixels)
+            }
+            RestoreReadOnlySourcePosition(session, state.blocks, metrics.revision, restoration, generation,
+                blockTextMeasurements, horizontal, direction == LayoutDirection.Rtl)
+            val horizontalGestures = if (horizontal == null) Modifier else Modifier
+                .semantics {
+                    horizontalScrollAxisRange = ScrollAxisRange({ horizontal.offset }, { horizontal.maximum.toFloat() })
                 }
-
-                val status = state.status
-                if (
-                    !session.isClosePending &&
-                    !session.isFindVisible &&
-                    state.isLoadingNextViewport
+                .scrollableArea(horizontal.state, Orientation.Horizontal)
+            Box(Modifier.fillMaxSize().then(horizontalGestures)) {
+                LazyColumn(
+                    state = viewportListState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = startPadding, end = endPadding,
+                        top = EditorVerticalPadding, bottom = EditorVerticalPadding)
                 ) {
-                    val loadingPaginationKey = checkNotNull(nextPaginationKey) {
-                        "next viewport loading requires a pagination key"
-                    }
-                    item(key = viewportLoadingItemKey(loadingPaginationKey)) {
-                        ViewportProgressMessage(stringResource(R.string.source_loading_later))
-                    }
-                } else if (
-                    !session.isClosePending &&
-                    status is EditorDocumentStatus.Failed &&
-                    state.hasNextViewportFailure
-                ) {
-                    item(key = VIEWPORT_FAILURE_ITEM_KEY) {
-                        FailedViewportRow(
-                            message = status.message.asString(),
-                            onRetry = session::retryViewport
+                    items(
+                        items = state.blocks,
+                        key = EditorRenderBlock::key,
+                        contentType = { "document-block" }
+                    ) { editorBlock ->
+                        ReadOnlyBlock(
+                            session = session,
+                            revision = metrics.revision,
+                            editorBlock = editorBlock,
+                            lineNumberStyle = lineNumberStyle,
+                            lineNumberWidth = gutterWidth,
+                            useLineNumberGutter = column.gutter > 0.dp,
+                            generation = generation,
+                            horizontal = horizontal,
+                            matchRange = visibleMatchRange,
+                            onTextMeasurement = { measurement ->
+                                blockTextMeasurements[editorBlock.key] = measurement
+                            },
+                            onRelease = { owner ->
+                                if (blockTextMeasurements[editorBlock.key]?.owner === owner) blockTextMeasurements.remove(editorBlock.key)
+                            }
                         )
+                    }
+
+                    val status = state.status
+                    if (
+                        !session.isClosePending &&
+                        !session.isFindVisible &&
+                        state.isLoadingNextViewport
+                    ) {
+                        val loadingPaginationKey = checkNotNull(nextPaginationKey) {
+                            "next viewport loading requires a pagination key"
+                        }
+                        item(key = viewportLoadingItemKey(loadingPaginationKey)) {
+                            ViewportProgressMessage(stringResource(R.string.source_loading_later))
+                        }
+                    } else if (
+                        !session.isClosePending &&
+                        status is EditorDocumentStatus.Failed &&
+                        state.hasNextViewportFailure
+                    ) {
+                        item(key = VIEWPORT_FAILURE_ITEM_KEY) {
+                            FailedViewportRow(
+                                message = status.message.asString(),
+                                onRetry = session::retryViewport
+                            )
+                        }
                     }
                 }
             }
@@ -632,6 +707,56 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
     }
 }
 
+/** Resolve the lazy item before waiting for its newly placed text, even at EOF. */
+@Composable
+private fun RestoreReadOnlySourcePosition(session: EditorSession, blocks: List<EditorRenderBlock>, revision: Long,
+    restoration: ViewportRestoration?, generation: Any, measurements: Map<String, BlockTextMeasurement>,
+    horizontal: SourceHorizontalViewport?, rtl: Boolean) {
+    val viewportListState = session.viewportListState
+    LaunchedEffect(session, restoration, generation, blocks) {
+        val request = restoration ?: return@LaunchedEffect
+        val anchor = request.anchor
+        val index = sourceBlockIndexForOffset(blocks, anchor.sourceUtf16Offset)
+        if (index >= 0 && anchor.revision == revision) {
+            val block = blocks[index]
+            try {
+                withTimeoutOrNull(2_000L) {
+                    val (scrolling, item, measurement) = snapshotFlow {
+                        val item = viewportListState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == block.key }
+                        val measurement = measurements[block.key]?.takeIf { it.generation === generation }
+                        Triple(viewportListState.isScrollInProgress, item, measurement)
+                    }.first { (scrolling, item, measurement) ->
+                        when {
+                            scrolling -> request.reason == RestorationReason.Appearance
+                            item != null -> measurement != null
+                            else -> {
+                                viewportListState.scrollToItem(index)
+                                false
+                            }
+                        }
+                    }
+                    if (scrolling || item == null || measurement == null ||
+                        session.readOnlySourceScrollRestoration !== request) return@withTimeoutOrNull
+                    val layout = measurement.layoutResult
+                    val local = (anchor.sourceUtf16Offset - block.block.globalUtf16Start).toInt()
+                    val line = layout.getLineForOffset(local)
+                    val lineTop = item.offset + measurement.contentTopInBlockPixels + layout.getLineTop(line)
+                    val inset = clampViewportTopInset(anchor.viewportTopOffsetPixels, layout.getLineBottom(line) - layout.getLineTop(line))
+                    val targetTop = viewportListState.layoutInfo.viewportStartOffset.coerceAtLeast(0) + inset
+                    viewportListState.scrollBy(lineTop - targetTop)
+                    if (session.readOnlySourceScrollRestoration === request && horizontal != null && request.findRange != null) {
+                        val rect = layout.sourceFindRect(request.findRange, block.block.globalUtf16Start)
+                        horizontal.reveal(rect.left, rect.right, layout.size.width, rtl)
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                currentCoroutineContext().ensureActive()
+            }
+        }
+        session.consumeReadOnlySourceScrollRestoration(request)
+    }
+}
+
 /** Displays the exact visible line range and one direct navigation action. */
 @Composable
 private fun DocumentViewportFooter(
@@ -721,7 +846,10 @@ private fun ReadOnlyBlock(
     lineNumberWidth: Dp,
     useLineNumberGutter: Boolean,
     matchRange: Utf16Range?,
-    onTextMeasurement: (BlockTextMeasurement) -> Unit
+    generation: Any,
+    horizontal: SourceHorizontalViewport?,
+    onTextMeasurement: (BlockTextMeasurement) -> Unit,
+    onRelease: (Any) -> Unit
 ) {
     val block = editorBlock.block
     val highlights = rememberFindHighlights(
@@ -739,19 +867,9 @@ private fun ReadOnlyBlock(
         block.logicalLine,
         block.continuesAtStart
     ).asString()
-    var textLayoutResult by remember(editorBlock.key) { mutableStateOf<TextLayoutResult?>(null) }
-    var textContentTopInBlockPixels by
-        remember(editorBlock.key) { mutableStateOf<Int?>(null) }
-    val currentOnTextMeasurement by rememberUpdatedState(onTextMeasurement)
-    LaunchedEffect(editorBlock.key, textLayoutResult, textContentTopInBlockPixels) {
-        val layoutResult = textLayoutResult ?: return@LaunchedEffect
-        val contentTop = textContentTopInBlockPixels ?: return@LaunchedEffect
-        currentOnTextMeasurement(
-            BlockTextMeasurement(
-                layoutResult = layoutResult,
-                contentTopInBlockPixels = contentTop
-            )
-        )
+    val text: @Composable (Modifier) -> Unit = { cell ->
+        ReadOnlyBlockText(block.text, revision, block.globalUtf16Start, highlights, highlightRange,
+            generation, horizontal, onTextMeasurement, onRelease, cell)
     }
     val blockModifier =
         Modifier
@@ -768,16 +886,7 @@ private fun ReadOnlyBlock(
                 useGutter = true,
                 modifier = Modifier.alignByBaseline()
             )
-            ReadOnlyBlockText(
-                text = block.text,
-                revision = revision,
-                globalStart = block.globalUtf16Start,
-                highlights = highlights,
-                highlightRange = highlightRange,
-                onTextLayout = { result -> textLayoutResult = result },
-                onTextContentPositioned = { top -> textContentTopInBlockPixels = top },
-                modifier = Modifier.weight(1f).alignByBaseline()
-            )
+            text(Modifier.weight(1f).alignByBaseline())
         }
     } else {
         Column(modifier = blockModifier) {
@@ -789,16 +898,7 @@ private fun ReadOnlyBlock(
                 lineNumberWidth = lineNumberWidth,
                 useGutter = false
             )
-            ReadOnlyBlockText(
-                text = block.text,
-                revision = revision,
-                globalStart = block.globalUtf16Start,
-                highlights = highlights,
-                highlightRange = highlightRange,
-                onTextLayout = { result -> textLayoutResult = result },
-                onTextContentPositioned = { top -> textContentTopInBlockPixels = top },
-                modifier = Modifier.fillMaxWidth()
-            )
+            text(Modifier.fillMaxWidth())
         }
     }
 }
@@ -811,41 +911,58 @@ private fun ReadOnlyBlockText(
     globalStart: Long,
     highlights: List<TextRange>,
     highlightRange: TextRange?,
-    onTextLayout: (TextLayoutResult) -> Unit,
-    onTextContentPositioned: (Int) -> Unit,
+    generation: Any,
+    horizontal: SourceHorizontalViewport?,
+    onMeasurement: (BlockTextMeasurement) -> Unit,
+    onRelease: (Any) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val appearance = LocalDocumentAppearances.current.source
+    val sourceStyle = sourceAppearanceStyle()
+    val owner = remember { Any() }
     var selectionLayout by remember(globalStart, text) { mutableStateOf<TextLayoutResult?>(null) }
+    var clip by remember { mutableStateOf<Rect?>(null) }
+    val currentRelease by rememberUpdatedState(onRelease)
+    DisposableEffect(owner) { onDispose { currentRelease(owner) } }
     val selectionModifier = Modifier.documentSelectionText("source-$globalStart", selectionLayout,
         point = { SelectionPoint.Source(globalStart + it) },
         offset = { (it as? SelectionPoint.Source)?.offset?.takeIf { offset -> offset in globalStart..globalStart + text.length }?.let { (it - globalStart).toInt() } },
-        sourceFindDecoration = SourceFindDecoration(revision, text))
-    val currentOnTextContentPositioned by rememberUpdatedState(onTextContentPositioned)
+        sourceFindDecoration = SourceFindDecoration(revision, text), clipBounds = { clip })
     val styles = findHighlightStyles()
     val renderedText =
-        remember(text, highlights, highlightRange, styles) {
-            findHighlightedText(text, highlights, highlightRange, styles)
-        }
-    val positionedModifier =
-        modifier.onGloballyPositioned { coordinates ->
-            val contentTopInBlockPixels = coordinates.positionInParent().y
-            check(contentTopInBlockPixels >= 0f && contentTopInBlockPixels.isFinite()) {
-                "text content position is invalid"
-            }
-            currentOnTextContentPositioned(contentTopInBlockPixels.roundToInt())
+        remember(text, highlights, highlightRange, styles, appearance) {
+            sourceDisplayText(findHighlightedText(text, highlights, highlightRange, styles), appearance)
         }
     val content: @Composable () -> Unit = {
         Text(
             text = renderedText,
-            modifier = positionedModifier.fillMaxWidth().then(selectionModifier),
+            modifier = selectionModifier,
             color = MaterialTheme.colorScheme.onSurface,
-            fontFamily = FontFamily.Monospace,
-            onTextLayout = { selectionLayout = it; onTextLayout(it) },
-            style = MaterialTheme.typography.bodyLarge
+            softWrap = horizontal == null,
+            onTextLayout = { selectionLayout = it },
+            style = sourceStyle
         )
     }
-    if (LocalDocumentSelectionLayout.current == null) ReadingSelectionContainer { content() }
-    else content()
+    Layout(
+        modifier = modifier.clipToBounds().onGloballyPositioned { coordinates ->
+            clip = coordinates.boundsInWindow()
+            // Placement follows text measurement, including when only the callback's generation changed.
+            selectionLayout?.let { layout ->
+                onMeasurement(BlockTextMeasurement(generation, owner, layout, coordinates.positionInParent().y.roundToInt()))
+            }
+        },
+        content = {
+            if (LocalDocumentSelectionLayout.current == null) ReadingSelectionContainer { content() } else content()
+        }
+    ) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val child = measurables.single().measure(constraints.copy(minWidth = width,
+            maxWidth = if (horizontal == null) width else Constraints.Infinity))
+        horizontal?.measure(child.width)
+        layout(width, child.height, mapOf(FirstBaseline to child[FirstBaseline])) {
+            child.placeRelative(-(horizontal?.offset?.roundToInt() ?: 0), 0)
+        }
+    }
 }
 
 /** Displays one stable multiline text field backed by a bounded Rust window. */
@@ -856,6 +973,12 @@ private fun ActiveEditWindowEditor(
     draft: ActiveEditDraft,
     modifier: Modifier = Modifier
 ) {
+    val appearance = LocalDocumentAppearances.current.source
+    val sourceStyle = sourceAppearanceStyle()
+    val effective = remember(appearance) { appearance.effective(AppearanceGroup.Source) }
+    val horizontalScroll = rememberScrollState()
+    val direction = LocalLayoutDirection.current
+    val wraps = appearance.value(AppearanceOption.Wrap, AppearanceGroup.Source) == 1f
     val state = session.state
     val edit = draft.edit
     val editsCompleteDocument = !edit.snapshot.hasPrevious && !edit.snapshot.hasNext
@@ -867,16 +990,21 @@ private fun ActiveEditWindowEditor(
         mutableStateOf<TextLayoutResult?>(null)
     }
     val textFieldState = draft.textFieldState
+    val clipboard = LocalClipboard.current
+    val clipboardSelection = remember(draft) { SourceClipboardSelection() }
+    val sourceClipboard = remember(clipboard, clipboardSelection) { SourceAppearanceClipboard(clipboard, clipboardSelection) }
     val selectionInset = with(LocalDensity.current) { 16.dp.toPx() }
+    var viewportClip by remember(draft) { mutableStateOf<Rect?>(null) }
     val sourceSelectionModifier = Modifier.documentSelectionText(
         key = "source-edit-${edit.generation}", layout = textLayoutResult,
         nativeSelection = draft.isEditorFocused,
         point = { SelectionPoint.Source(edit.snapshot.range.start + it) },
         offset = { (it as? SelectionPoint.Source)?.offset?.takeIf { offset -> offset in edit.snapshot.range.start..edit.snapshot.range.end }
             ?.let { (it - edit.snapshot.range.start).toInt() } },
-        contentOffset = { androidx.compose.ui.geometry.Offset(selectionInset, selectionInset - draft.scrollState.value) },
+        contentOffset = { androidx.compose.ui.geometry.Offset(0f, selectionInset - draft.scrollState.value) },
         sourceFindDecoration = SourceFindDecoration(edit.snapshot.metrics.revision, edit.snapshot.text),
-        sourceIsCurrent = { draft.edit == edit && draft.textFieldState.text.contentEquals(edit.snapshot.text) }
+        sourceIsCurrent = { draft.edit == edit && draft.textFieldState.text.contentEquals(edit.snapshot.text) },
+        clipBounds = { viewportClip }
     )
     val highlights = rememberFindHighlights(
         session = session,
@@ -891,15 +1019,9 @@ private fun ActiveEditWindowEditor(
         blockUtf16End = edit.snapshot.range.end
     )
     val highlightStyles = findHighlightStyles()
-    val outputTransformation = remember(edit, highlights, currentHighlight, highlightStyles) {
-        if (highlights.isEmpty() && currentHighlight == null) null else {
-            findHighlightTransformation(
-                edit.snapshot.text,
-                highlights,
-                currentHighlight,
-                highlightStyles
-            )
-        }
+    val outputTransformation = remember(edit, highlights, currentHighlight, highlightStyles, appearance, clipboardSelection) {
+        sourceAppearanceTransformation(appearance, clipboardSelection, edit.snapshot.text, highlights,
+            currentHighlight, highlightStyles)
     }
     val hasChanges = draft.hasChanges
     val hasComposition by
@@ -944,7 +1066,7 @@ private fun ActiveEditWindowEditor(
             draft.restoreSelectionCollapsedByFocus(selectionBeforeFocus)
         }
     }
-    LaunchedEffect(draft, draft.scrollRestoration, textLayoutResult) {
+    LaunchedEffect(draft, draft.scrollRestoration, textLayoutResult, wraps, direction) {
         val restoration = draft.scrollRestoration ?: return@LaunchedEffect
         val layoutResult = textLayoutResult ?: return@LaunchedEffect
         if (restoration.anchor.revision != edit.snapshot.metrics.revision) {
@@ -964,22 +1086,25 @@ private fun ActiveEditWindowEditor(
         val targetScrollPixels =
             Math.subtractExact(
                 anchorContentTopPixels,
-                restoration.anchor.viewportTopOffsetPixels
+                clampViewportTopInset(restoration.anchor.viewportTopOffsetPixels,
+                    layoutResult.getLineBottom(anchorLine) - layoutResult.getLineTop(anchorLine))
             ).coerceAtLeast(0)
         withFrameNanos { _ -> }
-        restoreEditWindowScroll(
-            scrollState = draft.scrollState,
-            targetScrollPixels = targetScrollPixels,
-            preserveScrollMomentum = restoration.preserveScrollMomentum
-        )
-        draft.consumeScrollRestoration(restoration)
+        draft.restoreScrollPosition(restoration, targetScrollPixels) {
+            if (!wraps && restoration.findRange != null) {
+                val rect = layoutResult.sourceFindRect(restoration.findRange, edit.snapshot.range.start)
+                val target = sourceFindScrollOffset(horizontalScroll.value.toFloat(), horizontalScroll.viewportSize,
+                    rect.left, rect.right, layoutResult.size.width, direction == LayoutDirection.Rtl)
+                horizontalScroll.scrollTo(target.roundToInt())
+            }
+        }
     }
     LaunchedEffect(session, draft, edit, textLayoutResult) {
         snapshotFlow {
             val layoutResult = textLayoutResult ?: return@snapshotFlow null
             if (
                 draft.edit != edit ||
-                !layoutResult.layoutInput.text.text.contentEquals(edit.snapshot.text) ||
+                !sourcePresentationMatches(layoutResult.layoutInput.text.text, edit.snapshot.text) ||
                 draft.hasChanges ||
                 textFieldState.composition != null ||
                 draft.scrollRestoration != null
@@ -1083,117 +1208,111 @@ private fun ActiveEditWindowEditor(
                 .imePadding()
     ) {
         val controlsMaxHeight = recoveryPanelMaxHeight(maxHeight)
+        val column = appearance.textColumn(AppearanceGroup.Source, maxWidth)
+        val columnModifier = Modifier.padding(start = column.textStart).width(column.textWidth)
         Column(modifier = Modifier.fillMaxSize()) {
-            TextField(
-                state = textFieldState,
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .align(Alignment.CenterHorizontally)
-                        .widthIn(max = SourceEditorMaxWidth)
-                        .fillMaxWidth()
-                        .padding(horizontal = DocumentPageGutter - EditorHorizontalPadding)
-                        .focusRequester(focusRequester)
-                        .then(sourceSelectionModifier)
-                        .contentReceiver(ReceiveContentListener { content ->
-                            val clip = content.clipEntry.clipData
-                            val text = if (content.source == TransferableContent.Source.Clipboard && clip.itemCount == 1)
-                                clip.getItemAt(0).text else null
-                            if (text == null || text.length <= EDIT_DRAFT_MAX_UTF16_UNITS) content else {
-                                if (session.canApplyEditorInput(draft)) {
-                                    val proposal = EditorBulkEdit.insertion(textFieldState.text.toString(),
-                                        textFieldState.selection, text.toString())
-                                    if (proposal == null) draft.reportInputRejection(EditorInputRejection.BulkSize)
-                                    else {
-                                        draft.clearInputRejection()
-                                        if (!session.requestBulkEdit(draft, proposal))
-                                            draft.reportInputRejection(EditorInputRejection.BulkUnavailable)
+            Box(columnModifier.weight(1f).clipToBounds().onGloballyPositioned { viewportClip = it.boundsInWindow() }
+                .then(if (wraps) Modifier else Modifier.horizontalScroll(horizontalScroll))) {
+                CompositionLocalProvider(LocalClipboard provides sourceClipboard) {
+                    TextField(
+                        state = textFieldState,
+                        modifier =
+                            Modifier.fillMaxSize().widthIn(min = column.textWidth)
+                                .semantics { if (fieldMessage != null) error(fieldMessage) }
+                                .focusRequester(focusRequester)
+                                .then(sourceSelectionModifier)
+                                .contentReceiver(ReceiveContentListener { content ->
+                                    val clip = content.clipEntry.clipData
+                                    val text = if (content.source == TransferableContent.Source.Clipboard && clip.itemCount == 1)
+                                        clip.getItemAt(0).text else null
+                                    if (text == null || text.length <= EDIT_DRAFT_MAX_UTF16_UNITS) content else {
+                                        if (session.canApplyEditorInput(draft)) {
+                                            val proposal = EditorBulkEdit.insertion(textFieldState.text.toString(),
+                                                textFieldState.selection, text.toString())
+                                            if (proposal == null) draft.reportInputRejection(EditorInputRejection.BulkSize)
+                                            else {
+                                                draft.clearInputRejection()
+                                                if (!session.requestBulkEdit(draft, proposal))
+                                                    draft.reportInputRejection(EditorInputRejection.BulkUnavailable)
+                                            }
+                                        }
+                                        null
                                     }
+                                })
+                                .onPreviewKeyEvent { event ->
+                                    handleEditorHistoryShortcut(
+                                        event = event,
+                                        onUndo = session::requestUndo,
+                                        onRedo = session::requestRedo
+                                    )
                                 }
+                                .onFocusChanged { focusState ->
+                                    if (focusState.isFocused) {
+                                        hasFocusedInComposition = true
+                                        draft.updateEditorFocusIntent(
+                                            isFocused = true,
+                                            canClear = true
+                                        )
+                                    } else if (hasFocusedInComposition) {
+                                        draft.updateEditorFocusIntent(
+                                            isFocused = false,
+                                            canClear =
+                                                lifecycle.currentState.isAtLeast(
+                                                    Lifecycle.State.RESUMED
+                                                ) && windowInfo.isWindowFocused
+                                        )
+                                    }
+                                },
+                        enabled =
+                            isActiveEditFieldEnabled(
+                                status = state.status,
+                                preserveInputSession = session.preservesEditorInputSession
+                            ),
+                        readOnly =
+                            isActiveEditFieldReadOnly(
+                                canAcceptInput = canAcceptInput,
+                                preserveInputSession = session.preservesEditorInputSession
+                            ),
+                        isError = fieldMessage != null,
+                        placeholder =
+                            if (editsCompleteDocument) {
+                                { Text(stringResource(R.string.source_start_writing)) }
+                            } else {
                                 null
+                            },
+                        inputTransformation = inputTransformation,
+                        outputTransformation = outputTransformation,
+                        lineLimits = TextFieldLineLimits.MultiLine(),
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 16.dp),
+                        onTextLayout = { getResult ->
+                            val result = getResult()
+                            if (result != null) {
+                                draft.restoreViewportAfterWidthChange(result.size.width, effective)
                             }
-                        })
-                        .onPreviewKeyEvent { event ->
-                            handleEditorHistoryShortcut(
-                                event = event,
-                                onUndo = session::requestUndo,
-                                onRedo = session::requestRedo
-                            )
-                        }
-                        .onFocusChanged { focusState ->
-                            if (focusState.isFocused) {
-                                hasFocusedInComposition = true
-                                draft.updateEditorFocusIntent(
-                                    isFocused = true,
-                                    canClear = true
-                                )
-                            } else if (hasFocusedInComposition) {
-                                draft.updateEditorFocusIntent(
-                                    isFocused = false,
-                                    canClear =
-                                        lifecycle.currentState.isAtLeast(
-                                            Lifecycle.State.RESUMED
-                                        ) && windowInfo.isWindowFocused
-                                )
-                            }
+                            textLayoutResult = result
                         },
-                enabled =
-                    isActiveEditFieldEnabled(
-                        status = state.status,
-                        preserveInputSession = session.preservesEditorInputSession
-                    ),
-                readOnly =
-                    isActiveEditFieldReadOnly(
-                        canAcceptInput = canAcceptInput,
-                        preserveInputSession = session.preservesEditorInputSession
-                    ),
-                isError = fieldMessage != null,
-                placeholder =
-                    if (editsCompleteDocument) {
-                        { Text(stringResource(R.string.source_start_writing)) }
-                    } else {
-                        null
-                    },
-                supportingText =
-                    if (fieldMessage != null) {
-                        {
-                            Text(
-                                text = fieldMessage,
-                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
-                            )
-                        }
-                    } else {
-                        null
-                    },
-                inputTransformation = inputTransformation,
-                outputTransformation = outputTransformation,
-                lineLimits = TextFieldLineLimits.MultiLine(),
-                onTextLayout = { getResult ->
-                    val result = getResult()
-                    if (result != null) {
-                        draft.restoreViewportAfterWidthChange(result.size.width)
-                    }
-                    textLayoutResult = result
-                },
-                scrollState = draft.scrollState,
-                colors =
-                    TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        errorContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent,
-                        errorIndicatorColor = Color.Transparent
-                    ),
-                shape = MaterialTheme.shapes.medium,
-                textStyle =
-                    MaterialTheme.typography.bodyLarge.copy(
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 0.sp
+                        scrollState = draft.scrollState,
+                        colors =
+                            TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                                errorContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                disabledIndicatorColor = Color.Transparent,
+                                errorIndicatorColor = Color.Transparent
+                            ),
+                        shape = MaterialTheme.shapes.medium,
+                        textStyle = sourceStyle
                     )
-            )
+                }
+            }
+            if (fieldMessage != null) {
+                Text(fieldMessage, columnModifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error)
+            }
             val controlsModifier =
                 Modifier
                     .heightIn(max = controlsMaxHeight)
