@@ -80,6 +80,7 @@
     <string name="appearance_tabs_help">Displays each tab as this many spaces. Saved and copied text keeps its original tabs.</string>
     <string name="appearance_custom">Custom</string>
     <string name="appearance_default">Default</string>
+    <string name="appearance_switch_description">%1$s, %2$s</string>
     <string name="appearance_reset">Reset</string>
     <string name="appearance_reset_setting">Reset %1$s</string>
     <string name="appearance_edit_setting">Edit %1$s</string>

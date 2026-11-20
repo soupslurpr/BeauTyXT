@@ -58,7 +58,8 @@ internal data class EditorNavigationActions(
     val onFileInfo: () -> Unit,
     val onScanQr: () -> Unit,
     val onReadNfc: () -> Unit,
-    val onKeyboardShortcuts: () -> Unit = {}
+    val onKeyboardShortcuts: () -> Unit = {},
+    val onTextAppearance: () -> Unit = {}
 )
 
 /** Describes the single operation that currently offers cancellation. */
@@ -234,6 +235,12 @@ internal fun EditorTopBar(
                                 actions.onFileInfo()
                             },
                             enabled = session.canShowFileInfo
+                        )
+                        ActionMenuItem(
+                            shape = MenuDefaults.middleItemShape,
+                            label = stringResource(R.string.appearance_title),
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_tune), contentDescription = null) },
+                            onClick = { onOverflowExpandedChange(false); actions.onTextAppearance() }
                         )
                         if (session.hasPreviousLocation || session.hasNextLocation) {
                             ActionMenuItem(

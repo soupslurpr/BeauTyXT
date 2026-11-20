@@ -62,6 +62,14 @@ class ThirdPartyNoticesTest {
     }
 
     @Test
+    fun materialSymbolsIncludeAppearanceControls() {
+        val section = noticesFile.readText().substringAfter("Google Material Symbols\n", "").substringBefore("\n\n\n")
+        val icons = section.substringAfter("Icons: ", "").substringBefore('.')
+            .split(',').map(String::trim).toSet()
+        listOf("add", "error", "remove").forEach { assertTrue("missing Material Symbol $it", it in icons) }
+    }
+
+    @Test
     fun noticesContainNoGenerationArtifacts() {
         val notices = noticesFile.readText()
 

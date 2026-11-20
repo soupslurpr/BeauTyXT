@@ -11,6 +11,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import android.content.res.Configuration
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -169,8 +170,59 @@ class TextAppearanceTest {
         assertEquals("different text", selection.original("different text"))
     }
 
+    @Test
+    fun exactInputRoundTripsLocalizedNumbersAndRejectsTrailingGarbage() {
+        val original = Locale.getDefault()
+        try {
+            listOf(Locale.US, Locale.FRANCE, Locale.forLanguageTag("ar")).forEach { locale ->
+                Locale.setDefault(locale)
+                assertEquals(23.5f, parseAppearanceNumber(appearanceNumber(23.5f)))
+                for (value in listOf(16.004f, 1.0000001f, Float.MIN_VALUE, -0f)) {
+                    assertEquals(value, parseAppearanceNumber(appearanceNumber(value, exact = true)))
+                }
+                assertEquals(null, parseAppearanceNumber(appearanceNumber(23.5f) + "xyz"))
+                assertEquals(null, parseAppearanceNumber(""))
+            }
+        } finally { Locale.setDefault(original) }
+    }
 
+    @Test
+    fun customDraftShowsExactValueAndApplyingAnEditCommitsTheDisplayedNumber() {
+        val locale = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.US)
+            for ((value, expected) in listOf(16f to "16", 16.5f to "16.5", 16.004f to "16.004")) {
+                val draft = AppearanceNumberDraft(AppearanceGroup.Source, AppearanceOption.Size, value, isCustom = true)
+                assertEquals(expected, draft.text.text)
+                assertEquals(value, draft.parsed)
+                assertTrue(draft.apply { error("untouched custom value was rewritten") })
+                if (value == 16.004f) {
+                    draft.updateText(TextFieldValue("16"))
+                    val applied = mutableListOf<Float>()
+                    assertTrue(draft.apply(applied::add))
+                    assertEquals(listOf(16f), applied)
+                }
+            }
+        } finally { Locale.setDefault(locale) }
+    }
 
+    @Test
+    fun inheritedDraftRetainsInheritanceUntilItsTextIsEdited() {
+        val group = AppearanceGroup.Markdown
+        val option = AppearanceOption.LineSpacing
+        val draft = AppearanceNumberDraft(group, option, option.default(group), isCustom = false)
+        val rounded = appearanceNumber(option.default(group))
+        assertEquals(rounded, draft.text.text)
+        assertEquals(1.56f, draft.parsed)
+        draft.updateText(draft.text.copy(selection = TextRange.Zero))
+        assertTrue(draft.apply { error("moving the caret pinned the inherited default") })
+        draft.updateText(TextFieldValue(""))
+        assertFalse(draft.apply { error("an invalid draft was committed") })
+        draft.updateText(TextFieldValue(rounded))
+        val applied = mutableListOf<Float>()
+        assertTrue(draft.apply(applied::add))
+        assertEquals(listOf(1.56f), applied)
+    }
 
     @Test
     fun persistenceDistinguishesExplicitDefaultValueFromFollowingDefaults() {
@@ -382,4 +434,10 @@ class TextAppearanceTest {
         }
     }
 
+    @Test
+    fun partiallyExpandedBottomPaddingCoversOnlyOffscreenBottomWhileSettled() {
+        assertEquals(0, partiallyExpandedBottomPaddingPx(settledPartial = false, contentBottomPx = 1420f, windowHeightPx = 1000, bottomInsetPx = 48))
+        assertEquals(468, partiallyExpandedBottomPaddingPx(settledPartial = true, contentBottomPx = 1420f, windowHeightPx = 1000, bottomInsetPx = 48))
+        assertEquals(0, partiallyExpandedBottomPaddingPx(settledPartial = true, contentBottomPx = 900f, windowHeightPx = 1000, bottomInsetPx = 48))
+    }
 }

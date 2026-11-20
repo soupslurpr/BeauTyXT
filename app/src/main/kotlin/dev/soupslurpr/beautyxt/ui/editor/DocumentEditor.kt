@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,6 +54,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.soupslurpr.beautyxt.BeauTyXTApplication
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.ui.BindDocumentNavigationBack
 import dev.soupslurpr.beautyxt.ui.LocalDocumentNavigationBack
@@ -84,6 +87,11 @@ internal fun DocumentEditor(
     val state = session.state
     val activeDraft = session.activeDraft
     val context = LocalContext.current
+    val appearanceStore = (context.applicationContext as BeauTyXTApplication).textAppearance
+    val storedAppearances by appearanceStore.state.collectAsStateWithLifecycle()
+    val appearances = (storedAppearances as? TextAppearanceStoreState.Ready)?.preferences ?: DocumentAppearances()
+    var appearanceGroup by retain(session) { mutableStateOf(AppearanceGroup.Source) }
+    var appearancePanelState by retain(session) { mutableStateOf(TextAppearancePanelState()) }
     var shortcutsVisible by remember(session) { mutableStateOf(false) }
     if (shortcutsVisible) AlertDialog(onDismissRequest = { shortcutsVisible = false },
         title = { Text(stringResource(R.string.document_keyboard_shortcuts)) },
@@ -135,7 +143,6 @@ internal fun DocumentEditor(
 
     val density = LocalDensity.current
     val windowSize = LocalWindowInfo.current.containerSize
-    val wideTools = with(density) { windowSize.width.toDp() } >= 840.dp
     val isImeVisible = WindowInsets.isImeVisible
     val imeBottomInsetPixels = WindowInsets.ime.getBottom(density)
     val imeTargetBottomInsetPixels = WindowInsets.imeAnimationTarget.getBottom(density)
@@ -144,12 +151,26 @@ internal fun DocumentEditor(
     var activeSheet by retain(session) { mutableStateOf<DocumentToolSheet?>(null) }
     var findOptionsVisible by retain(session) { mutableStateOf(false) }
     var contentsOpenedAtFindReveal by retain(session) { mutableLongStateOf(0L) }
+    val softwareKeyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val requestAppearance = {
+        session.flushPendingEdit()
+        // Keep the field from reclaiming the keyboard as the controls open.
+        session.activeDraft?.updateEditorFocusIntent(isFocused = false, canClear = true)
+        appearanceGroup = if (session.presentation == EditorPresentation.MarkdownPreview) {
+            AppearanceGroup.Markdown
+        } else AppearanceGroup.Source
+        focusManager.clearFocus(force = true)
+        softwareKeyboardController?.hide()
+        appearancePanelState = TextAppearancePanelState()
+        activeSheet = DocumentToolSheet.Appearance
+    }
     val requestContents = {
         contentsOpenedAtFindReveal = session.findRevealRequest
         activeSheet = DocumentToolSheet.Contents
     }
     val readyPreview = session.markdownPreviewStatus as? MarkdownPreviewStatus.Ready
-    val outlineEnabled = readyPreview != null && readyPreview.scrollRestoration == null &&
+    val outlineEnabled = readyPreview != null && readyPreview.scrollRestoration?.reason != RestorationReason.Navigation &&
         session.canShowTextEditor && !session.isSaveBusy && !session.isShareBusy &&
         !session.isPrintBusy && !session.isQrShareBusy && !session.isNfcWriteBusy
     val sendEnabled = session.canStartShare || session.canStartPrint || session.canStartQrShare ||
@@ -168,11 +189,8 @@ internal fun DocumentEditor(
     val useImeFocusLayout =
         activeDraft != null && !session.isFindVisible && useLandscapeImeLayout
     val useInlineFindStatus = session.isFindVisible && useLandscapeImeLayout
-    val softwareKeyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
     val windowInfo = LocalWindowInfo.current
     val documentFocus = remember(session) { DocumentFocus() }
-    val fullFindResults = session.isFindVisible && session.isFindResultsExpanded && !wideTools
     val returnFromFindResults = {
         focusManager.clearFocus(force = true)
         softwareKeyboardController?.hide()
@@ -201,18 +219,6 @@ internal fun DocumentEditor(
         val restore = restoreFocusAfterFind && !session.isFindVisible
         restoreFocusAfterFind = session.isFindVisible
         if (restore) documentFocus.request { !session.isFindVisible }
-    }
-    LaunchedEffect(session, session.findRevealRequest, session.findFocusRequest) {
-        if (session.consumeFindReveal()) {
-            focusManager.clearFocus(force = true)
-            softwareKeyboardController?.hide()
-            // A later tool choice wins over a match's deferred focus/scroll effect.
-            if (activeSheet == DocumentToolSheet.Contents && contentsOpenedAtFindReveal < session.findRevealRequest) activeSheet = null
-            if (with(density) { windowSize.width.toDp() } < 840.dp) {
-                session.collapseFindResultsForNavigation()
-            }
-            documentFocus.request { session.findInputFocus == FindInputFocus.Document }
-        }
     }
     val requestSend = {
         if (sendEnabled) {
@@ -248,8 +254,14 @@ internal fun DocumentEditor(
             softwareKeyboardController?.hide()
         }
     }
+    fun openFind(replace: Boolean, keyboard: Boolean): Boolean {
+        if (!session.showFind(showKeyboard = keyboard, openReplace = replace)) return false
+        activeSheet = null
+        return true
+    }
+    val findShortcut: (Boolean) -> Boolean = { replace -> openFind(replace, keyboard = false) }
     val requestFind = {
-        if (session.showFind()) {
+        if (openFind(replace = false, keyboard = true)) {
             focusManager.clearFocus(force = true)
             softwareKeyboardController?.hide()
         }
@@ -479,103 +491,125 @@ internal fun DocumentEditor(
         delay(timeout)
         session.retireReplacementUndoNotice(revision)
     }
-    Surface(
-        modifier =
-            modifier
-                .fillMaxSize()
-                .onPreviewKeyEvent { event ->
-                    if (event.type != KeyEventType.KeyDown) false else when {
-                        event.isCtrlPressed && event.isAltPressed && event.key == Key.DirectionLeft -> {
-                            session.returnToDocumentLocation(false); true
-                        }
-                        event.isCtrlPressed && event.isAltPressed && event.key == Key.DirectionRight -> {
-                            session.returnToDocumentLocation(true); true
-                        }
-                        event.isCtrlPressed && event.key == Key.F -> { session.showFind(showKeyboard = false); true }
-                        event.isCtrlPressed && event.key == Key.H -> { session.showFind(showKeyboard = false); session.showReplace(); true }
-                        event.isCtrlPressed && event.key == Key.G -> { requestGoToLine(); true }
-                        event.key == Key.F3 -> {
-                            if (event.isShiftPressed) session.findPrevious() else session.findNext(); true
-                        }
-                        event.key == Key.Escape && session.isFindVisible -> { requestBack(); true }
-                        event.key == Key.Escape && session.documentSelection != null -> { session.clearDocumentSelection(); true }
-                        else -> false
-                    }
-                }
-                .then(
-                    if (
-                        !hasNavigationHost && usesEditorPredictiveBackMotion(
-                            closesDocumentTask = closesDocumentTask,
-                            backClosesDocument = backClosesDocument
-                        )
-                    ) {
-                        Modifier.predictiveBackMotion(predictiveBackState)
-                    } else {
-                        Modifier
-                    }
-                )
-    ) {
-        Column(
+    CompositionLocalProvider(LocalDocumentAppearances provides appearances) {
+        Surface(
             modifier =
-                Modifier
+                modifier
                     .fillMaxSize()
-                    .windowInsetsPadding(
-                        WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
-                    )
+                    .documentFindShortcuts(findShortcut)
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) false else when {
+                            event.isCtrlPressed && event.isAltPressed && event.key == Key.DirectionLeft -> {
+                                session.returnToDocumentLocation(false); true
+                            }
+                            event.isCtrlPressed && event.isAltPressed && event.key == Key.DirectionRight -> {
+                                session.returnToDocumentLocation(true); true
+                            }
+                            event.isCtrlPressed && event.key == Key.G -> { requestGoToLine(); true }
+                            event.key == Key.F3 -> {
+                                if (event.isShiftPressed) session.findPrevious() else session.findNext(); true
+                            }
+                            event.key == Key.Escape && activeSheet != null -> { activeSheet = null; true }
+                            event.key == Key.Escape && session.isFindVisible -> { requestBack(); true }
+                            event.key == Key.Escape && session.documentSelection != null -> { session.clearDocumentSelection(); true }
+                            else -> false
+                        }
+                    }
                     .then(
-                        if (useImeFocusLayout) {
-                            Modifier.windowInsetsPadding(
-                                WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
+                        if (
+                            !hasNavigationHost && usesEditorPredictiveBackMotion(
+                                closesDocumentTask = closesDocumentTask,
+                                backClosesDocument = backClosesDocument
                             )
+                        ) {
+                            Modifier.predictiveBackMotion(predictiveBackState)
                         } else {
                             Modifier
                         }
                     )
-                    .imePadding()
         ) {
-            if (!useImeFocusLayout && !fullFindResults) {
-                EditorChromeSurface {
-                    if (session.isFindVisible) {
-                        EditorFindChrome(
-                            session = session,
-                            useInlineStatus = useInlineFindStatus,
-                            onClose = closeFind,
-                            onOptions = requestFindOptions
-                        )
-                    } else {
-                        EditorTopBar(
-                            session = session,
-                            actions = EditorNavigationActions(
-                                onFind = requestFind,
-                                onContents = requestContents,
-                                onGoToLine = requestGoToLine,
-                                onFileInfo = requestFileInfo,
-                                onScanQr = onScanQr,
-                                onReadNfc = onReadNfc,
-                                onKeyboardShortcuts = { shortcutsVisible = true }
-                            ),
-                            scanQrEnabled = scanQrEnabled && session.canStartQrScan,
-                            readNfcEnabled = readNfcEnabled && session.canStartNfcRead,
-                            navigationContentDescription = navigationContentDescription,
-                            navigationEnabled = navigationEnabled,
-                            contentsEnabled = outlineEnabled,
-                            onCancelSave = onCancelSave,
-                            isOverflowExpanded = isOverflowExpanded,
-                            onOverflowExpandedChange = { expanded ->
-                                isOverflowExpanded = expanded
-                            },
-                            onClose = requestBack
-                        )
+            BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
+                val wideTools = maxWidth >= 840.dp
+                val fullFindResults = !wideTools && session.isFindVisible && session.isFindResultsExpanded
+                LaunchedEffect(session, session.findRevealRequest, session.findFocusRequest) {
+                    if (session.consumeFindReveal()) {
+                        focusManager.clearFocus(force = true)
+                        softwareKeyboardController?.hide()
+                        // A later tool choice wins over a match's deferred focus/scroll effect.
+                        if (activeSheet == DocumentToolSheet.Contents && contentsOpenedAtFindReveal < session.findRevealRequest) activeSheet = null
+                        if (!wideTools) {
+                            session.collapseFindResultsForNavigation()
+                        }
+                        documentFocus.request { session.findInputFocus == FindInputFocus.Document }
                     }
                 }
-            }
-            if (!session.isFindVisible) EditorLocationFeedback(session)
-            BoxWithConstraints(Modifier.weight(1f)) {
-                val wideFind = maxWidth >= 840.dp
-                val contentsPane = activeSheet == DocumentToolSheet.Contents && readyPreview != null
-                if (wideFind && (contentsPane || session.isFindVisible && session.isFindResultsExpanded)) {
-                        Row(Modifier.fillMaxSize()) {
-                            EditorBody(session, activeDraft, requestSave, restartExplicitSave, Modifier.weight(1f), documentFocus)
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .windowInsetsPadding(
+                                WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
+                            )
+                            .then(
+                                if (useImeFocusLayout) {
+                                    Modifier.windowInsetsPadding(
+                                        WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
+                                    )
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .imePadding()
+                ) {
+                    if (!useImeFocusLayout && !fullFindResults) {
+                        EditorChromeSurface {
+                            if (session.isFindVisible) {
+                                EditorFindChrome(
+                                    session = session,
+                                    useInlineStatus = useInlineFindStatus,
+                                    onClose = closeFind,
+                                    onOptions = requestFindOptions
+                                )
+                            } else {
+                                EditorTopBar(
+                                    session = session,
+                                    actions = EditorNavigationActions(
+                                        onFind = requestFind,
+                                        onContents = requestContents,
+                                        onGoToLine = requestGoToLine,
+                                        onFileInfo = requestFileInfo,
+                                        onScanQr = onScanQr,
+                                        onReadNfc = onReadNfc,
+                                        onKeyboardShortcuts = { shortcutsVisible = true },
+                                        onTextAppearance = requestAppearance
+                                    ),
+                                    scanQrEnabled = scanQrEnabled && session.canStartQrScan,
+                                    readNfcEnabled = readNfcEnabled && session.canStartNfcRead,
+                                    navigationContentDescription = navigationContentDescription,
+                                    navigationEnabled = navigationEnabled,
+                                    contentsEnabled = outlineEnabled,
+                                    onCancelSave = onCancelSave,
+                                    isOverflowExpanded = isOverflowExpanded,
+                                    onOverflowExpandedChange = { expanded ->
+                                        isOverflowExpanded = expanded
+                                    },
+                                    onClose = requestBack
+                                )
+                            }
+                        }
+                    }
+                    if (!session.isFindVisible) EditorLocationFeedback(session)
+                    if (fullFindResults) {
+                        EditorFindResults(session, wide = false, Modifier.weight(1f),
+                            onReturn = returnFromFindResults, onEditSearch = editFindQuery)
+                    } else Row(Modifier.weight(1f)) {
+                        EditorBody(session, activeDraft, requestSave, restartExplicitSave, Modifier.weight(1f), documentFocus)
+                        val contentsPane = activeSheet == DocumentToolSheet.Contents && readyPreview != null
+                        if (wideTools && activeSheet == DocumentToolSheet.Appearance) {
+                            TextAppearancePanel(appearancePanelState, appearanceGroup, { appearanceGroup = it },
+                                appearanceStore, storedAppearances, { activeSheet = null },
+                                Modifier.width(400.dp).fillMaxSize().documentToolFocus(appearancePanelState))
+                        } else if (wideTools && (contentsPane || session.isFindVisible && session.isFindResultsExpanded)) {
                             Column(Modifier.width(380.dp)) {
                                 FlowRow {
                                     TextButton(onClick = requestContents, enabled = readyPreview != null) {
@@ -596,24 +630,42 @@ internal fun DocumentEditor(
                                     onReturn = returnFromFindResults, onEditSearch = editFindQuery)
                             }
                         }
-                } else if (session.isFindVisible && session.isFindResultsExpanded) {
-                    EditorFindResults(session, wide = false, Modifier.fillMaxSize(),
-                        onReturn = returnFromFindResults, onEditSearch = editFindQuery)
-                } else EditorBody(session, activeDraft, requestSave, restartExplicitSave, Modifier.fillMaxSize(), documentFocus)
-            }
-            if ((session.documentSelection != null || session.selectionMessage != null) && !fullFindResults) DocumentSelectionActions(session)
-            else if (!useImeFocusLayout && !session.isFindVisible && state.metrics != null) {
-                EditorActionBar(
-                    session = session,
-                    onPreview = requestPreview,
-                    onEdit = requestTextEditor,
-                    onSave = requestSave,
-                    onShare = requestSend,
-                    shareEnabled = sendEnabled
-                )
+                    }
+                    if ((session.documentSelection != null || session.selectionMessage != null) && !fullFindResults) DocumentSelectionActions(session)
+                    else if (!useImeFocusLayout && !session.isFindVisible && state.metrics != null) {
+                        EditorActionBar(
+                            session = session,
+                            onPreview = requestPreview,
+                            onEdit = requestTextEditor,
+                            onSave = requestSave,
+                            onShare = requestSend,
+                            shareEnabled = sendEnabled
+                        )
+                    }
+                }
+                if (!wideTools && activeSheet == DocumentToolSheet.Appearance) {
+                    TextAppearanceSheet(appearancePanelState, appearanceGroup, { appearanceGroup = it },
+                        appearanceStore, storedAppearances, { activeSheet = null }, findShortcut)
+                }
+                if (!wideTools && activeSheet == DocumentToolSheet.Contents && readyPreview != null) {
+                    DocumentOutlineSheet(
+                        title = session.title,
+                        entries = readyPreview.layout.outline,
+                        documentListState = session.markdownPreviewListState,
+                        onSelect = { entry ->
+                            activeSheet = null
+                            session.navigateToHeading(readyPreview.revision, entry)
+                        },
+                        onFind = findShortcut,
+                        onDismiss = { activeSheet = null }
+                    )
+                }
+                if (activeSheet == DocumentToolSheet.Appearance) {
+                    TextAppearanceDialogs(appearancePanelState, appearanceStore, storedAppearances, findShortcut)
+                }
             }
         }
-    }
+    } // Document-only typography provider; export and print settings remain independent.
     val choosingFormat = session.saveStatus as? SaveStatus.ChoosingFormat
     LaunchedEffect(
         choosingFormat != null,
@@ -656,18 +708,7 @@ internal fun DocumentEditor(
             session.focusFindDocument()
         }
     }
-    if (!wideTools && activeSheet == DocumentToolSheet.Contents && readyPreview != null) {
-        DocumentOutlineSheet(
-            title = session.title,
-            entries = readyPreview.layout.outline,
-            documentListState = session.markdownPreviewListState,
-            onSelect = { entry ->
-                activeSheet = null
-                session.navigateToHeading(readyPreview.revision, entry)
-            },
-            onDismiss = { activeSheet = null }
-        )
-    }
+
     if (session.isPrintSetupVisible) {
         PrintSetupSheet(session)
     }
@@ -713,3 +754,13 @@ internal fun DocumentEditor(
         DocumentCloseConfirmation(session = session, onClose = onClose)
     }
 }
+
+/** Hardware Find has the same owner in the document and its modal tool windows. */
+internal fun Modifier.documentFindShortcuts(open: (replace: Boolean) -> Boolean): Modifier =
+    onPreviewKeyEvent { event ->
+        event.type == KeyEventType.KeyDown && event.isCtrlPressed && when (event.key) {
+            Key.F -> open(false)
+            Key.H -> open(true)
+            else -> false
+        }
+    }
