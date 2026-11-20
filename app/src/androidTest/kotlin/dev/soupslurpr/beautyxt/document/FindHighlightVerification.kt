@@ -9,11 +9,13 @@ import android.view.ViewGroup
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.getAllSemanticsNodes
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDecoration
@@ -87,14 +89,14 @@ internal fun Instrumentation.verifyFindHighlights(capturePreviews: Boolean = fal
                             isAppearanceLightNavigationBars = !darkTheme
                         }
                         val decorated = awaitHighlightedSource(activity, "River river RIVER") {
-                            it.spanStyles.count { span -> span.item.textDecoration == TextDecoration.Underline } == 1 &&
-                                it.spanStyles.count { span -> span.item.textDecoration == null } >= 3
+                            it.count { span -> span.item.textDecoration == TextDecoration.Underline } == 1 &&
+                                it.count { span -> span.item.textDecoration == null } >= 3
                         }
-                        val current = decorated.spanStyles.last()
+                        val current = decorated.last()
                         check(current.start == 0 && current.end == 5) {
                             "current highlight has incorrect offsets: ${current.start}..${current.end}"
                         }
-                        check(current.item.background != decorated.spanStyles.first().item.background) {
+                        check(current.item.background != decorated.first().item.background) {
                             "current and other matches have identical backgrounds"
                         }
                         if (capturePreviews) {
@@ -116,8 +118,8 @@ internal fun Instrumentation.verifyFindHighlights(capturePreviews: Boolean = fal
                     awaitHighlightCoverage(session)
                     session.findNext()
                     awaitHighlightMatch(session, 6)
-                    awaitHighlightedSource(activity, "River river RIVER") { text ->
-                        text.spanStyles.filter { it.start < 17 }.map { it.start to it.end } ==
+                    awaitHighlightedSource(activity, "River river RIVER") { spans ->
+                        spans.filter { it.start < 17 }.map { it.start to it.end } ==
                             listOf(6 to 11, 6 to 11)
                     }
                     session.updateFindCaseSensitivity(false)
@@ -127,10 +129,10 @@ internal fun Instrumentation.verifyFindHighlights(capturePreviews: Boolean = fal
                     awaitHighlightMatch(session, 19)
                     session.findNext()
                     awaitHighlightMatch(session, 21)
-                    awaitHighlightedSource(activity, "banana banana") { text ->
+                    awaitHighlightedSource(activity, "banana banana") { spans ->
                         val offset = if (readOnly) 0 else 18
-                        (1..5).all { character -> text.spanStyles.any { offset + character in it.start until it.end } } &&
-                            text.spanStyles.last().let { it.start == offset + 3 && it.end == offset + 6 }
+                        (1..5).all { character -> spans.any { offset + character in it.start until it.end } } &&
+                            spans.last().let { it.start == offset + 3 && it.end == offset + 6 }
                     }
                     // Superseded work must never restore decoration for an older query.
                     session.updateFindFieldValue(TextFieldValue("river"))
@@ -138,13 +140,13 @@ internal fun Instrumentation.verifyFindHighlights(capturePreviews: Boolean = fal
                     withTimeout(10_000) {
                         snapshotFlow { session.findStatus }.first { it == FindStatus.NoMatches }
                     }
-                    awaitHighlightedSource(activity, "banana banana") { it.spanStyles.isEmpty() }
+                    awaitHighlightedSource(activity, "banana banana") { it.isEmpty() }
                     session.updateFindFieldValue(TextFieldValue("r"))
                     awaitHighlightCoverage(session)
                     session.findNext()
-                    awaitHighlightedSource(activity, "River river RIVER") { it.spanStyles.size >= 6 }
+                    awaitHighlightedSource(activity, "River river RIVER") { it.size >= 6 }
                     session.closeFind()
-                    awaitHighlightedSource(activity, "River river RIVER") { it.spanStyles.isEmpty() }
+                    awaitHighlightedSource(activity, "River river RIVER") { it.isEmpty() }
                     check(!session.state.hasDocumentChanges) { "Find decoration dirtied the document" }
                     session.activeDraft?.let { draft ->
                         check(draft.textFieldState.text.toString() == HIGHLIGHT_SOURCE) {
@@ -206,11 +208,14 @@ private suspend fun awaitHighlightMatch(session: EditorSession, start: Long) {
 private suspend fun awaitHighlightedSource(
     activity: HomeActivity,
     content: String,
-    condition: (AnnotatedString) -> Boolean
-): AnnotatedString = try { withTimeout(10_000) {
+    condition: (List<AnnotatedString.Range<SpanStyle>>) -> Boolean
+): List<AnnotatedString.Range<SpanStyle>> = try { withTimeout(10_000) {
     while (true) {
         val texts = highlightTextLayouts(activity.window.decorView).map { it.layoutInput.text }
-        texts.firstOrNull { it.text.contains(content) && condition(it) }?.let { return@withTimeout it }
+        for (text in texts.filter { it.text.contains(content) }) {
+            val highlights = text.spanStyles.filter { it.item.background.isSpecified }
+            if (condition(highlights)) return@withTimeout highlights
+        }
         delay(30)
     }
     @Suppress("UNREACHABLE_CODE")

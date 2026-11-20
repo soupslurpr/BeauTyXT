@@ -413,6 +413,10 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 verifyPhase("new document replacement") { verifyNewDocumentReplacement() }
                 verifyPhase("navigation history controls") { verifyNavigationHistoryControls() }
                 verifyPhase("reading match visibility") { verifyReadingMatchVisibility() }
+                verifyPhase("text appearance") { verifyTextAppearance() }
+                verifyPhase("source appearance geometry") { verifySourceAppearanceGeometry() }
+                verifyPhase("appearance storage recovery") { verifyAppearanceStorageRecovery() }
+                verifyOptInPhase("appearance adaptation") { verifyTextAppearanceAdaptation() }
                 verifyPhase("selection mode editing") { verifySelectionModeEditing() }
                 verifyOptInPhase("wide document tools") { verifyWideDocumentTools() }
                 verifyPhase("unique isolated instances") {

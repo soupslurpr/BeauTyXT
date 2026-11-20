@@ -72,6 +72,73 @@ Cleanup failure leaves these workflows gated behind an explicit Retry action;
 closing one activity does not cancel the process-owned cleanup. No persistent
 migration marker is required.
 
+Text appearance is the sole persistent document-view preference. Two global
+groups cover plain text/source and rendered Markdown. Missing settings follow
+app defaults; explicit values remain custom even when equal to the current
+default. A process-owned StateFlow updates open document activities immediately,
+with conflated, serialized AtomicFile writes to
+`noBackupFilesDir/text-appearance.properties`. This content-free file contains
+only known numeric display settings, outside legacy document-state cleanup.
+Each option update applies to the latest process-wide preferences. A failed
+save keeps the latest values active and offers Retry saving. The store lets
+AtomicFile recover its backup before checking for a first run. If it cannot
+read the settings, documents use defaults and the panel offers Retry loading.
+Reset saved appearance requires confirmation and verifies removal of both
+groups before editing resumes. These settings contain no document identifiers
+and never enter print/PDF configuration or saved source bytes.
+
+The document surface alone consumes appearance preferences. Text sizes use sp,
+layout widths use dp, and spacing follows the displayed font size. Android font
+scaling and the Material 3 Expressive system color scheme remain active. Only
+Android's default, serif, and monospace families are offered. All six heading
+levels have distinct sizes. Every family retains the full body-weight range.
+Strong emphasis requests a heavier weight and adds an underline if the resolved
+faces are identical or only extra synthesis over an already-bold face separates
+them. The selected body and code fonts resolve emphasis independently. Android's
+Bold text accessibility adjustment is preserved and included in this decision.
+The same fallback protects emphasis within already-bold headings and table
+headers without reducing the user's selected body weight.
+The controls use a partially expanded bottom sheet on narrow windows and a
+supporting pane on wide windows, with live controls and independent resets.
+Exact numeric entry is a draft. Apply or the keyboard’s Done action commits a
+valid value. Cancel or dismissal discards the draft. Intermediate keystrokes
+never change the preference.
+The selected section, list position, and numeric draft are retained above the
+adaptive layouts, so activity recreation and sheet/pane transitions preserve
+the current operation. Short, wide windows place the number and its actions
+side by side above the keyboard. The expanded phone sheet also pins a collapsible,
+built-in sample above its scrolling controls. It reuses document style,
+spacing, tab, and Markdown emphasis rendering; its own viewport bounds the
+sample at large text sizes. The sample starts collapsed with enlarged system
+text or short windows and is omitted when the window cannot spare its header.
+Its expanded/collapsed choice is transient editor state, independent of saved
+appearance preferences. Wide layouts continue to show the document beside the
+controls.
+
+Column width caps the text area in both groups, including the built-in sample.
+The page centers the text column and reserves each side margin outside it.
+Margins shrink when needed to leave 96 dp of usable space. In read-only source
+the inline line-number gutter fits before the text, shifting the column toward
+the end edge only when needed. Narrow pages stack labels above the text.
+Start and end mirror in right-to-left layouts.
+
+With wrapping disabled, read-only source has one horizontal scroll position
+for the viewport. All text rows move together inside clipped cells. Line
+numbers, status messages and controls stay in place. The scroll range retains
+the widest measured row as the list recycles items. Explicit Find navigation
+reveals the match horizontally in both read-only and editable source.
+
+Source tab width changes the displayed advance of each tab that can display as
+a space without merging an adjacent Unicode grapheme cluster; tabs kept native
+to preserve authored grapheme boundaries use Android's native tab stops.
+The bounded editable field keeps a one-to-one UTF-16 output mapping and scopes
+a clipboard adapter to that field, because Compose's native Copy/Cut otherwise
+copies output-transformed text. Read-only document selection copies from exact
+source ranges. Spacing, wrapping, and fonts never enter the edit or undo stream.
+Each mounted reading surface restores its semantic viewport anchor when its
+effective appearance changes. Explicit navigation takes priority. Reading
+reflow preserves the source selection retained for the return to editing.
+
 The application process currently owns the Compose UI, Android lifecycle
 integration, Storage Access Framework requests, NFC, foreground camera, and
 explicit share-intent integration. Only this

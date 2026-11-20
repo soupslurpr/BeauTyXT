@@ -3,10 +3,12 @@ package dev.soupslurpr.beautyxt.document
 import android.app.Instrumentation
 import android.content.ClipboardManager
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.graphics.pdf.PdfRenderer
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.WindowInsets
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeInfo.CHECKED_STATE_FALSE
 import android.view.accessibility.AccessibilityNodeInfo.CHECKED_STATE_TRUE
@@ -351,6 +353,69 @@ internal fun Instrumentation.verifyWideDocumentTools() {
             try { File(targetContext.cacheDir, "document-experience-wide.png").outputStream().use {
                 check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
             } } finally { bitmap.recycle() }
+        }
+    }
+    verifyWideAppearanceShortcuts()
+}
+
+private fun Instrumentation.verifyWideAppearanceShortcuts() {
+    val source = "Source open beside the appearance controls."
+    withReadingPage(source, initialPresentation = EditorPresentation.Text) { activity, session ->
+        val window = activity.window
+        fun imeVisible() = window.decorView.rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true
+        fun tap(node: AccessibilityNodeInfo) {
+            // The popup exposes its items before its scale and position animations finish.
+            val bounds = Rect()
+            var stableSince = SystemClock.uptimeMillis()
+            awaitReadingCondition("touch target did not settle") {
+                uiAutomation.clearCache()
+                if (!node.refresh()) return@awaitReadingCondition false
+                val current = Rect().also(node::getBoundsInScreen)
+                if (current != bounds) {
+                    bounds.set(current)
+                    stableSince = SystemClock.uptimeMillis()
+                }
+                node.isVisibleToUser && !bounds.isEmpty && SystemClock.uptimeMillis() - stableSince >= 300L
+            }
+            readingPageGesture(bounds.exactCenterX(), bounds.exactCenterY())
+        }
+        tap(waitForEditField())
+        awaitReadingCondition("initial source field did not take focus") {
+            session.activeDraft?.isEditorFocused == true && imeVisible()
+        }
+        runOnMainSync { window.insetsController?.hide(WindowInsets.Type.ime()) }
+        awaitReadingCondition("initial source keyboard did not hide") { !imeVisible() }
+        for (key in listOf(KeyEvent.KEYCODE_F, KeyEvent.KEYCODE_H, KeyEvent.KEYCODE_ESCAPE)) {
+            tap(requireActionableContentDescription("More options"))
+            tap(requireActionableText("Text appearance"))
+            val pane = waitForAccessibilityNode("wide appearance pane before ${KeyEvent.keyCodeToString(key)}") {
+                it.contentDescription == "Choose appearance group"
+            }
+            check(pane.windowId == window.decorView.createAccessibilityNodeInfo().windowId)
+            check(session.activeDraft?.isEditorFocused == false && !imeVisible())
+            if (key == KeyEvent.KEYCODE_ESCAPE) {
+                documentKey(key)
+                awaitReadingCondition("Escape did not dismiss the appearance pane") {
+                    uiAutomation.clearCache()
+                    uiAutomation.rootInActiveWindow?.findNode { it.contentDescription == "Choose appearance group" } == null
+                }
+            } else {
+                val replace = key == KeyEvent.KEYCODE_H
+                documentKey(key, KeyEvent.META_CTRL_ON)
+                awaitReadingCondition("appearance pane kept the Find shortcut") {
+                    session.isFindVisible && session.isReplaceVisible == replace
+                }
+                waitForAccessibilityNode("Find or Replace field received keyboard focus") {
+                    it.isEditable && it.isFocused && it.text?.toString() != source
+                }
+                val input = if (replace) "replacement" else "query"
+                sendStringSync(input)
+                val field = if (replace) session.replacementFieldState else session.findFieldState
+                awaitReadingCondition("hardware typing missed the requested Find field") { field.text.toString() == input }
+                check(!imeVisible())
+                requireActionableContentDescription("Close Find").performRequiredClick()
+                awaitReadingCondition("Find did not close") { !session.isFindVisible }
+            }
         }
     }
 }
