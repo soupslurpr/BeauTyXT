@@ -4,6 +4,8 @@ package dev.soupslurpr.beautyxt.ui.editor
 import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.text.AnnotatedString
@@ -262,3 +264,23 @@ internal fun sourcePresentationMatches(display: CharSequence, source: CharSequen
         display[index] == source[index] || source[index] == '\t' && display[index] == ' '
     }
 
+/** The previous committed anchor belongs to the layout before the next remeasure. */
+private class CommittedAppearance(var appearance: TextAppearance, var anchor: SemanticViewportAnchor?)
+
+@Composable
+internal fun RestoreAfterAppearanceChange(session: EditorSession, presentation: EditorPresentation, revision: Long,
+    effective: TextAppearance, visible: SemanticViewportAnchor?) {
+    val committed = remember(session, presentation, revision) { CommittedAppearance(effective, visible) }
+    SideEffect {
+        if (committed.appearance != effective) {
+            (committed.anchor ?: visible)?.let { session.restorePositionAfterAppearanceChange(presentation, it) }
+            committed.appearance = effective
+        } else if (visible != null) {
+            val pending = when (presentation) {
+                EditorPresentation.Text -> session.readOnlySourceScrollRestoration
+                EditorPresentation.MarkdownPreview -> (session.markdownPreviewStatus as? MarkdownPreviewStatus.Ready)?.scrollRestoration
+            }
+            if (pending == null) committed.anchor = visible
+        }
+    }
+}

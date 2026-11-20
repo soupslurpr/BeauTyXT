@@ -7,6 +7,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -50,12 +51,16 @@ internal fun rememberMarkdownIllustrations(
     listState: LazyListState,
     navigation: MarkdownPreviewNavigationState,
     items: List<MarkdownPreviewItem>,
+    layoutGeneration: Any,
+    restoration: () -> ViewportRestoration?,
     searching: Boolean = false
 ): MarkdownPreviewIllustrations {
     if (plan.isEmpty) return MarkdownPreviewIllustrations()
     val application = LocalContext.current.applicationContext
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val scope = rememberCoroutineScope()
+    val currentGeneration by rememberUpdatedState(layoutGeneration)
+    val currentRestoration by rememberUpdatedState(restoration)
     val workers = remember(plan, cache, listState, navigation, application) {
         val math =
             RestartingIllustrationWorker(
@@ -89,8 +94,9 @@ internal fun rememberMarkdownIllustrations(
                 diagrams.close()
             },
             publish = { apply ->
-                // Do not resize the item being flung or cancel the gesture to restore an anchor.
-                snapshotFlow { listState.isScrollInProgress }.first { !it }
+                // A gesture or a pending navigation/reflow owns the current viewport.
+                snapshotFlow { !listState.isScrollInProgress && currentRestoration() == null }.first { it }
+                val generation = currentGeneration
                 val first = listState.firstVisibleItemIndex
                 val offset = listState.firstVisibleItemScrollOffset
                 val anchor =
@@ -98,11 +104,12 @@ internal fun rememberMarkdownIllustrations(
                 apply()
                 withFrameNanos { }
                 withFrameNanos { }
-                if (anchor != null && !listState.isScrollInProgress &&
+                if (anchor != null && currentRestoration() == null && generation === currentGeneration &&
+                    !listState.isScrollInProgress &&
                     first == listState.firstVisibleItemIndex &&
                     offset == listState.firstVisibleItemScrollOffset
                 ) {
-                    val measurement = navigation.measurementForSource(anchor.sourceUtf16Offset)
+                    val measurement = navigation.measurementForSource(anchor.sourceUtf16Offset, generation)
                     if (measurement != null) {
                         val rendered = measurement.block.renderedUtf16OffsetForSource(
                             anchor.sourceUtf16Offset

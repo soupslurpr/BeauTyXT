@@ -748,13 +748,16 @@ class EditorSessionTest {
             selection = TextRange(queryStart)
         }
 
-        assertTrue(session.showFind())
+        assertTrue(session.showFind(showKeyboard = false, openReplace = true))
 
         assertFalse(session.hasPendingEditWindowAction)
         requireNotNull(session.activeDraft)
         requireNotNull(session.state.activeEdit)
         assertEquals(replacementText, document.delegate.text)
         assertTrue(session.isFindVisible)
+        assertTrue(session.isReplaceVisible)
+        assertEquals(FindInputFocus.Replacement, session.findInputFocus)
+        assertFalse(session.findRequestsKeyboard)
         assertFalse(requireNotNull(session.activeDraft).shouldRestoreEditorFocus)
         assertTrue(session.updateFindFieldValue(TextFieldValue(query)))
         assertNull(session.findMatch)
@@ -1132,6 +1135,7 @@ class EditorSessionTest {
         var status = session.findStatus as FindStatus.Match
         assertEquals(FIRST_OVERLAPPING_MATCH_START, status.match.range.start)
         assertNull(status.wrappedAt)
+        assertEquals(status.match.range, session.activeDraft?.scrollRestoration?.findRange)
         assertEquals(
             Utf16Range(status.match.range.start, status.match.range.start),
             requireNotNull(session.state.activeEdit).snapshot.selection
@@ -3476,19 +3480,10 @@ class EditorSessionTest {
         assertEquals(Utf16Range(start = 1, end = 5), movedDraft.edit.snapshot.range)
         assertEquals(Utf16Range(start = 3, end = 3), movedDraft.edit.snapshot.selection)
         assertEquals(TextRange(2), movedDraft.textFieldState.selection)
-        assertEquals(
-            EditWindowScrollRestoration(
-                anchor =
-                    SemanticViewportAnchor(
-                        revision = 0L,
-                        sourceUtf16Offset = 3,
-                        viewportTopOffsetPixels = 120
-                    ),
-                preserveScrollMomentum = true
-            ),
-            movedDraft.scrollRestoration
-        )
-        assertTrue(requireNotNull(movedDraft.scrollRestoration).preserveScrollMomentum)
+        val restoration = requireNotNull(movedDraft.scrollRestoration)
+        assertEquals(SemanticViewportAnchor(revision = 0L, sourceUtf16Offset = 3, viewportTopOffsetPixels = 120),
+            restoration.anchor)
+        assertTrue(restoration.preserveScrollMomentum)
         assertTrue(movedDraft.shouldRestoreEditorFocus)
         assertEquals(Utf16Range(start = 3, end = 3), document.editWindowCalls.last())
         assertFalse(session.hasPendingEditWindowAction)

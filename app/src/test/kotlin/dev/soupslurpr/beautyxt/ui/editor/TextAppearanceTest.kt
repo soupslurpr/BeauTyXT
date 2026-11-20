@@ -12,8 +12,11 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import android.content.res.Configuration
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.soupslurpr.beautyxt.document.RenderBlock
 import java.io.StringReader
 import java.io.StringWriter
 import java.util.Locale
@@ -75,10 +78,65 @@ class TextAppearanceTest {
         assertEquals(defaults, defaults.change(AppearanceOption.HeadingScale, 150f).effective(source))
     }
 
+    @Test
+    fun unwrappedExtentSurvivesRowRecyclingAndRevealsOnlyTheRequestedEdge() {
+        val viewport = SourceHorizontalViewport(100)
+        viewport.measure(500)
+        viewport.state.dispatchRawDelta(240f)
+        viewport.measure(140)
+        assertEquals(400, viewport.maximum)
+        assertEquals(240f, viewport.offset)
+        viewport.reveal(300f, 320f, 500, rtl = false)
+        assertEquals(240f, viewport.offset)
+        viewport.reveal(490f, 500f, 500, rtl = false)
+        assertEquals(400f, viewport.offset)
+        viewport.reveal(470f, 480f, 500, rtl = true)
+        assertEquals(20f, viewport.offset)
+        viewport.state.dispatchRawDelta(-100f)
+        assertEquals(0f, viewport.offset)
+    }
 
+    @Test
+    fun restoreResolvesTheStartingBlockThenInteriorThenLineEndOrEof() {
+        fun block(start: Long, text: String) = EditorRenderBlock(0, RenderBlock(0, start, start + text.length,
+            0, text, false, false))
+        val blocks = listOf(block(0, "ab"), block(2, "cd"), block(5, "end"))
+        assertEquals(1, sourceBlockIndexForOffset(blocks, 2))
+        assertEquals(1, sourceBlockIndexForOffset(blocks, 3))
+        assertEquals(1, sourceBlockIndexForOffset(blocks, 4))
+        assertEquals(2, sourceBlockIndexForOffset(blocks, 8))
+        assertEquals(-1, sourceBlockIndexForOffset(blocks, 9))
+    }
 
+    @Test
+    fun clippedHandleKeepsItsTouchTargetWithinTheStationaryViewport() {
+        val root = Rect(0f, 0f, 240f, 160f)
+        val clip = Rect(20f, 50f, 220f, 70f)
+        assertEquals(null, selectionHandle(Offset(19f, 60f), clip, root, 48f))
+        assertEquals(null, selectionHandle(Offset(80f, 71f), clip, root, 48f))
+        assertEquals(Rect(172f, 70f, 220f, 118f), selectionHandle(clip.bottomRight, clip, root, 48f)?.bounds)
+        assertEquals(Rect(192f, 112f, 240f, 160f), selectionHandle(root.bottomRight, root, root, 48f)?.bounds)
+    }
 
+    @Test
+    fun zeroWidthMarkerPrefersTheVisibleStartingBlockAtASharedBoundary() {
+        val prior = SourceFindMarker(12, Rect(100f, 20f, 100f, 40f), Rect(0f, 20f, 100f, 40f))
+        val next = SourceFindMarker(0, Rect(0f, 40f, 0f, 60f), Rect(0f, 40f, 100f, 60f))
+        assertEquals(next, visibleSourceFindMarker(sequenceOf(prior, next)))
+        assertEquals(next, visibleSourceFindMarker(sequenceOf(next, prior)))
+        assertEquals(prior, visibleSourceFindMarker(sequenceOf(next.copy(clip = Rect.Zero), prior)))
+        assertEquals(prior, visibleSourceFindMarker(sequenceOf(prior)))
+        assertEquals(null, visibleSourceFindMarker(sequenceOf(next.copy(cursor = prior.cursor))))
+    }
 
+    @Test
+    fun shrinkingAnAnchorLineKeepsOnePixelVisibleAndPreservesPositiveInsets() {
+        assertEquals(-23, clampViewportTopInset(-60, 24.25f))
+        assertEquals(-3, clampViewportTopInset(-3, 24f))
+        assertEquals(0, clampViewportTopInset(-60, 0.25f))
+        assertEquals(0, clampViewportTopInset(0, 24f))
+        assertEquals(60, clampViewportTopInset(60, 24f))
+    }
 
     @Test
     fun emphasisShapingUsesAnAccessOrderedBoundedCacheAndNormalizedAdjustment() {

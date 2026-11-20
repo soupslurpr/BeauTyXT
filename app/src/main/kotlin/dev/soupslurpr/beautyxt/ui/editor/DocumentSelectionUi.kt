@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -84,17 +85,27 @@ internal sealed interface SelectionPoint : Comparable<SelectionPoint> {
 }
 
 internal class SelectionTextMeasurement(
+    val owner: Any,
     val layout: TextLayoutResult,
     val position: Offset,
     val point: (Int) -> SelectionPoint,
     val offset: (SelectionPoint) -> Int?,
     val sourceFindDecoration: SourceFindDecoration? = null,
-    val sourceIsCurrent: () -> Boolean = { true }
+    val sourceIsCurrent: () -> Boolean = { true },
+    val clipBounds: (() -> Rect?)? = null
 ) {
     val bounds get() = Rect(position, androidx.compose.ui.geometry.Size(layout.size.width.toFloat(), layout.size.height.toFloat()))
+    val visibleBounds: Rect get() = if (clipBounds == null) bounds else bounds.intersect(clipBounds() ?: Rect.Zero)
+    fun clipIn(root: Rect): Rect = clipBounds?.let { it()?.intersect(root) ?: Rect.Zero } ?: root
+    val graphemeText: String get() = sourceFindDecoration?.text?.takeIf { raw ->
+        sourceIsCurrent() && sourcePresentationMatches(layout.layoutInput.text, raw)
+    } ?: layout.layoutInput.text.text
+
     fun at(window: Offset): Int {
-        val text = layout.layoutInput.text.text
-        val offset = layout.getOffsetForPosition(window - position).coerceIn(0, text.length)
+        val text = graphemeText
+        val visible = visibleBounds
+        val x = if (visible.isEmpty) window.x else window.x.coerceIn(visible.left, visible.right)
+        val offset = layout.getOffsetForPosition(Offset(x, window.y) - position).coerceIn(0, text.length)
         val characters = android.icu.text.BreakIterator.getCharacterInstance(java.util.Locale.ROOT)
         characters.setText(text)
         if (characters.isBoundary(offset)) return offset
@@ -119,12 +130,19 @@ internal class SelectionTextMeasurement(
 
 internal class DocumentSelectionLayout(val session: EditorSession) {
     val texts = mutableStateMapOf<Any, SelectionTextMeasurement>()
-    fun hit(position: Offset, exact: Boolean = false): SelectionTextMeasurement? =
-        texts.values.firstOrNull { it.bounds.contains(position) } ?: if (exact) null else texts.values.minByOrNull {
-            val dy = maxOf(it.bounds.top - position.y, position.y - it.bounds.bottom, 0f)
-            val dx = maxOf(it.bounds.left - position.x, position.x - it.bounds.right, 0f)
+    fun release(key: Any, owner: Any) {
+        if (texts[key]?.owner === owner) texts.remove(key)
+    }
+
+    fun hit(position: Offset, exact: Boolean = false): SelectionTextMeasurement? {
+        val candidates = texts.values.asSequence().filter { !it.visibleBounds.isEmpty }
+        return candidates.firstOrNull { it.visibleBounds.contains(position) } ?: if (exact) null else candidates.minByOrNull {
+            val visible = it.visibleBounds
+            val dy = maxOf(visible.top - position.y, position.y - visible.bottom, 0f)
+            val dx = maxOf(visible.left - position.x, position.x - visible.right, 0f)
             dy * 10_000f + dx
         }
+    }
     fun select(anchor: SelectionPoint, focus: SelectionPoint): Boolean = when {
         anchor is SelectionPoint.Source && focus is SelectionPoint.Source -> session.selectSource(anchor.offset, focus.offset)
         anchor is SelectionPoint.Reading && focus is SelectionPoint.Reading -> {
@@ -136,11 +154,11 @@ internal class DocumentSelectionLayout(val session: EditorSession) {
         }
         else -> false
     }
-    fun cursor(point: SelectionPoint): Offset? = texts.values.firstNotNullOfOrNull { text ->
-        text.offset(point)?.takeIf { it in 0..text.layout.layoutInput.text.length }?.let {
-            val cursor = text.layout.getCursorRect(it)
-            text.position + cursor.bottomLeft
-        }
+    fun handle(point: SelectionPoint, root: Rect, size: Float): SelectionHandle? = texts.values.firstNotNullOfOrNull { text ->
+        val offset = text.offset(point)?.takeIf { it in 0..text.layout.layoutInput.text.length }
+            ?: return@firstNotNullOfOrNull null
+        val caret = text.position + text.layout.getCursorRect(offset).bottomLeft
+        selectionHandle(caret, text.clipIn(root), root, size)
     }
 
     fun moveEndpoint(first: Boolean, forward: Boolean): Boolean {
@@ -158,7 +176,7 @@ internal class DocumentSelectionLayout(val session: EditorSession) {
         val text = ordered[current]
         val offset = checkNotNull(text.offset(point))
         val characters = android.icu.text.BreakIterator.getCharacterInstance(java.util.Locale.ROOT)
-        characters.setText(text.layout.layoutInput.text.text)
+        characters.setText(text.graphemeText)
         val moved = if (forward) characters.following(offset) else characters.preceding(offset)
         val next = if (moved != android.icu.text.BreakIterator.DONE) text.point(moved)
             else ordered.getOrNull(current + if (forward) 1 else -1)?.let {
@@ -166,6 +184,32 @@ internal class DocumentSelectionLayout(val session: EditorSession) {
             } ?: return false
         return if (first) select(endpoints.second, next) else select(endpoints.first, next)
     }
+}
+
+internal data class SelectionHandle(val caret: Offset, val bounds: Rect)
+
+internal fun selectionHandle(caret: Offset, clip: Rect, root: Rect, size: Float): SelectionHandle? {
+    if (clip.isEmpty || caret.x !in clip.left..clip.right || caret.y !in clip.top..clip.bottom) return null
+    val width = minOf(size, clip.width)
+    val height = minOf(size, root.height)
+    val left = (caret.x - width / 2).coerceIn(clip.left, maxOf(clip.left, clip.right - width))
+    val top = caret.y.coerceIn(root.top, maxOf(root.top, root.bottom - height))
+    return SelectionHandle(caret, Rect(left, top, left + width, top + height))
+}
+
+internal data class SourceFindMarker(val offset: Int, val cursor: Rect, val clip: Rect)
+
+/** Adjacent blocks can both map a boundary. Prefer its visible starting block. */
+internal fun visibleSourceFindMarker(candidates: Sequence<SourceFindMarker>): SourceFindMarker? {
+    var fallback: SourceFindMarker? = null
+    for (marker in candidates) {
+        val (offset, cursor, clip) = marker
+        if (clip.isEmpty || cursor.left !in clip.left..clip.right ||
+            cursor.top >= clip.bottom || cursor.bottom <= clip.top) continue
+        if (offset == 0) return marker
+        if (fallback == null) fallback = marker
+    }
+    return fallback
 }
 
 internal val LocalDocumentSelectionLayout = staticCompositionLocalOf<DocumentSelectionLayout?> { null }
@@ -233,24 +277,25 @@ internal fun Modifier.documentSelectionText(
     additionalActions: List<CustomAccessibilityAction> = emptyList(),
     contentOffset: () -> Offset = { Offset.Zero },
     sourceFindDecoration: SourceFindDecoration? = null,
-    sourceIsCurrent: () -> Boolean = { true }
+    sourceIsCurrent: () -> Boolean = { true },
+    clipBounds: (() -> Rect?)? = null
 ): Modifier {
     val registry = LocalDocumentSelectionLayout.current
         ?: return if (additionalActions.isEmpty()) this else semantics { customActions = additionalActions }
+    val owner = remember(registry, key) { Any() }
     var position by remember(key) { mutableStateOf<Offset?>(null) }
     val currentContentOffset by rememberUpdatedState(contentOffset)
-    val currentPoint by rememberUpdatedState(point)
-    val currentOffset by rememberUpdatedState(offset)
     val currentSourceIsCurrent by rememberUpdatedState(sourceIsCurrent)
-    LaunchedEffect(registry, key, layout, position, sourceFindDecoration) {
+    LaunchedEffect(registry, key, layout, position, point, offset, sourceFindDecoration, clipBounds) {
         val origin = position ?: return@LaunchedEffect
         if (layout == null) return@LaunchedEffect
         snapshotFlow { currentContentOffset() }.collect { displacement ->
-            registry.texts[key] = SelectionTextMeasurement(layout, origin + displacement,
-                currentPoint, currentOffset, sourceFindDecoration, { currentSourceIsCurrent() })
+            // A published layout owns its offset mapping, including during inline substitutions.
+            registry.texts[key] = SelectionTextMeasurement(owner, layout, origin + displacement,
+                point, offset, sourceFindDecoration, { currentSourceIsCurrent() }, clipBounds)
         }
     }
-    DisposableEffect(registry, key) { onDispose { registry.texts.remove(key) } }
+    DisposableEffect(registry, key, owner, layout) { onDispose { registry.release(key, owner) } }
     val label = stringResource(R.string.selection_title)
     return this.onGloballyPositioned { position = it.positionInWindow() }.semantics {
         customActions = additionalActions
@@ -354,9 +399,7 @@ internal fun DocumentSelectionHost(session: EditorSession, modifier: Modifier = 
                 val position = down.position + root.topLeft
                 val endpoints = selectionEndpoints(session.documentSelection)
                 if (endpoints != null && listOf(endpoints.first, endpoints.second).any { point ->
-                    registry.cursor(point)?.let { cursor ->
-                        Rect(cursor.x - edge / 2, cursor.y, cursor.x + edge / 2, cursor.y + edge).contains(position)
-                    } == true
+                    registry.handle(point, root, edge)?.bounds?.contains(position) == true
                 }) return@awaitEachGesture
                 val measurement = registry.hit(position, exact = true)
                 val selected = measurement?.selected(session.documentSelection)
@@ -392,27 +435,39 @@ internal fun DocumentSelectionHost(session: EditorSession, modifier: Modifier = 
         }) {
         CompositionLocalProvider(LocalDocumentSelectionLayout provides registry) { content() }
         Canvas(Modifier.matchParentSize().clipToBounds()) {
-            registry.texts.values.forEach { text ->
-                val range = text.selected(session.documentSelection) ?: return@forEach
-                translate(text.position.x - root.left, text.position.y - root.top) {
-                    drawPath(text.layout.getPathForRange(range.min, range.max), color.copy(alpha = .25f))
+            val selection = session.documentSelection
+            if (selection != null) registry.texts.values.forEach { text ->
+                val range = text.selected(selection) ?: return@forEach
+                val clip = text.clipIn(root).translate(-root.topLeft)
+                clipRect(clip.left, clip.top, clip.right, clip.bottom) {
+                    translate(text.position.x - root.left, text.position.y - root.top) {
+                        drawPath(text.layout.getPathForRange(range.min, range.max), color.copy(alpha = .25f))
+                    }
                 }
             }
             val revision = session.state.metrics?.revision
             if (session.isFindVisible && !session.state.hasActiveDraftChanges && revision != null) {
+                val markers = session.findResults.filter {
+                    it.representation == SearchRepresentation.Source && it.source?.let { range -> range.start == range.end } == true
+                }
+                if (markers.isEmpty()) return@Canvas
                 val findTexts = registry.texts.values.filter { text ->
                     text.sourceFindDecoration?.matchesSource(revision,
                         text.layout.layoutInput.text, text.sourceIsCurrent()) == true
                 }
-                session.findResults.filter { it.source?.let { range -> range.start == range.end } == true }.forEach { result ->
+                markers.forEach { result ->
                     val point = SelectionPoint.Source(result.source!!.start)
-                    findTexts.firstNotNullOfOrNull { text ->
-                        text.sourceFindDecoration?.markerOffset(text.offset(point))
-                            ?.let { offset -> text to offset }
-                    }?.let { (text, offset) ->
-                        val rect = text.layout.getCursorRect(offset)
-                        val origin = text.position - root.topLeft
-                        drawLine(color, origin + rect.topLeft, origin + rect.bottomLeft, 2.dp.toPx())
+                    val candidates = findTexts.asSequence().mapNotNull { text ->
+                        text.sourceFindDecoration?.markerOffset(text.offset(point))?.let { offset ->
+                            SourceFindMarker(offset, text.layout.getCursorRect(offset).translate(text.position), text.clipIn(root))
+                        }
+                    }
+                    visibleSourceFindMarker(candidates)?.let { marker ->
+                        val rect = marker.cursor.translate(-root.topLeft)
+                        val clip = marker.clip.translate(-root.topLeft)
+                        clipRect(clip.left, clip.top, clip.right, clip.bottom) {
+                            drawLine(color, rect.topLeft, rect.bottomLeft, 2.dp.toPx())
+                        }
                     }
                 }
             }
@@ -420,15 +475,18 @@ internal fun DocumentSelectionHost(session: EditorSession, modifier: Modifier = 
         val endpoints = selectionEndpoints(session.documentSelection)
         if (endpoints != null) listOf(true, false).forEach { first ->
             val point = if (first) endpoints.first else endpoints.second
-            val handlePosition = registry.cursor(point)
-            if (handlePosition != null && handlePosition.y in root.top..root.bottom) {
+            val handle = registry.handle(point, root, edge)
+            if (handle != null) {
+                val handlePosition = handle.caret
+                val bounds = handle.bounds
                 val currentEndpoints by rememberUpdatedState(endpoints)
                 val currentHandlePosition by rememberUpdatedState(handlePosition)
                 val description = stringResource(if (first) R.string.selection_start_handle else R.string.selection_end_handle)
                 val previous = stringResource(R.string.selection_boundary_previous)
                 val next = stringResource(R.string.selection_boundary_next)
-                Box(Modifier.offset { IntOffset((handlePosition.x - root.left - edge / 2).roundToInt(), (handlePosition.y - root.top).roundToInt()) }
-                    .size(48.dp).semantics {
+                Box(Modifier.align(androidx.compose.ui.AbsoluteAlignment.TopLeft).absoluteOffset {
+                    IntOffset((bounds.left - root.left).roundToInt(), (bounds.top - root.top).roundToInt())
+                }.size(with(density) { bounds.width.toDp() }, with(density) { bounds.height.toDp() }).clipToBounds().semantics {
                         contentDescription = description
                         customActions = listOf(CustomAccessibilityAction(previous) { registry.moveEndpoint(first, false) },
                             CustomAccessibilityAction(next) { registry.moveEndpoint(first, true) })
@@ -437,17 +495,21 @@ internal fun DocumentSelectionHost(session: EditorSession, modifier: Modifier = 
                             registry.moveEndpoint(first, event.key == Key.DirectionRight) else false
                     }.focusable()
                     .pointerInput(first, registry) {
-                        var position: Offset = checkNotNull(handlePosition)
+                        var position = handlePosition
                         detectDragGestures(onDragStart = {
                             dragAnchor = if (first) currentEndpoints.second else currentEndpoints.first
-                            position = checkNotNull(currentHandlePosition)
+                            position = currentHandlePosition
                             dragPosition = position
                         }, onDragEnd = { dragAnchor = null; dragPosition = null },
                             onDragCancel = { dragAnchor = null; dragPosition = null }) { change, amount ->
                             position += amount; extend(position); change.consume()
                         }
                     }) {
-                    Box(Modifier.padding(start = 16.dp).size(16.dp).background(color, CircleShape))
+                    val dot = minOf(edge / 3, bounds.width, bounds.height)
+                    Box(Modifier.align(androidx.compose.ui.AbsoluteAlignment.TopLeft).absoluteOffset {
+                        IntOffset((handlePosition.x - bounds.left - dot / 2).coerceIn(0f, (bounds.width - dot).coerceAtLeast(0f)).roundToInt(),
+                            (handlePosition.y - bounds.top).coerceIn(0f, (bounds.height - dot).coerceAtLeast(0f)).roundToInt())
+                    }.size(with(density) { dot.toDp() }).background(color, CircleShape))
                 }
             }
         }

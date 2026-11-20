@@ -21,6 +21,7 @@ internal data class MarkdownPreviewLayout(
     val headings: MarkdownHeadingIndex,
     val footnotes: MarkdownFootnoteItemTargets,
     val outline: List<DocumentOutlineEntry> = documentOutline(items),
+    val listContinuationOwners: Map<Int, MarkdownRenderBlock> = emptyMap(),
     val codeCopies: Map<Int, MarkdownCodeCopy> = emptyMap(),
     val illustrations: MarkdownIllustrationPlan = MarkdownIllustrationPlan(emptyList()),
     // Revision-owned and memory-only. Rotation and an unchanged source/preview round trip should
@@ -36,9 +37,24 @@ internal fun prepareMarkdownPreview(blocks: List<MarkdownRenderBlock>): Markdown
         items = items,
         headings = headings,
         footnotes = markdownFootnoteItemTargets(items),
+        listContinuationOwners = markdownListContinuationOwners(blocks),
         codeCopies = markdownCodeCopies(blocks),
         illustrations = MarkdownIllustrationPlan(blocks)
     )
+}
+
+/** Continuation paragraphs carry their nesting depth but omit the original marker number. */
+internal fun markdownListContinuationOwners(blocks: List<MarkdownRenderBlock>): Map<Int, MarkdownRenderBlock> = buildMap {
+    val parents = mutableMapOf<Int, MarkdownRenderBlock>()
+    blocks.forEachIndexed { index, block ->
+        if (block.kind == MarkdownBlockKind.ListItem) {
+            if (block.continuesListItem || block.continuesPrevious) {
+                parents[block.listDepth]?.let { put(index, it) }
+            } else {
+                parents[block.listDepth] = block
+            }
+        }
+    }
 }
 
 /** Joins only fragmented headings so anchors retain their complete Unicode semantics. */

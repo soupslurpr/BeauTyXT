@@ -11,7 +11,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.TextRange
 import dev.soupslurpr.beautyxt.R
+import dev.soupslurpr.beautyxt.document.Utf16Range
 import dev.soupslurpr.beautyxt.ui.UiText
+import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 private const val MAX_RETAINED_UNDO_CHANGES = 128
 
@@ -40,10 +45,16 @@ internal data class SemanticViewportAnchor(
     }
 }
 
+/** Keep at least one pixel of a partially visible anchor line after reflow. */
+internal fun clampViewportTopInset(inset: Int, lineHeight: Float): Int =
+    inset.coerceAtLeast(1 - lineHeight.roundToInt().coerceAtLeast(1))
+
 /** Restores one semantic anchor after an internal bounded-window handoff. */
-internal data class EditWindowScrollRestoration(
+internal class EditWindowScrollRestoration(
     val anchor: SemanticViewportAnchor,
-    val preserveScrollMomentum: Boolean = false
+    val preserveScrollMomentum: Boolean = false,
+    val reason: RestorationReason = RestorationReason.Navigation,
+    val findRange: Utf16Range? = null
 )
 
 /** Returns whether focus collapsed one retained selection to its active-end caret. */
@@ -80,6 +91,7 @@ internal class ActiveEditDraft(
 
     private var viewportAnchor: SemanticViewportAnchor? = null
     private var layoutWidthPixels: Int? = null
+    private var layoutAppearance: TextAppearance? = null
 
     private val initialTextFieldSelection =
         initialDirectedSelection
@@ -168,9 +180,21 @@ internal class ActiveEditDraft(
         selectionBoundaryMessage = EDIT_SELECTION_LIMIT_MESSAGE
     }
 
-    /** Consumes one exact scroll restoration after the bounded field applies it. */
+    /** A user drag takes over the viewport. A cancelled layout leaves the request for its successor. */
+    suspend fun restoreScrollPosition(restoration: EditWindowScrollRestoration, targetScrollPixels: Int,
+        revealFindMatch: suspend () -> Unit) {
+        try {
+            restoreEditWindowScroll(scrollState, targetScrollPixels, restoration.preserveScrollMomentum)
+            revealFindMatch()
+        } catch (_: CancellationException) {
+            currentCoroutineContext().ensureActive()
+        }
+        consumeScrollRestoration(restoration)
+    }
+
+    /** Consumes one exact scroll restoration after the bounded field handles it. */
     fun consumeScrollRestoration(restoration: EditWindowScrollRestoration): Boolean {
-        if (scrollRestoration != restoration) {
+        if (scrollRestoration !== restoration) {
             return false
         }
         scrollRestoration = null
@@ -188,18 +212,21 @@ internal class ActiveEditDraft(
         viewportAnchor = anchor
     }
 
-    /** Restores the retained source point when a new width reflows unchanged text. */
-    fun restoreViewportAfterWidthChange(widthPixels: Int) {
+    /** Restores the retained source point when width or appearance reflows unchanged text. */
+    fun restoreViewportAfterWidthChange(widthPixels: Int, appearance: TextAppearance? = null) {
         require(widthPixels >= 0) { "text layout width must be nonnegative" }
         val previousWidth = layoutWidthPixels
+        val previousAppearance = layoutAppearance
         layoutWidthPixels = widthPixels
-        val anchor = viewportAnchor ?: return
+        layoutAppearance = appearance
+        val pending = scrollRestoration
+        val anchor = pending?.anchor ?: viewportAnchor ?: return
         if (
-            previousWidth != null && previousWidth != widthPixels &&
-            scrollRestoration == null && !hasChanges && textFieldState.composition == null &&
+            previousWidth != null && (previousWidth != widthPixels || previousAppearance != appearance) &&
+            pending?.reason != RestorationReason.Navigation && !hasChanges && textFieldState.composition == null &&
             anchor.revision == edit.snapshot.metrics.revision
         ) {
-            scrollRestoration = EditWindowScrollRestoration(anchor)
+            scrollRestoration = EditWindowScrollRestoration(anchor, reason = RestorationReason.Appearance)
         }
     }
 
