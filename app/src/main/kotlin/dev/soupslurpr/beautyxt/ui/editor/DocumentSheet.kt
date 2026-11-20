@@ -2,6 +2,7 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -25,6 +26,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -37,15 +47,16 @@ import androidx.compose.ui.unit.dp
 
 /** Identifies a transient document tool retained only across configuration changes. */
 internal enum class DocumentToolSheet {
-    Contents
+    Contents, Appearance
 }
 
 /** Displays a bounded modal sheet without serializing document information. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun DocumentSheet(onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+internal fun DocumentSheet(onDismiss: () -> Unit, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        modifier = modifier,
         sheetState = rememberBottomSheetState(
             initialValue = SheetValue.Hidden,
             enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
@@ -133,4 +144,16 @@ internal fun DocumentSheetAction(
             }
         }
     }
+}
+
+/** Give a newly opened tool a keyboard target until one of its controls takes focus. */
+@Composable
+internal fun Modifier.documentToolFocus(tool: Any = Unit): Modifier {
+    val requester = remember { FocusRequester() }
+    val window = LocalWindowInfo.current
+    var hasFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(tool, window.isWindowFocused) {
+        if (window.isWindowFocused && !hasFocus) requester.requestFocus()
+    }
+    return focusRequester(requester).onFocusChanged { hasFocus = it.hasFocus }.focusable()
 }

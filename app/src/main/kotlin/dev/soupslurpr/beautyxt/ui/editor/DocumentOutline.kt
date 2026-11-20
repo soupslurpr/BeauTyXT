@@ -102,10 +102,11 @@ internal fun DocumentOutlineSheet(
     entries: List<DocumentOutlineEntry>,
     documentListState: LazyListState,
     onSelect: (DocumentOutlineEntry) -> Unit,
+    onFind: (Boolean) -> Boolean,
     onDismiss: () -> Unit
 ) {
-    DocumentSheet(onDismiss = onDismiss) {
-        DocumentOutlineContent(title, entries, documentListState, onSelect)
+    DocumentSheet(onDismiss = onDismiss, modifier = Modifier.documentFindShortcuts(onFind)) {
+        DocumentOutlineContent(title, entries, documentListState, onSelect, Modifier.documentToolFocus())
     }
 }
 

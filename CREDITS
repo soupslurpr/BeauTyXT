@@ -31,6 +31,9 @@ dimensions, and upstream automatic mirroring are unchanged.
 - `app/src/main/res/drawable/ic_undo.xml`: adapted from [undo](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/undo/materialsymbolsrounded/undo_24px.xml).
 - `app/src/main/res/drawable/ic_zoom_in.xml`: adapted from [zoom_in](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/zoom_in/materialsymbolsrounded/zoom_in_24px.xml).
 - `app/src/main/res/drawable/ic_zoom_out.xml`: adapted from [zoom_out](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/zoom_out/materialsymbolsrounded/zoom_out_24px.xml).
+- `app/src/main/res/drawable/ic_add.xml`: adapted from [add](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/add/materialsymbolsrounded/add_24px.xml).
+- `app/src/main/res/drawable/ic_error.xml`: adapted from [error](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/error/materialsymbolsrounded/error_24px.xml).
+- `app/src/main/res/drawable/ic_remove.xml`: adapted from [remove](https://github.com/google/material-design-icons/blob/27e9ef1dbeedc13d682fece4a58e1eda4cb0961a/symbols/android/remove/materialsymbolsrounded/remove_24px.xml).
 
 ```text
 
