@@ -2,6 +2,7 @@ package dev.soupslurpr.beautyxt
 
 import android.app.Application
 import android.os.Process
+import dev.soupslurpr.beautyxt.ui.editor.TextAppearanceStore
 import java.io.File
 import java.io.IOException
 import java.nio.file.FileVisitResult
@@ -73,6 +74,8 @@ private fun deleteTreeWithoutFollowingLinks(root: Path) {
 
 /** Removes legacy private state before BeauTyXT exposes any document workflow. */
 class BeauTyXTApplication : Application() {
+    internal val textAppearance by lazy { TextAppearanceStore(this) }
+
     internal lateinit var legacyCleanup: LegacyCleanup
         private set
 
