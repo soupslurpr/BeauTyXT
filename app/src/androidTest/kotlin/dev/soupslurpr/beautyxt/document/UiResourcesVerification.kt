@@ -75,6 +75,9 @@ private fun verifyLaunchThemes(context: Context) {
             context.createConfigurationContext(configuration),
             context.applicationInfo.theme
         )
+        val expectedSurface = themedContext.getColor(
+            if (light) android.R.color.system_surface_light else android.R.color.system_surface_dark
+        )
         themedContext.obtainStyledAttributes(
             intArrayOf(
                 android.R.attr.windowSplashScreenBackground,
@@ -85,13 +88,18 @@ private fun verifyLaunchThemes(context: Context) {
             )
         ).use { attributes ->
             val splash = attributes.getColor(0, Color.TRANSPARENT)
-            val background = if (Color.alpha(splash) == 0) {
-                attributes.getColor(1, Color.TRANSPARENT)
-            } else {
-                splash
+            val windowBackground = attributes.getColor(1, Color.TRANSPARENT)
+            check(Color.alpha(splash) == 255) { "Splash background is not opaque" }
+            check(Color.alpha(windowBackground) == 255) { "Window background is not opaque" }
+            check(splash == expectedSurface) {
+                "Splash background #${splash.toUInt().toString(16)} did not match system surface " +
+                    "#${expectedSurface.toUInt().toString(16)} for night mode $nightMode"
             }
-            check(Color.alpha(background) == 255) { "Launch background is not opaque" }
-            check((Color.luminance(background) > 0.5f) == light) {
+            check(windowBackground == expectedSurface) {
+                "Window background #${windowBackground.toUInt().toString(16)} did not match " +
+                    "system surface #${expectedSurface.toUInt().toString(16)} for night mode $nightMode"
+            }
+            check((Color.luminance(splash) > 0.5f) == light) {
                 "Splash background does not follow night mode $nightMode"
             }
             check(attributes.getBoolean(2, !light) == light) {

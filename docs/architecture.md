@@ -72,7 +72,7 @@ Cleanup failure leaves these workflows gated behind an explicit Retry action;
 closing one activity does not cancel the process-owned cleanup. No persistent
 migration marker is required.
 
-Text appearance is the sole persistent document-view preference. Two global
+Text appearance is the persistent document-view preference. Two global
 groups cover plain text/source and rendered Markdown. Missing settings follow
 app defaults; explicit values remain custom even when equal to the current
 default. A process-owned StateFlow updates open document activities immediately,
@@ -86,6 +86,27 @@ read the settings, documents use defaults and the panel offers Retry loading.
 Reset saved appearance requires confirmation and verifies removal of both
 groups before editing resumes. These settings contain no document identifiers
 and never enter print/PDF configuration or saved source bytes.
+
+App theme is a separate, content-free persistent preference for the app-wide
+True black dark-theme modifier (off by default). When enabled and Android’s
+dark theme is active, `BeauTyXTTheme` sets `background`, `surface`,
+`surfaceDim`, and `surfaceContainerLowest` to `#000000` and aliases
+`onBackground` to `onSurface`, while preserving Android’s dynamic dark
+container ladder, accents, ink, and system contrast levels. Light theme,
+scan-safe QR colors, and vector printing are unaffected. Changes are reachable
+from Home and the editor overflow menu via one App theme dialog, apply
+immediately across open activities without disturbing active drafts, and
+synchronize each activity window background to `colorScheme.surface`. Launch
+themes use Android’s dynamic `system_surface_light` and `system_surface_dark`;
+a cold launch with True black enabled starts from `system_surface_dark` until
+the asynchronous read started in `BeauTyXTApplication.onCreate()` completes.
+Only an explicit toggle or confirmed reset writes to
+`noBackupFilesDir/app-theme.properties`: enabling True black writes the
+canonical ASCII entry `true_black=true\n` via `AtomicFile` and verifies the
+published bytes; returning to default removes the file and verifies that no
+base, `.bak`, or `.new` file remains. Reads are bounded, reject malformed or
+unknown content without rewriting the file, keep standard dark colors active,
+and offer Retry loading and confirmed Reset saved theme.
 
 The document surface alone consumes appearance preferences. Text sizes use sp,
 layout widths use dp, and spacing follows the displayed font size. Android font

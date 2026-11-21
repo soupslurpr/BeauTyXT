@@ -6,14 +6,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.soupslurpr.beautyxt.sharing.IncomingDocumentShare
 import dev.soupslurpr.beautyxt.ui.BeauTyXTApp
 import dev.soupslurpr.beautyxt.ui.LegacyCleanupGate
 import dev.soupslurpr.beautyxt.ui.RequestKeyboardPrivacy
 import dev.soupslurpr.beautyxt.ui.UiText
 import dev.soupslurpr.beautyxt.ui.designsystem.BeauTyXTTheme
+import dev.soupslurpr.beautyxt.ui.designsystem.trueBlackOrDefault
 
 private const val ACTION_ACTIVE_DOCUMENT =
     "dev.soupslurpr.beautyxt.action.ACTIVE_DOCUMENT"
@@ -52,9 +55,11 @@ abstract class DocumentActivity : ComponentActivity() {
             )
         }
 
+        val app = application as BeauTyXTApplication
         setContent {
+            val appThemeState by app.appTheme.state.collectAsStateWithLifecycle()
             RequestKeyboardPrivacy {
-                BeauTyXTTheme {
+                BeauTyXTTheme(trueBlackDarkTheme = appThemeState.trueBlackOrDefault) {
                     LegacyCleanupGate(cleanup = legacyCleanup, onClose = ::finish) {
                         BeauTyXTApp(
                             initialDocumentAction =

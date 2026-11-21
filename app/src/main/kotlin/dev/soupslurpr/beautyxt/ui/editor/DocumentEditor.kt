@@ -60,6 +60,7 @@ import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.ui.BindDocumentNavigationBack
 import dev.soupslurpr.beautyxt.ui.LocalDocumentNavigationBack
 import dev.soupslurpr.beautyxt.ui.PredictiveBackMotionHandler
+import dev.soupslurpr.beautyxt.ui.designsystem.AppThemeDialog
 import dev.soupslurpr.beautyxt.ui.predictiveBackMotion
 import dev.soupslurpr.beautyxt.ui.rememberPredictiveBackMotionState
 import kotlinx.coroutines.delay
@@ -90,8 +91,11 @@ internal fun DocumentEditor(
     val appearanceStore = (context.applicationContext as BeauTyXTApplication).textAppearance
     val storedAppearances by appearanceStore.state.collectAsStateWithLifecycle()
     val appearances = (storedAppearances as? TextAppearanceStoreState.Ready)?.preferences ?: DocumentAppearances()
+    val appThemeStore = (context.applicationContext as BeauTyXTApplication).appTheme
+    val appThemeState by appThemeStore.state.collectAsStateWithLifecycle()
     var appearanceGroup by retain(session) { mutableStateOf(AppearanceGroup.Source) }
     var appearancePanelState by retain(session) { mutableStateOf(TextAppearancePanelState()) }
+    var isAppThemeVisible by retain(session) { mutableStateOf(false) }
     var shortcutsVisible by remember(session) { mutableStateOf(false) }
     if (shortcutsVisible) AlertDialog(onDismissRequest = { shortcutsVisible = false },
         title = { Text(stringResource(R.string.document_keyboard_shortcuts)) },
@@ -581,7 +585,8 @@ internal fun DocumentEditor(
                                         onScanQr = onScanQr,
                                         onReadNfc = onReadNfc,
                                         onKeyboardShortcuts = { shortcutsVisible = true },
-                                        onTextAppearance = requestAppearance
+                                        onTextAppearance = requestAppearance,
+                                        onAppTheme = { isAppThemeVisible = true }
                                     ),
                                     scanQrEnabled = scanQrEnabled && session.canStartQrScan,
                                     readNfcEnabled = readNfcEnabled && session.canStartNfcRead,
@@ -673,7 +678,8 @@ internal fun DocumentEditor(
         session.isFileInfoVisible,
         session.isPrintSetupVisible,
         session.excerptExport.visible,
-        session.sourceConflictResolution
+        session.sourceConflictResolution,
+        isAppThemeVisible
     ) {
         if (
             choosingFormat != null ||
@@ -681,10 +687,23 @@ internal fun DocumentEditor(
             session.isFileInfoVisible ||
             session.isPrintSetupVisible ||
             session.excerptExport.visible ||
-            session.sourceConflictResolution != null
+            session.sourceConflictResolution != null ||
+            isAppThemeVisible
         ) {
             softwareKeyboardController?.hide()
         }
+    }
+    if (isAppThemeVisible) {
+        AppThemeDialog(
+            store = appThemeStore,
+            state = appThemeState,
+            onDismiss = { isAppThemeVisible = false },
+            modifier = Modifier.documentFindShortcuts { replace ->
+                val opened = findShortcut(replace)
+                if (opened) isAppThemeVisible = false
+                opened
+            }
+        )
     }
     if (choosingFormat != null) {
         SaveFormatDialog(

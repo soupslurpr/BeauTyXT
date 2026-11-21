@@ -59,7 +59,8 @@ internal data class EditorNavigationActions(
     val onScanQr: () -> Unit,
     val onReadNfc: () -> Unit,
     val onKeyboardShortcuts: () -> Unit = {},
-    val onTextAppearance: () -> Unit = {}
+    val onTextAppearance: () -> Unit = {},
+    val onAppTheme: () -> Unit = {}
 )
 
 /** Describes the single operation that currently offers cancellation. */
@@ -241,6 +242,12 @@ internal fun EditorTopBar(
                             label = stringResource(R.string.appearance_title),
                             leadingIcon = { Icon(painterResource(R.drawable.ic_tune), contentDescription = null) },
                             onClick = { onOverflowExpandedChange(false); actions.onTextAppearance() }
+                        )
+                        ActionMenuItem(
+                            shape = MenuDefaults.middleItemShape,
+                            label = stringResource(R.string.app_theme_title),
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_tune), contentDescription = null) },
+                            onClick = { onOverflowExpandedChange(false); actions.onAppTheme() }
                         )
                         if (session.hasPreviousLocation || session.hasNextLocation) {
                             ActionMenuItem(

@@ -127,4 +127,18 @@
     <string name="appearance_reset_saved_confirm">Reset both groups</string>
     <string name="appearance_retry">Retry saving</string>
     <string name="appearance_loading">Loading appearance settings…</string>
+
+    <!-- App-wide theme preferences; independent of document typography and print settings. -->
+    <string name="app_theme_title">App theme</string>
+    <string name="app_theme_true_black">True black</string>
+    <string name="app_theme_true_black_summary">Use a black background throughout BeauTyXT when Android’s dark theme is on.</string>
+    <string name="app_theme_loading">Loading theme settings…</string>
+    <string name="app_theme_load_failed">Saved theme could not be loaded. BeauTyXT is using the default theme colors.</string>
+    <string name="app_theme_retry_load">Retry loading</string>
+    <string name="app_theme_reset_saved_action">Reset saved theme…</string>
+    <string name="app_theme_reset_saved_title">Reset saved theme?</string>
+    <string name="app_theme_reset_saved_message">BeauTyXT will use the default theme colors.</string>
+    <string name="app_theme_reset_saved_confirm">Reset</string>
+    <string name="app_theme_save_failed">Theme changes could not be saved. They still apply while BeauTyXT is open.</string>
+    <string name="app_theme_retry_save">Retry saving</string>
 </resources>

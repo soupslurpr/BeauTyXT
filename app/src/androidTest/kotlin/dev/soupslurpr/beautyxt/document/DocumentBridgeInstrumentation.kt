@@ -414,6 +414,8 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 verifyPhase("navigation history controls") { verifyNavigationHistoryControls() }
                 verifyPhase("reading match visibility") { verifyReadingMatchVisibility() }
                 verifyPhase("text appearance") { verifyTextAppearance() }
+                verifyPhase("app theme") { verifyAppTheme() }
+                verifyPhase("app theme storage recovery") { verifyAppThemeStorageRecovery() }
                 verifyPhase("source appearance geometry") { verifySourceAppearanceGeometry() }
                 verifyPhase("appearance storage recovery") { verifyAppearanceStorageRecovery() }
                 verifyOptInPhase("appearance adaptation") { verifyTextAppearanceAdaptation() }

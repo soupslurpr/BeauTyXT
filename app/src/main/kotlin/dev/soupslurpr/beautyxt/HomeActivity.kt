@@ -7,12 +7,21 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.soupslurpr.beautyxt.ui.HomeNavigation
 import dev.soupslurpr.beautyxt.ui.HomeScreen
 import dev.soupslurpr.beautyxt.ui.LegacyCleanupGate
 import dev.soupslurpr.beautyxt.ui.OpenStatus
+import dev.soupslurpr.beautyxt.ui.designsystem.AppThemeDialog
+import dev.soupslurpr.beautyxt.ui.designsystem.AppThemeStore
+import dev.soupslurpr.beautyxt.ui.designsystem.AppThemeStoreState
 import dev.soupslurpr.beautyxt.ui.designsystem.BeauTyXTTheme
+import dev.soupslurpr.beautyxt.ui.designsystem.trueBlackOrDefault
 
 /** Hosts BeauTyXT's stable launcher workbench. */
 class HomeActivity : ComponentActivity() {
@@ -24,14 +33,21 @@ class HomeActivity : ComponentActivity() {
             PackageManager.PackageInfoFlags.of(0)
         )
         val versionName = packageInfo.versionName ?: packageInfo.longVersionCode.toString()
+        val app = application as BeauTyXTApplication
         setContent {
-            BeauTyXTTheme {
+            val appThemeState by app.appTheme.state.collectAsStateWithLifecycle()
+            BeauTyXTTheme(trueBlackDarkTheme = appThemeState.trueBlackOrDefault) {
                 LegacyCleanupGate(
-                    cleanup = (application as BeauTyXTApplication).legacyCleanup,
+                    cleanup = app.legacyCleanup,
                     onClose = ::finish
                 ) {
                     HomeNavigation(versionName = versionName) { onAbout, onDocument ->
-                        HomeActivityContent(onAbout = onAbout, onDocument = onDocument)
+                        HomeActivityContent(
+                            appThemeStore = app.appTheme,
+                            appThemeState = appThemeState,
+                            onAbout = onAbout,
+                            onDocument = onDocument
+                        )
                     }
                 }
             }
@@ -40,7 +56,12 @@ class HomeActivity : ComponentActivity() {
 
     /** Displays Home and starts each action in its own document navigation entry. */
     @Composable
-    private fun HomeActivityContent(onAbout: () -> Unit, onDocument: (InitialDocumentAction) -> Unit) {
+    private fun HomeActivityContent(
+        appThemeStore: AppThemeStore,
+        appThemeState: AppThemeStoreState,
+        onAbout: () -> Unit,
+        onDocument: (InitialDocumentAction) -> Unit
+    ) {
         val hasCamera =
             remember {
                 packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
@@ -49,6 +70,7 @@ class HomeActivity : ComponentActivity() {
             remember {
                 getSystemService(NfcManager::class.java)?.defaultAdapter != null
             }
+        var isAppThemeDialogVisible by rememberSaveable { mutableStateOf(false) }
         HomeScreen(
             openStatus = OpenStatus.Idle,
             isNewDocumentEnabled = true,
@@ -61,7 +83,15 @@ class HomeActivity : ComponentActivity() {
             isNfcAvailable = hasNfc,
             isReadNfcEnabled = hasNfc,
             onReadNfc = { onDocument(InitialDocumentAction.ReadNfc) },
+            onAppTheme = { isAppThemeDialogVisible = true },
             onAbout = onAbout
         )
+        if (isAppThemeDialogVisible) {
+            AppThemeDialog(
+                store = appThemeStore,
+                state = appThemeState,
+                onDismiss = { isAppThemeDialogVisible = false }
+            )
+        }
     }
 }
