@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Base.Theme.BeauTyXT" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/system_surface_dark</item>
+        <item name="android:windowSplashScreenBackground">@android:color/system_surface_dark</item>
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>

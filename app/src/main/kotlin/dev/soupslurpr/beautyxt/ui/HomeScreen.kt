@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -133,7 +134,8 @@ internal fun HomeScreen(
     isReadNfcEnabled: Boolean,
     onReadNfc: () -> Unit,
     onAbout: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onAppTheme: () -> Unit = {}
 ) {
     Surface(modifier = modifier.fillMaxSize()) {
         Box(
@@ -158,6 +160,7 @@ internal fun HomeScreen(
                 isNfcAvailable = isNfcAvailable,
                 isReadNfcEnabled = isReadNfcEnabled,
                 onReadNfc = onReadNfc,
+                onAppTheme = onAppTheme,
                 onAbout = onAbout,
                 modifier = Modifier.fillMaxSize()
             )
@@ -179,6 +182,7 @@ private fun HomeContent(
     isNfcAvailable: Boolean,
     isReadNfcEnabled: Boolean,
     onReadNfc: () -> Unit,
+    onAppTheme: () -> Unit,
     onAbout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -204,7 +208,14 @@ private fun HomeContent(
                     onReadNfc = onReadNfc,
                     modifier = Modifier.fillMaxWidth()
                 )
-                TextButton(onClick = onAbout) { Text(stringResource(R.string.home_about)) }
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    TextButton(onClick = onAppTheme) { Text(stringResource(R.string.app_theme_title)) }
+                    TextButton(onClick = onAbout) { Text(stringResource(R.string.home_about)) }
+                }
             }
         }
 

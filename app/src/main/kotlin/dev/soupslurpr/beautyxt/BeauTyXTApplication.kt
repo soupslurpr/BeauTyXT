@@ -2,6 +2,7 @@ package dev.soupslurpr.beautyxt
 
 import android.app.Application
 import android.os.Process
+import dev.soupslurpr.beautyxt.ui.designsystem.AppThemeStore
 import dev.soupslurpr.beautyxt.ui.editor.TextAppearanceStore
 import java.io.File
 import java.io.IOException
@@ -76,6 +77,9 @@ private fun deleteTreeWithoutFollowingLinks(root: Path) {
 class BeauTyXTApplication : Application() {
     internal val textAppearance by lazy { TextAppearanceStore(this) }
 
+    internal lateinit var appTheme: AppThemeStore
+        private set
+
     internal lateinit var legacyCleanup: LegacyCleanup
         private set
 
@@ -84,6 +88,7 @@ class BeauTyXTApplication : Application() {
         if (Process.myUid() != applicationInfo.uid) {
             return
         }
+        appTheme = AppThemeStore(this)
         legacyCleanup = LegacyCleanup { removeLegacyPrivateState(File(applicationInfo.dataDir)) }
         legacyCleanup.start()
     }
