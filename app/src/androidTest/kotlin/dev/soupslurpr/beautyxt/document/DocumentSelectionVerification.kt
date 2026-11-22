@@ -401,6 +401,10 @@ private fun Instrumentation.verifyWideAppearanceShortcuts() {
             }
             check(pane.windowId == window.decorView.createAccessibilityNodeInfo().windowId)
             check(session.activeDraft?.isEditorFocused == false && !imeVisible())
+            // The overflow menu owns a separate popup window until its exit animation finishes.
+            waitForActivityWindowFocus(activity)
+            waitForAccessibilityIdle()
+            runBlocking { repeat(2) { awaitFrame() } }
             if (key == KeyEvent.KEYCODE_ESCAPE) {
                 documentKey(key)
                 awaitReadingCondition("Escape did not dismiss the appearance pane") {
