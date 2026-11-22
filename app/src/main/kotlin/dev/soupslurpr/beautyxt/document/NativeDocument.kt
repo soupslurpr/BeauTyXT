@@ -21,6 +21,7 @@ internal object NativeDocument {
     @JvmStatic external fun readRange(handle: Long, revision: Long, start: Long, end: Long): String
     @JvmStatic external fun positionAt(handle: Long, revision: Long, offset: Long): LongArray
     @JvmStatic external fun replaceBatch(handle: Long, revision: Long, packet: ByteArray): ByteArray
+    @JvmStatic external fun diffSnapshots(externalSnapshotHandle: Long, localSnapshotHandle: Long): ByteArray
 
     @JvmStatic external fun beginInsertion(handle: Long, revision: Long, start: Long, end: Long)
     @JvmStatic external fun appendInsertion(handle: Long, revision: Long, chunk: ByteArray)

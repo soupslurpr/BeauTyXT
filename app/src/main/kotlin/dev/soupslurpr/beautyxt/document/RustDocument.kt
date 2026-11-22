@@ -1,7 +1,10 @@
 package dev.soupslurpr.beautyxt.document
 
+import java.util.concurrent.atomic.AtomicLong
+
 private const val CLOSED_DOCUMENT_HANDLE = 0L
 private const val CLOSED_SNAPSHOT_HANDLE = 0L
+private val NEXT_SNAPSHOT_LOCK_ORDER_ID = AtomicLong(0L)
 private const val NATIVE_FIND_DIRECTION_FORWARD = 0
 private const val NATIVE_FIND_DIRECTION_BACKWARD = 1
 private const val SOURCE_SAVE_PACKAGE_METRIC_COUNT = 5
@@ -310,6 +313,7 @@ internal class RustDocument private constructor(private var nativeHandle: Long) 
 /** Owns one native immutable revision until it is streamed or closed. */
 private class RustDocumentSnapshot(private var nativeHandle: Long) : EditorDocumentSnapshot {
     private val snapshotLock = Any()
+    private val lockOrderId = NEXT_SNAPSHOT_LOCK_ORDER_ID.incrementAndGet()
     private var preparedPackageMetrics: SourceSavePackageMetrics? = null
 
     override fun metrics(): DocumentMetrics = synchronized(snapshotLock) {
@@ -320,6 +324,29 @@ private class RustDocumentSnapshot(private var nativeHandle: Long) : EditorDocum
     override fun duplicate(): EditorDocumentSnapshot = synchronized(snapshotLock) {
         check(nativeHandle != CLOSED_SNAPSHOT_HANDLE) { "snapshot is closed" }
         RustDocumentSnapshot(NativeDocument.duplicateSnapshot(nativeHandle))
+    }
+
+    override fun diffWith(local: EditorDocumentSnapshot): DocumentDiff {
+        val localRust = local as? RustDocumentSnapshot
+            ?: return super.diffWith(local)
+        if (this === localRust) {
+            val packet = synchronized(snapshotLock) {
+                check(nativeHandle != CLOSED_SNAPSHOT_HANDLE) { "snapshot is closed" }
+                NativeDocument.diffSnapshots(nativeHandle, nativeHandle)
+            }
+            return DocumentDiffPacketDecoder.decode(packet)
+        }
+        // Acquire locks in globally unique monotonic order to guarantee deadlock freedom.
+        val firstLock = if (lockOrderId < localRust.lockOrderId) snapshotLock else localRust.snapshotLock
+        val secondLock = if (firstLock === snapshotLock) localRust.snapshotLock else snapshotLock
+        val packet = synchronized(firstLock) {
+            synchronized(secondLock) {
+                check(nativeHandle != CLOSED_SNAPSHOT_HANDLE) { "external snapshot is closed" }
+                check(localRust.nativeHandle != CLOSED_SNAPSHOT_HANDLE) { "local snapshot is closed" }
+                NativeDocument.diffSnapshots(nativeHandle, localRust.nativeHandle)
+            }
+        }
+        return DocumentDiffPacketDecoder.decode(packet)
     }
 
     init {
