@@ -110,6 +110,7 @@ internal fun PrintSetupSheet(session: EditorSession) {
     ModalBottomSheet(
         onDismissRequest = session::dismissPrintSetup,
         sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         dragHandle = if (scrollActions) null else ({ BottomSheetDefaults.DragHandle() })
     ) {
         Column(
@@ -561,7 +562,7 @@ private fun PrintSetupToggleItem(
     )
 }
 
-/** Displays two independent physical margin fields. */
+/** Displays two independent physical margin fields, stacking on narrow or large-text layouts. */
 @Composable
 private fun MarginFieldRow(
     draft: PrintSetupDraft,
@@ -572,26 +573,61 @@ private fun MarginFieldRow(
     invalidFields: Set<PrintMarginField>,
     onChange: ((PrintSetupDraft) -> PrintSetupDraft) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(PrintSetupControlSpacing)
-    ) {
-        PrintMarginTextField(
-            field = firstField,
-            value = firstValue,
-            unit = draft.marginUnit,
-            isError = firstField in invalidFields,
-            onValueChange = { value -> onChange { current -> current.withMargin(firstField, value) } },
-            modifier = Modifier.weight(1f)
-        )
-        PrintMarginTextField(
-            field = secondField,
-            value = secondValue,
-            unit = draft.marginUnit,
-            isError = secondField in invalidFields,
-            onValueChange = { value -> onChange { current -> current.withMargin(secondField, value) } },
-            modifier = Modifier.weight(1f)
-        )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val stacked = usesStackedPrintMarginFields(maxWidth, LocalDensity.current.fontScale)
+        if (stacked) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(PrintSetupControlSpacing)
+            ) {
+                PrintMarginTextField(
+                    field = firstField,
+                    value = firstValue,
+                    unit = draft.marginUnit,
+                    isError = firstField in invalidFields,
+                    onValueChange = { value ->
+                        onChange { current -> current.withMargin(firstField, value) }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                PrintMarginTextField(
+                    field = secondField,
+                    value = secondValue,
+                    unit = draft.marginUnit,
+                    isError = secondField in invalidFields,
+                    onValueChange = { value ->
+                        onChange { current -> current.withMargin(secondField, value) }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(PrintSetupControlSpacing)
+            ) {
+                PrintMarginTextField(
+                    field = firstField,
+                    value = firstValue,
+                    unit = draft.marginUnit,
+                    isError = firstField in invalidFields,
+                    onValueChange = { value ->
+                        onChange { current -> current.withMargin(firstField, value) }
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                PrintMarginTextField(
+                    field = secondField,
+                    value = secondValue,
+                    unit = draft.marginUnit,
+                    isError = secondField in invalidFields,
+                    onValueChange = { value ->
+                        onChange { current -> current.withMargin(secondField, value) }
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
     }
 }
 

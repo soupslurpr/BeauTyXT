@@ -174,7 +174,10 @@ private fun selectionBackEvent(progress: Float) = BackEventCompat(
 private fun Instrumentation.requireNoReadingSelectionMenu() {
     val deadline = SystemClock.uptimeMillis() + 5_000L
     while (SystemClock.uptimeMillis() < deadline) {
-        val menu = uiAutomation.rootInActiveWindow?.findNode { it.text?.toString() in listOf("Copy", "Select all") }
+        val menu = uiAutomation.rootInActiveWindow?.findNode {
+            it.text?.toString() in listOf("Copy", "Select all") ||
+                it.contentDescription?.toString() == "Copy"
+        }
         if (menu == null) return
         SystemClock.sleep(20L)
     }
@@ -183,7 +186,9 @@ private fun Instrumentation.requireNoReadingSelectionMenu() {
 
 /** Find Copy in the document selection bar or a platform selection window. */
 private fun Instrumentation.findReadingCopyMenu(): AccessibilityNodeInfo? =
-    uiAutomation.rootInActiveWindow?.findNode { it.text?.toString() == "Copy" }
+    uiAutomation.rootInActiveWindow?.findNode {
+        it.text?.toString() == "Copy" || it.contentDescription?.toString() == "Copy"
+    }
             ?.let { generateSequence(it) { node -> node.parent } }
             ?.firstOrNull { it.isClickable && it.isEnabled }
 

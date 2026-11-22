@@ -5,7 +5,9 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
@@ -20,13 +22,18 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
+
+private val CodeHeaderSingleRowMinWidth = 360.dp
+private val CopyOnlyCodeHeaderSingleRowMinWidth = 240.dp
 
 internal val LocalMarkdownCodeCopies =
     staticCompositionLocalOf<Map<Int, MarkdownCodeCopy>> { emptyMap() }
@@ -44,19 +51,9 @@ internal fun MarkdownCodeHeader(
     var copyFailed by remember(copy) { mutableStateOf(false) }
     if (metadata.isEmpty() && copy == null) return
     Column(verticalArrangement = Arrangement.spacedBy(EditorCompactSpacing)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(EditorCompactSpacing),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = if (metadata.isEmpty()) stringResource(R.string.markdown_code) else metadata,
-                modifier = Modifier.weight(1f),
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            extraAction?.invoke()
+        val headerLabel = if (metadata.isEmpty()) stringResource(R.string.markdown_code) else metadata
+        @Composable
+        fun copyAction() {
             if (copy != null) {
                 TextButton(
                     onClick = { copyFailed = !copyMarkdownCode(context, copy) },
@@ -64,6 +61,52 @@ internal fun MarkdownCodeHeader(
                     modifier = Modifier.semantics { contentDescription = copyLabel }
                 ) {
                     Text(stringResource(R.string.markdown_copy))
+                }
+            }
+        }
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val fontScale = maxOf(1f, LocalDensity.current.fontScale)
+            val wrapActionsBelow = when {
+                extraAction != null -> maxWidth < CodeHeaderSingleRowMinWidth * fontScale
+                copy != null -> maxWidth < CopyOnlyCodeHeaderSingleRowMinWidth * fontScale
+                else -> false
+            }
+            if (wrapActionsBelow) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(EditorCompactSpacing)
+                ) {
+                    Text(
+                        text = headerLabel,
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(EditorCompactSpacing),
+                        verticalArrangement = Arrangement.spacedBy(EditorCompactSpacing),
+                        itemVerticalAlignment = Alignment.CenterVertically
+                    ) {
+                        extraAction?.invoke()
+                        copyAction()
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(EditorCompactSpacing),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = headerLabel,
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    extraAction?.invoke()
+                    copyAction()
                 }
             }
         }

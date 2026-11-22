@@ -693,7 +693,7 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
             }
         }
         if (!session.isFindVisible) {
-            HorizontalDivider()
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             DocumentViewportFooter(
                 visibleRange = visibleLineRange,
                 fallbackLogicalLine = firstCachedLogicalLine,
@@ -784,7 +784,7 @@ private fun DocumentViewportFooter(
     val navigationLogicalLine = visibleRange?.firstLogicalLine ?: fallbackLogicalLine
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant
     ) {
         Row(

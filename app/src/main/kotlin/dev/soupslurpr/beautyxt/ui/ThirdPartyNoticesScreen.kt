@@ -1,7 +1,11 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class
+)
 
 package dev.soupslurpr.beautyxt.ui
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -10,9 +14,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +41,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private const val NoticesLinesPerSection = 64
+private val NoticesContentMaxWidth = 680.dp
 private val NoticesHorizontalPadding = 20.dp
 private val NoticesVerticalPadding = 16.dp
 
@@ -41,6 +49,7 @@ private val NoticesVerticalPadding = 16.dp
 @Composable
 internal fun ThirdPartyNoticesScreen(onBack: () -> Unit) {
     val resources = LocalResources.current
+    val listState = rememberLazyListState()
     val sections by produceState<List<String>?>(initialValue = null, resources) {
         value = withContext(Dispatchers.IO) {
             resources.openRawResource(R.raw.third_party_notices).bufferedReader().use { reader ->
@@ -52,24 +61,35 @@ internal fun ThirdPartyNoticesScreen(onBack: () -> Unit) {
             }
         }
     }
+    val dividerAlpha by animateFloatAsState(
+        targetValue = if (sections != null && listState.canScrollBackward) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "noticesTopBarDividerAlpha"
+    )
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.about_licenses)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_arrow_back),
-                            contentDescription = stringResource(R.string.navigation_back)
+            Box {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.about_licenses)) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_arrow_back),
+                                contentDescription = stringResource(R.string.navigation_back)
+                            )
+                        }
+                    },
+                    windowInsets =
+                        WindowInsets.safeDrawing.only(
+                            WindowInsetsSides.Top + WindowInsetsSides.Horizontal
                         )
-                    }
-                },
-                windowInsets =
-                    WindowInsets.safeDrawing.only(
-                        WindowInsetsSides.Top + WindowInsetsSides.Horizontal
-                    )
-            )
+                )
+                HorizontalDivider(
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = dividerAlpha)
+                )
+            }
         },
         contentWindowInsets =
             WindowInsets.safeDrawing.only(
@@ -85,20 +105,26 @@ internal fun ThirdPartyNoticesScreen(onBack: () -> Unit) {
                 Text(stringResource(R.string.about_loading_licenses))
             }
         } else {
-            SelectionContainer {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(contentPadding),
-                    contentPadding = PaddingValues(
-                        horizontal = NoticesHorizontalPadding,
-                        vertical = NoticesVerticalPadding
-                    )
-                ) {
-                    items(loadedSections) { section ->
-                        Text(
-                            text = section,
-                            fontFamily = FontFamily.Monospace,
-                            style = MaterialTheme.typography.bodySmall
+            Box(
+                modifier = Modifier.fillMaxSize().padding(contentPadding),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                SelectionContainer {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.widthIn(max = NoticesContentMaxWidth).fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            horizontal = NoticesHorizontalPadding,
+                            vertical = NoticesVerticalPadding
                         )
+                    ) {
+                        items(loadedSections) { section ->
+                            Text(
+                                text = section,
+                                fontFamily = FontFamily.Monospace,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 }
             }

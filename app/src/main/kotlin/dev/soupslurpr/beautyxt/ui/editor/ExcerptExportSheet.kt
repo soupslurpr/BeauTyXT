@@ -465,23 +465,76 @@ private fun ExcerptPrintSettings(controller: ExcerptExportController) {
             SingleChoiceOption(stringResource(if (unit == PrintMarginUnit.Inches) R.string.print_inches else R.string.print_millimetres),
                 draft.marginUnit == unit, { updateDraft { convertPrintMarginUnit(it, unit) } }, enabled)
         })
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(Triple(PrintMarginField.Top, R.string.print_margin_top, draft.topMargin),
-                Triple(PrintMarginField.Bottom, R.string.print_margin_bottom, draft.bottomMargin),
-                Triple(PrintMarginField.Left, R.string.print_margin_left, draft.leftMargin),
-                Triple(PrintMarginField.Right, R.string.print_margin_right, draft.rightMargin)).forEach { (field, label, value) ->
-                val unit = stringResource(if (draft.marginUnit == PrintMarginUnit.Inches) R.string.print_inch_unit else R.string.print_millimetre_unit)
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val stacked = usesStackedPrintMarginFields(maxWidth, LocalDensity.current.fontScale)
+            val unit = stringResource(
+                if (draft.marginUnit == PrintMarginUnit.Inches) {
+                    R.string.print_inch_unit
+                } else {
+                    R.string.print_millimetre_unit
+                }
+            )
+            @Composable
+            fun marginField(field: PrintMarginField, label: Int, value: String, fieldModifier: Modifier) {
                 val invalid = field in validation.invalidMarginFields
-                OutlinedTextField(value, { value -> updateDraft { current -> when (field) {
-                    PrintMarginField.Top -> current.copy(topMargin = value)
-                    PrintMarginField.Bottom -> current.copy(bottomMargin = value)
-                    PrintMarginField.Left -> current.copy(leftMargin = value)
-                    PrintMarginField.Right -> current.copy(rightMargin = value)
-                } } }, enabled = enabled, label = { Text(stringResource(label)) }, suffix = { Text(unit) }, singleLine = true,
-                    isError = invalid, supportingText = if (invalid) ({
-                        Text(stringResource(R.string.print_margin_error, maximumPrintMarginText(draft.marginUnit), unit))
-                    }) else null,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.width(130.dp))
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { updated ->
+                        updateDraft { current ->
+                            when (field) {
+                                PrintMarginField.Top -> current.copy(topMargin = updated)
+                                PrintMarginField.Bottom -> current.copy(bottomMargin = updated)
+                                PrintMarginField.Left -> current.copy(leftMargin = updated)
+                                PrintMarginField.Right -> current.copy(rightMargin = updated)
+                            }
+                        }
+                    },
+                    enabled = enabled,
+                    label = { Text(stringResource(label)) },
+                    suffix = { Text(unit) },
+                    singleLine = true,
+                    isError = invalid,
+                    supportingText = if (invalid) {
+                        {
+                            Text(
+                                stringResource(
+                                    R.string.print_margin_error,
+                                    maximumPrintMarginText(draft.marginUnit),
+                                    unit
+                                )
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = fieldModifier
+                )
+            }
+            val pairs = listOf(
+                Triple(PrintMarginField.Top, R.string.print_margin_top, draft.topMargin) to
+                    Triple(PrintMarginField.Bottom, R.string.print_margin_bottom, draft.bottomMargin),
+                Triple(PrintMarginField.Left, R.string.print_margin_left, draft.leftMargin) to
+                    Triple(PrintMarginField.Right, R.string.print_margin_right, draft.rightMargin)
+            )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                pairs.forEach { (first, second) ->
+                    if (stacked) {
+                        marginField(first.first, first.second, first.third, Modifier.fillMaxWidth())
+                        marginField(second.first, second.second, second.third, Modifier.fillMaxWidth())
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            marginField(first.first, first.second, first.third, Modifier.weight(1f))
+                            marginField(second.first, second.second, second.third, Modifier.weight(1f))
+                        }
+                    }
+                }
             }
         }
     }

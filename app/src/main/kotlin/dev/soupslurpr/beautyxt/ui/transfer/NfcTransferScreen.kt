@@ -137,12 +137,16 @@ internal fun NfcReadScreen(
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     var isNfcEnabled by remember(adapter) { mutableStateOf(adapter.isEnabled) }
+    var settingsUnavailable by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<NfcScreenStatus>(NfcScreenStatus.Waiting) }
     val currentOnReceived by rememberUpdatedState(onReceived)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         isNfcEnabled = adapter.isEnabled
-        if (isNfcEnabled && status != NfcScreenStatus.Waiting) {
-            status = NfcScreenStatus.Waiting
+        if (isNfcEnabled) {
+            settingsUnavailable = false
+            if (status != NfcScreenStatus.Waiting) {
+                status = NfcScreenStatus.Waiting
+            }
         }
     }
     LifecycleResumeEffect(activity, processor, isNfcEnabled) {
@@ -174,26 +178,32 @@ internal fun NfcReadScreen(
     }
     NfcTransferScaffold(
         title = stringResource(R.string.nfc_read_title),
-        heading = if (isNfcEnabled) {
-            stringResource(
-                R.string.nfc_ready_receive
-            )
-        } else {
-            stringResource(R.string.nfc_off)
-        },
+        heading =
+            when {
+                !isNfcEnabled -> stringResource(R.string.nfc_off)
+                status == NfcScreenStatus.Working -> stringResource(R.string.nfc_reading_heading)
+                status is NfcScreenStatus.Failed -> stringResource(R.string.nfc_read_failed_heading)
+                else -> stringResource(R.string.nfc_ready_receive)
+            },
         message =
             if (isNfcEnabled) {
                 status.message(
                     waitingMessage = NFC_READ_WAITING_MESSAGE,
                     workingMessage = NFC_READING_MESSAGE
                 ).asString()
+            } else if (settingsUnavailable) {
+                stringResource(R.string.nfc_settings_unavailable)
             } else {
                 NFC_DISABLED_MESSAGE.asString()
             },
         isWorking = isNfcEnabled && status == NfcScreenStatus.Working,
         disclosure =
             stringResource(R.string.nfc_read_disclosure),
-        onOpenNfcSettings = if (isNfcEnabled) null else ({ context.openNfcSettings() }),
+        onOpenNfcSettings = if (isNfcEnabled) {
+            null
+        } else {
+            { settingsUnavailable = !context.openNfcSettings() }
+        },
         onClose = onClose,
         modifier = if (navigationClosesScreen) {
             modifier
@@ -216,6 +226,7 @@ internal fun NfcWriteScreen(
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     var isNfcEnabled by remember(adapter) { mutableStateOf(adapter.isEnabled) }
+    var settingsUnavailable by remember { mutableStateOf(false) }
     var state by retain(ready.generation) { mutableStateOf<NfcWriteState>(if (ready.armedOnOpen) NfcWriteState.Armed else NfcWriteState.Ready) }
     val isArmed = state.isArmed
     val isWorking = state == NfcWriteState.Writing
@@ -236,7 +247,9 @@ internal fun NfcWriteScreen(
     val currentOnWritten by rememberUpdatedState(onWritten)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         isNfcEnabled = adapter.isEnabled
-        if (!isNfcEnabled) {
+        if (isNfcEnabled) {
+            settingsUnavailable = false
+        } else {
             state = state.paused()
         }
     }
@@ -271,7 +284,11 @@ internal fun NfcWriteScreen(
             DocumentFormat.Markdown -> stringResource(R.string.format_markdown)
         }
     val message = if (!isNfcEnabled) {
-        NFC_DISABLED_MESSAGE
+        if (settingsUnavailable) {
+            UiText.Resource(R.string.nfc_settings_unavailable)
+        } else {
+            NFC_DISABLED_MESSAGE
+        }
     } else {
         when (val currentState = state) {
             NfcWriteState.Ready ->
@@ -290,6 +307,8 @@ internal fun NfcWriteScreen(
         heading =
             when {
                 !isNfcEnabled -> stringResource(R.string.nfc_off)
+                state == NfcWriteState.Writing -> stringResource(R.string.nfc_writing_heading)
+                state is NfcWriteState.Failed -> stringResource(R.string.nfc_write_failed_heading)
                 isArmed -> stringResource(R.string.nfc_bring_tag)
                 else -> stringResource(R.string.nfc_confirm_write)
             },
@@ -306,7 +325,11 @@ internal fun NfcWriteScreen(
                     formatTransferByteCount(TransferProtocol.MAX_NFC_TEXT_BYTES),
                     formatTransferByteCount(ndefMessageBytes)
                 ),
-        onOpenNfcSettings = if (isNfcEnabled) null else ({ context.openNfcSettings() }),
+        onOpenNfcSettings = if (isNfcEnabled) {
+            null
+        } else {
+            { settingsUnavailable = !context.openNfcSettings() }
+        },
         primaryAction =
             if (isNfcEnabled && !isArmed) {
                 NfcAction(label = stringResource(R.string.nfc_start_writing)) {
@@ -821,8 +844,9 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 }
 
 /** Opens Android's NFC settings without retaining transfer state outside memory. */
-private fun Context.openNfcSettings() {
-    try {
-        startActivity(Intent(Settings.ACTION_NFC_SETTINGS))
-    } catch (_: RuntimeException) {}
+private fun Context.openNfcSettings(): Boolean = try {
+    startActivity(Intent(Settings.ACTION_NFC_SETTINGS))
+    true
+} catch (_: RuntimeException) {
+    false
 }

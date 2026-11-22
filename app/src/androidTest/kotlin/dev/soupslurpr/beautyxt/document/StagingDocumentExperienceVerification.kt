@@ -174,10 +174,10 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
                 putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
                 putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, 1)
             }))
-            requireActionableText("Selection actions").performRequiredClick()
+            requireActionableContentDescription("Selection actions").performRequiredClick()
             requireActionableText("Select all").performRequiredClick()
             runOnMainSync { clipboard.setPrimaryClip(ClipData.newPlainText("Replacement test", "replacement\r\n")) }
-            requireActionableText("Selection actions").performRequiredClick()
+            requireActionableContentDescription("Selection actions").performRequiredClick()
             requireActionableText("Paste").performRequiredClick()
             awaitSaved("\uFEFFreplacement\r\n")
             requireActionableContentDescription("Undo").performRequiredClick()
@@ -267,9 +267,9 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, paragraph.length)
         }))
-        requireActionableText("Send/export")
+        requireActionableContentDescription("Send/export")
         capture("document-experience-reading-selection")
-        requireActionableText("Send/export").performRequiredClick()
+        requireActionableContentDescription("Send/export").performRequiredClick()
         waitForAccessibilityNode("selected output scope") { it.text?.toString() == "Selected text only" }
         requireActionableText("Share text")
         capture("export-staging-selection")
@@ -285,12 +285,14 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
             val home = checkNotNull(localActivity)
             // Back dismisses each document layer before it can pop the navigation entry.
             key(KeyEvent.KEYCODE_BACK)
-            requireActionableText("Send/export")
+            requireActionableContentDescription("Send/export")
             key(KeyEvent.KEYCODE_BACK)
             waitForAccessibilityIdle()
             uiAutomation.clearCache()
             requireActionableContentDescription("Show source text")
-            check(uiAutomation.rootInActiveWindow?.findNode { it.text?.toString() == "Send/export" } == null)
+            check(uiAutomation.rootInActiveWindow?.findNode {
+                it.text?.toString() == "Send/export" || it.contentDescription?.toString() == "Send/export"
+            } == null)
             key(KeyEvent.KEYCODE_BACK)
             waitForEditorText(original)
             runOnMainSync { home.window.insetsController?.hide(WindowInsets.Type.ime()) }

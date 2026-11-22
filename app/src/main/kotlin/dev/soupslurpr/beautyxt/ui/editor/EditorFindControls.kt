@@ -10,6 +10,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -20,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -34,13 +36,100 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.document.MAX_FIND_QUERY_UTF16_UNITS
 import dev.soupslurpr.beautyxt.document.MAX_REPLACEMENT_REVIEW_UNITS
 import dev.soupslurpr.beautyxt.ui.asString
+import dev.soupslurpr.beautyxt.ui.designsystem.ActionMenuItem
 import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceButtons
 import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceOption
+
+private val MinimumInlineFindQueryWidth = 160.dp
+private val InlineFindCloseWidth = 48.dp
+private val InlineFindToolsWidth = 96.dp
+private val InlineFindNavWidth = 249.dp
+private val InlineFindDoneWidth = 72.dp
+private val InlineFindRowHorizontalPadding = 16.dp
+private val InlineFindReplacementGap = 8.dp
+
+/** Describes which inline landscape Find controls fit while keeping at least 160 dp per field. */
+internal data class InlineFindLayoutPlan(
+    val showReplacementBesideQuery: Boolean,
+    val showOptionsIcon: Boolean,
+    val showStatusControls: Boolean,
+    val showDoneButton: Boolean
+)
+
+/** Budgets visible input fields first, then keeps as many inline actions as fit beside them. */
+internal fun inlineFindLayoutPlan(
+    availableWidth: Dp,
+    fontScale: Float,
+    replaceVisible: Boolean,
+    hasFailure: Boolean
+): InlineFindLayoutPlan {
+    require(availableWidth >= 0.dp) { "Find width must not be negative" }
+    require(fontScale.isFinite() && fontScale > 0f) { "Find font scale must be positive and finite" }
+    val clampedScale = maxOf(1f, fontScale)
+    val rowInnerWidth = (availableWidth - InlineFindRowHorizontalPadding).coerceAtLeast(0.dp)
+    val statusWidth = if (hasFailure) minOf(320.dp, availableWidth * 0.4f) else InlineFindNavWidth
+    val doneWidth = InlineFindDoneWidth * clampedScale
+    val fullTrailingWidth = InlineFindToolsWidth + statusWidth + doneWidth
+    val navMoreTrailingWidth = InlineFindCloseWidth + statusWidth
+    val moreOnlyTrailingWidth = InlineFindCloseWidth
+    val singleFieldWidth = InlineFindCloseWidth + MinimumInlineFindQueryWidth
+    val dualFieldsWidth = InlineFindCloseWidth + MinimumInlineFindQueryWidth * 2 + InlineFindReplacementGap
+
+    if (replaceVisible) {
+        if (rowInnerWidth >= dualFieldsWidth + fullTrailingWidth) {
+            return InlineFindLayoutPlan(
+                showReplacementBesideQuery = true,
+                showOptionsIcon = true,
+                showStatusControls = true,
+                showDoneButton = true
+            )
+        }
+        if (rowInnerWidth >= dualFieldsWidth + navMoreTrailingWidth) {
+            return InlineFindLayoutPlan(
+                showReplacementBesideQuery = true,
+                showOptionsIcon = false,
+                showStatusControls = true,
+                showDoneButton = false
+            )
+        }
+        if (rowInnerWidth >= dualFieldsWidth + moreOnlyTrailingWidth) {
+            return InlineFindLayoutPlan(
+                showReplacementBesideQuery = true,
+                showOptionsIcon = false,
+                showStatusControls = false,
+                showDoneButton = false
+            )
+        }
+    }
+    return when {
+        rowInnerWidth >= singleFieldWidth + fullTrailingWidth -> InlineFindLayoutPlan(
+            showReplacementBesideQuery = false,
+            showOptionsIcon = true,
+            showStatusControls = true,
+            showDoneButton = true
+        )
+
+        rowInnerWidth >= singleFieldWidth + navMoreTrailingWidth -> InlineFindLayoutPlan(
+            showReplacementBesideQuery = false,
+            showOptionsIcon = false,
+            showStatusControls = true,
+            showDoneButton = false
+        )
+
+        else -> InlineFindLayoutPlan(
+            showReplacementBesideQuery = false,
+            showOptionsIcon = false,
+            showStatusControls = false,
+            showDoneButton = false
+        )
+    }
+}
 
 /** Keeps the query, replacement, and match navigation above the document. */
 @Composable
@@ -59,6 +148,8 @@ internal fun EditorFindChrome(
     }
     val replacementInput = remember(session) { findInputTransformation(MAX_REPLACEMENT_REVIEW_UNITS) }
     var menu by remember(session) { mutableStateOf(false) }
+    var isQueryFocused by remember(session) { mutableStateOf(false) }
+    var isReplacementFocused by remember(session) { mutableStateOf(false) }
     fun dismissInput() { focus.clearFocus(force = true); keyboard?.hide() }
     fun focusDocument() { dismissInput(); session.focusFindDocument() }
     fun openResults(review: Boolean) {
@@ -74,12 +165,50 @@ internal fun EditorFindChrome(
         else queryFocus.requestFocus()
         if (session.findRequestsKeyboard) keyboard?.show() else keyboard?.hide()
     }
+    val imeTargetVisible = WindowInsets.imeAnimationTarget.getBottom(LocalDensity.current) > 0
+    val currentImeTargetVisible by rememberUpdatedState(imeTargetVisible)
     BoxWithConstraints(Modifier.fillMaxWidth()
         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
-        val wide = useInlineStatus || maxWidth >= 600.dp * maxOf(1f, LocalDensity.current.fontScale)
-        val compact = usesCompactFindLayout(maxWidth, LocalDensity.current.fontScale)
+        val fontScale = maxOf(1f, LocalDensity.current.fontScale)
         val failure = session.findStatus as? FindStatus.Failed
         val inlineFailureWidth = minOf(320.dp, maxWidth * 0.4f)
+        val inlinePlan = if (useInlineStatus) {
+            inlineFindLayoutPlan(
+                availableWidth = maxWidth,
+                fontScale = LocalDensity.current.fontScale,
+                replaceVisible = session.isReplaceVisible,
+                hasFailure = failure != null
+            )
+        } else {
+            null
+        }
+        val wide = inlinePlan?.showReplacementBesideQuery ?: (maxWidth >= 600.dp * fontScale)
+        var previousWide by remember(session) { mutableStateOf(wide) }
+        var suppressReplaceKeyboardOnReflow by remember(session) { mutableStateOf(false) }
+        LaunchedEffect(session, session.findFocusRequest) {
+            suppressReplaceKeyboardOnReflow = false
+        }
+        LaunchedEffect(session, session.isReplaceVisible, session.findInputFocus) {
+            if (!session.isReplaceVisible || session.findInputFocus != FindInputFocus.Replacement) {
+                suppressReplaceKeyboardOnReflow = false
+            }
+        }
+        LaunchedEffect(session, wide) {
+            if (previousWide == wide) return@LaunchedEffect
+            previousWide = wide
+            if (session.isReplaceVisible && session.findInputFocus == FindInputFocus.Replacement) {
+                val keepKeyboard = currentImeTargetVisible
+                suppressReplaceKeyboardOnReflow = !keepKeyboard
+                withFrameNanos { }
+                if (session.isReplaceVisible && session.findInputFocus == FindInputFocus.Replacement) {
+                    replacementFocus.requestFocus()
+                    if (keepKeyboard) {
+                        keyboard?.show()
+                    }
+                }
+            }
+        }
+        val compact = usesCompactFindLayout(maxWidth, LocalDensity.current.fontScale)
         val activeOptions = listOfNotNull(
             stringResource(R.string.find_selection_scope).takeIf { session.isFindSelectionScope },
             stringResource(R.string.find_match_case).takeIf { session.isFindCaseSensitive },
@@ -99,54 +228,195 @@ internal fun EditorFindChrome(
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent
         )
+        val focusBorderColor = MaterialTheme.colorScheme.primary
+        val queryShape = MaterialTheme.shapes.extraLarge
+        val replacementShape = MaterialTheme.shapes.large
         @Composable fun replacement(modifier: Modifier) {
             TextField(state = session.replacementFieldState,
-                modifier = modifier.focusRequester(replacementFocus)
-                    .onFocusChanged { if (it.isFocused) session.recordFindInputFocus(FindInputFocus.Replacement) },
+                modifier = modifier
+                    .then(
+                        if (isReplacementFocused) Modifier.border(2.dp, focusBorderColor, replacementShape)
+                        else Modifier
+                    )
+                    .focusRequester(replacementFocus)
+                    .onFocusChanged {
+                        isReplacementFocused = it.isFocused
+                        if (it.isFocused) session.recordFindInputFocus(FindInputFocus.Replacement)
+                    },
                 label = { Text(stringResource(R.string.replace_with)) },
                 inputTransformation = replacementInput,
                 lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = if (useInlineStatus) 1 else 3),
-                shape = MaterialTheme.shapes.large, colors = fieldColors,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default, showKeyboardOnFocus = session.findRequestsKeyboard))
+                shape = replacementShape, colors = fieldColors,
+                keyboardOptions = KeyboardOptions(
+                    imeAction = ImeAction.Default,
+                    showKeyboardOnFocus = !suppressReplaceKeyboardOnReflow &&
+                        (session.findRequestsKeyboard || imeTargetVisible)
+                ))
         }
-        @Composable fun tools() = Row {
-            FindIcon(R.drawable.ic_tune, stringResource(R.string.find_options), onOptions)
+        val showInlineOptionsIcon = inlinePlan?.showOptionsIcon ?: true
+        val showInlineStatusControls = inlinePlan?.showStatusControls ?: false
+        val showInlineDoneButton = inlinePlan?.showDoneButton ?: false
+        var menuAnchoredInTopRow by remember(session) { mutableStateOf(false) }
+        var menuShowOptions by remember(session) { mutableStateOf(false) }
+        var menuShowNav by remember(session) { mutableStateOf(false) }
+        var menuShowDone by remember(session) { mutableStateOf(false) }
+        val showToolsInTopRow = !compact || useInlineStatus || (menu && menuAnchoredInTopRow)
+        @Composable fun tools(includeOptionsIcon: Boolean = true, anchoredInTopRow: Boolean = true) = Row {
+            if (includeOptionsIcon) {
+                FindIcon(R.drawable.ic_tune, stringResource(R.string.find_options), onOptions)
+            }
             Box {
-                FindIcon(R.drawable.ic_more_vert, stringResource(R.string.find_more), { menu = true })
-                DropdownMenu(menu, { menu = false }) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(if (session.presentation == EditorPresentation.MarkdownPreview)
-                            R.string.find_search_source else R.string.find_read_formatted)) },
-                        enabled = if (session.presentation == EditorPresentation.MarkdownPreview)
-                            session.canShowTextEditor else session.canShowMarkdownPreview,
-                        onClick = {
-                            menu = false
-                            focusDocument()
-                            if (session.presentation == EditorPresentation.MarkdownPreview) session.showTextEditor()
-                            else { session.hideReplace(); session.showMarkdownPreview() }
-                        })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.editor_undo)) },
-                        enabled = session.canUndo, onClick = { menu = false; focusDocument(); session.requestUndo() })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.editor_redo)) },
-                        enabled = session.canRedo, onClick = { menu = false; focusDocument(); session.requestRedo() })
-                    HorizontalDivider()
-                    DropdownMenuItem(text = { Text(stringResource(R.string.location_previous)) },
-                        enabled = session.hasPreviousLocation,
-                        onClick = { menu = false; focusDocument(); session.returnToDocumentLocation(false) })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.location_next)) },
-                        enabled = session.hasNextLocation,
-                        onClick = { menu = false; focusDocument(); session.returnToDocumentLocation(true) })
+                FindIcon(
+                    R.drawable.ic_more_vert,
+                    stringResource(R.string.find_more),
+                    {
+                        menuAnchoredInTopRow = anchoredInTopRow
+                        menuShowOptions = !includeOptionsIcon
+                        menuShowNav = useInlineStatus && !showInlineStatusControls
+                        menuShowDone = useInlineStatus && !showInlineDoneButton
+                        menu = true
+                    }
+                )
+                DropdownMenuPopup(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuGroup(
+                        shapes = MenuDefaults.groupShape(index = 0, count = 1),
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        containerColor = MenuDefaults.groupStandardContainerColor
+                    ) {
+                        val leadingShape = MenuDefaults.leadingItemShape
+                        val middleShape = MenuDefaults.middleItemShape
+                        val trailingShape = MenuDefaults.trailingItemShape
+                        var hasLeading = false
+                        fun nextShape(isLast: Boolean = false) = when {
+                            !hasLeading -> {
+                                hasLeading = true
+                                leadingShape
+                            }
+                            isLast -> trailingShape
+                            else -> middleShape
+                        }
+                        if (menuShowOptions) {
+                            ActionMenuItem(
+                                shape = nextShape(),
+                                label = stringResource(R.string.find_options),
+                                leadingIcon = { Icon(painterResource(R.drawable.ic_tune), contentDescription = null) },
+                                onClick = { menu = false; onOptions() }
+                            )
+                        }
+                        if (menuShowNav) {
+                            ActionMenuItem(
+                                shape = nextShape(),
+                                label = stringResource(R.string.find_results),
+                                leadingIcon = { Icon(painterResource(R.drawable.ic_format_list_bulleted), contentDescription = null) },
+                                enabled = session.findFieldValue.text.isNotEmpty(),
+                                onClick = { menu = false; openResults(false) }
+                            )
+                            ActionMenuItem(
+                                shape = nextShape(),
+                                label = stringResource(R.string.find_previous),
+                                leadingIcon = { Icon(painterResource(R.drawable.ic_keyboard_arrow_up), contentDescription = null) },
+                                enabled = session.findResults.isNotEmpty(),
+                                onClick = { menu = false; session.findPrevious() }
+                            )
+                            ActionMenuItem(
+                                shape = nextShape(),
+                                label = stringResource(R.string.find_next),
+                                leadingIcon = { Icon(painterResource(R.drawable.ic_keyboard_arrow_down), contentDescription = null) },
+                                enabled = session.findResults.isNotEmpty(),
+                                onClick = { menu = false; session.findNext() }
+                            )
+                        }
+                        if (menuShowDone) {
+                            ActionMenuItem(
+                                shape = nextShape(),
+                                label = stringResource(R.string.export_done),
+                                leadingIcon = { Icon(painterResource(R.drawable.ic_check), contentDescription = null) },
+                                onClick = { menu = false; focusDocument() }
+                            )
+                        }
+                        if (hasLeading) {
+                            HorizontalDivider(modifier = Modifier.padding(MenuDefaults.HorizontalDividerPadding))
+                        }
+                        ActionMenuItem(
+                            shape = nextShape(),
+                            label = stringResource(if (session.presentation == EditorPresentation.MarkdownPreview)
+                                R.string.find_search_source else R.string.find_read_formatted),
+                            leadingIcon = {
+                                Icon(
+                                    painterResource(
+                                        if (session.presentation == EditorPresentation.MarkdownPreview && !session.isViewOnly) {
+                                            R.drawable.ic_edit
+                                        } else {
+                                            R.drawable.ic_description
+                                        }
+                                    ),
+                                    contentDescription = null
+                                )
+                            },
+                            enabled = if (session.presentation == EditorPresentation.MarkdownPreview)
+                                session.canShowTextEditor else session.canShowMarkdownPreview,
+                            onClick = {
+                                menu = false
+                                focusDocument()
+                                if (session.presentation == EditorPresentation.MarkdownPreview) session.showTextEditor()
+                                else { session.hideReplace(); session.showMarkdownPreview() }
+                            }
+                        )
+                        ActionMenuItem(
+                            shape = nextShape(),
+                            label = stringResource(R.string.editor_undo),
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_undo), contentDescription = null) },
+                            enabled = session.canUndo,
+                            onClick = { menu = false; focusDocument(); session.requestUndo() }
+                        )
+                        ActionMenuItem(
+                            shape = nextShape(),
+                            label = stringResource(R.string.editor_redo),
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_redo), contentDescription = null) },
+                            enabled = session.canRedo,
+                            onClick = { menu = false; focusDocument(); session.requestRedo() }
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(MenuDefaults.HorizontalDividerPadding))
+                        ActionMenuItem(
+                            shape = nextShape(),
+                            label = stringResource(R.string.location_previous),
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_arrow_back), contentDescription = null) },
+                            enabled = session.hasPreviousLocation,
+                            onClick = { menu = false; focusDocument(); session.returnToDocumentLocation(false) }
+                        )
+                        ActionMenuItem(
+                            shape = nextShape(isLast = true),
+                            label = stringResource(R.string.location_next),
+                            leadingIcon = {
+                                Icon(
+                                    painterResource(R.drawable.ic_arrow_back),
+                                    contentDescription = null,
+                                    modifier = Modifier.rotate(180f)
+                                )
+                            },
+                            enabled = session.hasNextLocation,
+                            onClick = { menu = false; focusDocument(); session.returnToDocumentLocation(true) }
+                        )
+                    }
                 }
             }
         }
-        Column {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = if (useInlineStatus) 0.dp else 8.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 FindIcon(R.drawable.ic_close, stringResource(R.string.find_close), onClose)
                 val queryLabel = stringResource(R.string.find_in_document)
                 TextField(state = session.findFieldState,
-                    modifier = Modifier.weight(1f).focusRequester(queryFocus)
-                        .onFocusChanged { if (it.isFocused) session.recordFindInputFocus(FindInputFocus.Query) }
+                    modifier = Modifier.weight(1f)
+                        .then(
+                            if (isQueryFocused) Modifier.border(2.dp, focusBorderColor, queryShape)
+                            else Modifier
+                        )
+                        .focusRequester(queryFocus)
+                        .onFocusChanged {
+                            isQueryFocused = it.isFocused
+                            if (it.isFocused) session.recordFindInputFocus(FindInputFocus.Query)
+                        }
                         .semantics { contentDescription = queryLabel }
                         .onPreviewKeyEvent { event ->
                             if (event.type != KeyEventType.KeyDown || event.key != Key.Enter) false else {
@@ -160,7 +430,7 @@ internal fun EditorFindChrome(
                         maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     inputTransformation = queryInput,
                     lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = if (useInlineStatus) 1 else 3),
-                    shape = MaterialTheme.shapes.extraLarge, colors = fieldColors,
+                    shape = queryShape, colors = fieldColors,
                     trailingIcon = if (session.findFieldValue.text.isNotEmpty()) ({
                         FindIcon(R.drawable.ic_close, stringResource(R.string.find_clear_query), {
                             session.updateFindFieldValue(TextFieldValue(""))
@@ -174,23 +444,46 @@ internal fun EditorFindChrome(
                     Spacer(Modifier.width(8.dp))
                     replacement(Modifier.weight(1f))
                 }
-                if (!compact || useInlineStatus) tools()
-                if (useInlineStatus) {
+                if (showToolsInTopRow) {
+                    tools(includeOptionsIcon = showInlineOptionsIcon, anchoredInTopRow = true)
+                }
+                if (showInlineStatusControls) {
                     if (failure != null) EditorFindFailure(failure, Modifier.width(inlineFailureWidth),
                         onRetry = session::retryFind, options = activeOptions.joinToString(" · "))
                     else EditorMatchNavigation(session, onResults = { openResults(false) },
                         options = activeOptions.joinToString(" · "))
+                }
+                if (showInlineDoneButton) {
                     TextButton(onClick = { focusDocument() }, modifier = Modifier.heightIn(min = 48.dp)) {
                         Text(stringResource(R.string.export_done))
                     }
                 }
+            }
+            if (useInlineStatus && !showInlineStatusControls && failure == null &&
+                (session.findFieldValue.text.isNotEmpty() || activeOptions.isNotEmpty())
+            ) {
+                val summary = listOf(
+                    findCountText(session).takeIf { session.findFieldValue.text.isNotEmpty() },
+                    activeOptions.joinToString(" · ").takeIf(String::isNotEmpty)
+                ).filterNotNull().joinToString(" · ")
+                Text(
+                    text = summary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             AnimatedVisibility(session.isReplaceVisible && !wide,
                 enter = expandVertically(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()) +
                     fadeIn(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec()),
                 exit = shrinkVertically(animationSpec = MaterialTheme.motionScheme.defaultSpatialSpec()) +
                     fadeOut(animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec())) {
-                Row(Modifier.fillMaxWidth().padding(start = 56.dp, end = 16.dp, bottom = 8.dp)) {
+                Row(Modifier.fillMaxWidth().padding(start = 56.dp, end = 16.dp, bottom = if (useInlineStatus) 4.dp else 8.dp)) {
                     replacement(Modifier.weight(1f))
                 }
             }
@@ -201,8 +494,8 @@ internal fun EditorFindChrome(
                     else session.showReplace(showKeyboard = true)
                 },
                 onResults = { openResults(false) }, onReview = { openResults(true) },
-                extraActions = { if (compact) tools() })
-            EditorFindFeedback(session, Modifier.padding(horizontal = 16.dp), showFailure = !useInlineStatus, onUndo = {
+                extraActions = { if (!showToolsInTopRow) tools(anchoredInTopRow = false) })
+            EditorFindFeedback(session, Modifier.padding(horizontal = 16.dp), showFailure = !showInlineStatusControls, onUndo = {
                 focusDocument()
                 session.requestUndoFindReplacement()
             })

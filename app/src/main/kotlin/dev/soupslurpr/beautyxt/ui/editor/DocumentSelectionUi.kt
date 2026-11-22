@@ -1,7 +1,13 @@
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class
+)
+
 package dev.soupslurpr.beautyxt.ui.editor
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.background
@@ -14,19 +20,30 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenuGroup
+import androidx.compose.material3.DropdownMenuPopup
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingToolbarDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import dev.soupslurpr.beautyxt.illustration.NativeIllustration
+import dev.soupslurpr.beautyxt.ui.designsystem.ActionMenuItem
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,7 +62,9 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.TextLayoutResult
@@ -516,65 +535,390 @@ internal fun DocumentSelectionHost(session: EditorSession, modifier: Modifier = 
     }
 }
 
+private val SelectionActionSize = 48.dp
+private val SelectionBarPadding = 8.dp
+private val SelectionPrimaryGap = 4.dp
+private val SelectionInlineLabelMinHeight = 280.dp
+
+/** Describes which direct selection actions fit before moving into Selection actions. */
+internal data class SelectionActionBarPlan(
+    val showCopy: Boolean,
+    val showSend: Boolean,
+    val showClear: Boolean
+)
+
+/** Keeps every direct selection control at least 48 dp wide without horizontal clipping. */
+internal fun selectionActionBarPlan(availableWidth: Dp): SelectionActionBarPlan {
+    require(availableWidth >= 0.dp) { "selection toolbar width must not be negative" }
+    val fourDirectWidth = SelectionActionSize * 4 + SelectionPrimaryGap
+    val threeDirectWidth = SelectionActionSize * 3 + SelectionPrimaryGap
+    val twoDirectWidth = SelectionActionSize * 2 + SelectionPrimaryGap
+    return when {
+        availableWidth >= fourDirectWidth ->
+            SelectionActionBarPlan(showCopy = true, showSend = true, showClear = true)
+
+        availableWidth >= threeDirectWidth ->
+            SelectionActionBarPlan(showCopy = true, showSend = false, showClear = true)
+
+        availableWidth >= twoDirectWidth ->
+            SelectionActionBarPlan(showCopy = true, showSend = false, showClear = false)
+
+        else ->
+            SelectionActionBarPlan(showCopy = false, showSend = false, showClear = false)
+    }
+}
+
+private data class SelectionMenuEntry(
+    val label: String,
+    @param:DrawableRes val iconRes: Int? = null,
+    val enabled: Boolean = true,
+    val onClick: () -> Unit
+)
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun DocumentSelectionActions(session: EditorSession) {
+internal fun DocumentSelectionActions(
+    session: EditorSession,
+    availableHeight: Dp = 480.dp
+) {
     if (session.documentSelection == null) {
         session.selectionMessage?.let { message ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(message.asString(), Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite })
-                TextButton(onClick = session::clearDocumentSelection) { Text(stringResource(R.string.action_dismiss)) }
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(SelectionBarPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = message.asString(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics { liveRegion = LiveRegionMode.Polite },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        TextButton(
+                            onClick = session::clearDocumentSelection,
+                            modifier = Modifier.heightIn(min = SelectionActionSize)
+                        ) {
+                            Text(stringResource(R.string.action_dismiss))
+                        }
+                    }
+                }
             }
         }
         return
     }
     val context = LocalContext.current
     val selectionTitle = stringResource(R.string.selection_title)
+    val copyLabel = stringResource(R.string.markdown_copy)
+    val sendLabel = stringResource(R.string.excerpt_send)
+    val actionsLabel = stringResource(R.string.selection_actions)
+    val clearLabel = stringResource(R.string.selection_clear)
     var expanded by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.SpaceEvenly) {
-            TextButton(onClick = { session.copyDocumentSelection { text ->
-                checkNotNull(context.getSystemService(ClipboardManager::class.java)).setPrimaryClip(
-                    ClipData.newPlainText(selectionTitle, text))
-            } }) { Text(stringResource(R.string.markdown_copy)) }
-            TextButton(onClick = { session.excerptExport.open(context, session.title) }) { Text(stringResource(R.string.excerpt_send)) }
-            Box {
-                TextButton(onClick = { expanded = true }) { Text(stringResource(R.string.selection_actions)) }
-                DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                    fun action(perform: () -> Unit) { expanded = false; perform() }
-                    val readingSelection = session.documentSelection as? DocumentSelection.Reading
-                    if (readingSelection?.exactSource(session.readingDocumentForSelection()) != null) {
-                        DropdownMenuItem(text = { Text(stringResource(if (session.isViewOnly) R.string.editor_show_source else R.string.markdown_edit_source)) },
-                            enabled = session.canShowTextEditor, onClick = { action(session::showTextEditor) })
+    var labelDialogVisible by remember(session.documentSelection is DocumentSelection.Label) {
+        mutableStateOf(false)
+    }
+    val activeLabelSelection = session.documentSelection as? DocumentSelection.Label
+    val showInlineLabelField = activeLabelSelection != null &&
+        availableHeight >= SelectionInlineLabelMinHeight
+    val performCopy = {
+        session.copyDocumentSelection { text ->
+            checkNotNull(context.getSystemService(ClipboardManager::class.java)).setPrimaryClip(
+                ClipData.newPlainText(selectionTitle, text)
+            )
+        }
+    }
+    val performSend = { session.excerptExport.open(context, session.title) }
+    val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelLarge
+    val measuredCopyButtonWidth = remember(copyLabel, labelStyle, density, layoutDirection) {
+        val textWidth = with(density) {
+            textMeasurer.measure(copyLabel, style = labelStyle, maxLines = 1).size.width.toDp()
+        }
+        val contentPadding = ButtonDefaults.ContentPadding
+        textWidth +
+            20.dp +
+            8.dp +
+            contentPadding.calculateLeftPadding(layoutDirection) +
+            contentPadding.calculateRightPadding(layoutDirection) +
+            4.dp
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = SelectionBarPadding),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        if (showInlineLabelField) {
+            OutlinedTextField(
+                value = TextFieldValue(activeLabelSelection.text, activeLabelSelection.range),
+                onValueChange = { session.updateLabelSelection(it.selection) },
+                readOnly = true,
+                maxLines = 4,
+                label = { Text(stringResource(R.string.selection_label)) },
+                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+            )
+        }
+        session.selectionMessage?.let { message ->
+            Text(
+                text = message.asString(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center
+        ) {
+            val heightMode = editorToolbarHeightMode(availableHeight)
+            val contentPadding = FloatingToolbarDefaults.ContentPadding
+            val horizontalInnerPadding = if (heightMode == EditorToolbarHeightMode.Compact) {
+                SelectionBarPadding * 2
+            } else {
+                contentPadding.calculateLeftPadding(layoutDirection) +
+                    contentPadding.calculateRightPadding(layoutDirection)
+            }
+            val controlsWidth = (maxWidth - horizontalInnerPadding).coerceAtLeast(0.dp)
+            val plan = selectionActionBarPlan(controlsWidth)
+            val otherDirectCount = 1 + (if (plan.showSend) 1 else 0) + (if (plan.showClear) 1 else 0)
+            val showCopyLabel = plan.showCopy &&
+                measuredCopyButtonWidth + SelectionPrimaryGap +
+                SelectionActionSize * otherDirectCount <= controlsWidth
+
+            EditorFloatingCapsule(heightMode = heightMode) {
+                if (plan.showCopy) {
+                    if (showCopyLabel) {
+                        FilledTonalButton(
+                            shapes = ButtonDefaults.shapes(),
+                            contentPadding = ButtonDefaults.ContentPadding,
+                            onClick = performCopy,
+                            modifier = Modifier.heightIn(min = SelectionActionSize)
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painterResource(R.drawable.ic_content_copy),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(copyLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    } else {
+                        EditorToolButton(
+                            iconRes = R.drawable.ic_content_copy,
+                            label = copyLabel,
+                            enabled = true,
+                            onClick = performCopy,
+                            emphasized = true
+                        )
                     }
-                    if (session.documentSelection is DocumentSelection.Source) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.selection_cut)) }, enabled = session.canEditDocumentSelection,
-                            onClick = { action { session.replaceSelectedSource("") { text ->
-                                checkNotNull(context.getSystemService(ClipboardManager::class.java)).setPrimaryClip(
-                                    ClipData.newPlainText(selectionTitle, text))
-                            } } })
-                        DropdownMenuItem(text = { Text(stringResource(R.string.selection_paste)) }, enabled = session.canEditDocumentSelection,
-                            onClick = { action {
-                                val clip = context.getSystemService(ClipboardManager::class.java)?.primaryClip
-                                clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.let { session.replaceSelectedSource(it.toString()) }
-                            } })
-                    }
-                    DropdownMenuItem(text = { Text(stringResource(R.string.selection_find)) }, onClick = { action(session::findSelectedText) })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.selection_scope)) }, onClick = { action { session.showFind(); session.captureSelectionFindScope() } })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.selection_all)) }, onClick = { action { session.selectWholeDocument() } })
-                    if (session.documentSelection is DocumentSelection.Reading) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.selection_extend_previous)) }, onClick = { action { session.extendSelectionParagraph(false) } })
-                        DropdownMenuItem(text = { Text(stringResource(R.string.selection_extend_next)) }, onClick = { action { session.extendSelectionParagraph(true) } })
+                    Spacer(Modifier.width(SelectionPrimaryGap))
+                }
+                if (plan.showSend) {
+                    EditorToolButton(
+                        iconRes = R.drawable.ic_share,
+                        label = sendLabel,
+                        enabled = true,
+                        onClick = performSend
+                    )
+                }
+                Box {
+                    EditorToolButton(
+                        iconRes = R.drawable.ic_more_vert,
+                        label = actionsLabel,
+                        enabled = true,
+                        onClick = { expanded = true }
+                    )
+                    DropdownMenuPopup(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        val displacedItems = buildList {
+                            if (!plan.showCopy) {
+                                add(SelectionMenuEntry(copyLabel, R.drawable.ic_content_copy, onClick = performCopy))
+                            }
+                            if (!plan.showSend) {
+                                add(SelectionMenuEntry(sendLabel, R.drawable.ic_share, onClick = performSend))
+                            }
+                            if (!plan.showClear) {
+                                add(
+                                    SelectionMenuEntry(
+                                        clearLabel,
+                                        R.drawable.ic_close,
+                                        onClick = session::clearDocumentSelection
+                                    )
+                                )
+                            }
+                            if (activeLabelSelection != null && !showInlineLabelField) {
+                                add(
+                                    SelectionMenuEntry(
+                                        label = stringResource(R.string.selection_label),
+                                        iconRes = R.drawable.ic_description,
+                                        onClick = { labelDialogVisible = true }
+                                    )
+                                )
+                            }
+                        }
+                        val secondaryItems = buildList {
+                            val readingSelection = session.documentSelection as? DocumentSelection.Reading
+                            if (readingSelection?.exactSource(session.readingDocumentForSelection()) != null) {
+                                add(
+                                    SelectionMenuEntry(
+                                        label = stringResource(
+                                            if (session.isViewOnly) R.string.editor_show_source else R.string.markdown_edit_source
+                                        ),
+                                        iconRes = if (session.isViewOnly) R.drawable.ic_description else R.drawable.ic_edit,
+                                        enabled = session.canShowTextEditor,
+                                        onClick = session::showTextEditor
+                                    )
+                                )
+                            }
+                            if (session.documentSelection is DocumentSelection.Source) {
+                                add(
+                                    SelectionMenuEntry(
+                                        label = stringResource(R.string.selection_cut),
+                                        enabled = session.canEditDocumentSelection,
+                                        onClick = {
+                                            session.replaceSelectedSource("") { text ->
+                                                checkNotNull(context.getSystemService(ClipboardManager::class.java))
+                                                    .setPrimaryClip(ClipData.newPlainText(selectionTitle, text))
+                                            }
+                                        }
+                                    )
+                                )
+                                add(
+                                    SelectionMenuEntry(
+                                        label = stringResource(R.string.selection_paste),
+                                        enabled = session.canEditDocumentSelection,
+                                        onClick = {
+                                            val clip = context.getSystemService(ClipboardManager::class.java)?.primaryClip
+                                            clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.let {
+                                                session.replaceSelectedSource(it.toString())
+                                            }
+                                        }
+                                    )
+                                )
+                            }
+                            add(
+                                SelectionMenuEntry(
+                                    label = stringResource(R.string.selection_find),
+                                    iconRes = R.drawable.ic_search,
+                                    onClick = session::findSelectedText
+                                )
+                            )
+                            add(
+                                SelectionMenuEntry(
+                                    label = stringResource(R.string.selection_scope),
+                                    iconRes = R.drawable.ic_search,
+                                    onClick = { session.showFind(); session.captureSelectionFindScope() }
+                                )
+                            )
+                            add(
+                                SelectionMenuEntry(
+                                    label = stringResource(R.string.selection_all),
+                                    onClick = { session.selectWholeDocument() }
+                                )
+                            )
+                            if (session.documentSelection is DocumentSelection.Reading) {
+                                add(
+                                    SelectionMenuEntry(
+                                        label = stringResource(R.string.selection_extend_previous),
+                                        onClick = { session.extendSelectionParagraph(false) }
+                                    )
+                                )
+                                add(
+                                    SelectionMenuEntry(
+                                        label = stringResource(R.string.selection_extend_next),
+                                        onClick = { session.extendSelectionParagraph(true) }
+                                    )
+                                )
+                            }
+                        }
+                        DropdownMenuGroup(
+                            shapes = MenuDefaults.groupShape(index = 0, count = 1),
+                            modifier = Modifier.verticalScroll(rememberScrollState()),
+                            containerColor = MenuDefaults.groupStandardContainerColor
+                        ) {
+                            val totalCount = displacedItems.size + secondaryItems.size
+                            var itemIndex = 0
+                            @Composable
+                            fun renderEntry(entry: SelectionMenuEntry) {
+                                val shape = when {
+                                    totalCount == 1 -> MenuDefaults.leadingItemShape
+                                    itemIndex == 0 -> MenuDefaults.leadingItemShape
+                                    itemIndex == totalCount - 1 -> MenuDefaults.trailingItemShape
+                                    else -> MenuDefaults.middleItemShape
+                                }
+                                itemIndex += 1
+                                ActionMenuItem(
+                                    shape = shape,
+                                    label = entry.label,
+                                    leadingIcon = entry.iconRes?.let { res ->
+                                        { Icon(painterResource(res), contentDescription = null) }
+                                    },
+                                    enabled = entry.enabled,
+                                    onClick = {
+                                        expanded = false
+                                        entry.onClick()
+                                    }
+                                )
+                            }
+                            displacedItems.forEach { renderEntry(it) }
+                            if (displacedItems.isNotEmpty() && secondaryItems.isNotEmpty()) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(MenuDefaults.HorizontalDividerPadding)
+                                )
+                            }
+                            secondaryItems.forEach { renderEntry(it) }
+                        }
                     }
                 }
+                if (plan.showClear) {
+                    EditorToolButton(
+                        iconRes = R.drawable.ic_close,
+                        label = clearLabel,
+                        enabled = true,
+                        onClick = session::clearDocumentSelection
+                    )
+                }
             }
-            TextButton(onClick = session::clearDocumentSelection) { Text(stringResource(R.string.selection_clear)) }
         }
-        (session.documentSelection as? DocumentSelection.Label)?.let { label ->
-            OutlinedTextField(value = TextFieldValue(label.text, label.range), onValueChange = { session.updateLabelSelection(it.selection) },
-                readOnly = true, maxLines = 4, label = { Text(stringResource(R.string.selection_label)) }, modifier = Modifier.fillMaxWidth())
-        }
-        session.selectionMessage?.let { Text(it.asString(), Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+    }
+    if (labelDialogVisible && activeLabelSelection != null) {
+        AlertDialog(
+            onDismissRequest = { labelDialogVisible = false },
+            title = { Text(stringResource(R.string.selection_label)) },
+            text = {
+                OutlinedTextField(
+                    value = TextFieldValue(activeLabelSelection.text, activeLabelSelection.range),
+                    onValueChange = { session.updateLabelSelection(it.selection) },
+                    readOnly = true,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { labelDialogVisible = false }) {
+                    Text(stringResource(R.string.action_close))
+                }
+            }
+        )
     }
 }
 

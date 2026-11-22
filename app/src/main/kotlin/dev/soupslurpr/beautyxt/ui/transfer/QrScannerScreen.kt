@@ -6,6 +6,7 @@ import android.annotation.SuppressLint
 import android.util.Size
 import android.view.ViewOutlineProvider
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.CameraState
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -36,6 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -117,6 +121,13 @@ private val QR_TIMEOUT_MESSAGE = UiText.Resource(R.string.scanner_qr_timeout_mes
 private val QR_SERVICE_MESSAGE = UiText.Resource(R.string.scanner_qr_service_message)
 private val QR_READ_FAILURE_MESSAGE = UiText.Resource(R.string.scanner_qr_read_failure_message)
 
+/** Tracks camera preview lifecycle separately from recoverable QR decode feedback. */
+private enum class QrCameraState {
+    Starting,
+    Streaming,
+    Unavailable
+}
+
 /** Displays one foreground-only camera scanner for bounded BeauTyXT QR transfers. */
 @Composable
 internal fun QrScannerScreen(
@@ -147,8 +158,10 @@ internal fun QrScannerScreen(
         )
         return
     }
-    var scannerMessage by remember { mutableStateOf<UiText?>(null) }
-    var isCameraStarting by remember { mutableStateOf(true) }
+    var decodeMessage by remember { mutableStateOf<UiText?>(null) }
+    var cameraErrorMessage by remember { mutableStateOf<UiText?>(null) }
+    var cameraState by remember { mutableStateOf(QrCameraState.Starting) }
+    var retryAttempt by remember { mutableIntStateOf(0) }
     Box(
         modifier =
             screenModifier
@@ -157,14 +170,22 @@ internal fun QrScannerScreen(
     ) {
         QrCameraPreview(
             processor = processor,
+            retryAttempt = retryAttempt,
             onCameraStarting = {
-                scannerMessage = null
-                isCameraStarting = true
+                decodeMessage = null
+                cameraErrorMessage = null
+                cameraState = QrCameraState.Starting
             },
-            onCameraReady = { isCameraStarting = false },
-            onFailure = { message ->
-                isCameraStarting = false
-                scannerMessage = message
+            onCameraReady = {
+                cameraErrorMessage = null
+                cameraState = QrCameraState.Streaming
+            },
+            onCameraFailure = { message ->
+                cameraState = QrCameraState.Unavailable
+                cameraErrorMessage = message
+            },
+            onDecodeFailure = { message ->
+                decodeMessage = message
             },
             onReceived = onReceived,
             modifier = Modifier.fillMaxSize()
@@ -191,30 +212,41 @@ internal fun QrScannerScreen(
                         WindowInsetsSides.Top + WindowInsetsSides.Horizontal
                     )
             )
-            BoxWithConstraints(
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .windowInsetsPadding(
-                            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
-                        )
-                        .padding(horizontal = ScannerHorizontalPadding),
-                contentAlignment = Alignment.Center
-            ) {
-                val guideSize = minOf(ScannerGuideSize, maxWidth, maxHeight)
-                if (!isCameraStarting) {
-                    Surface(
-                        modifier = Modifier.size(guideSize),
-                        color = Color.Transparent,
-                        shape = RoundedCornerShape(guideSize / 6),
-                        border = BorderStroke(ScannerGuideStroke, Color.White)
-                    ) {}
+            if (cameraState != QrCameraState.Unavailable) {
+                BoxWithConstraints(
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .windowInsetsPadding(
+                                WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+                            )
+                            .padding(horizontal = ScannerHorizontalPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val guideSize = minOf(ScannerGuideSize, maxWidth, maxHeight)
+                    if (cameraState == QrCameraState.Streaming) {
+                        Surface(
+                            modifier = Modifier.size(guideSize),
+                            color = Color.Transparent,
+                            shape = RoundedCornerShape(guideSize / 6),
+                            border = BorderStroke(ScannerGuideStroke, Color.White)
+                        ) {}
+                    }
                 }
             }
             Column(
                 modifier =
                     Modifier
+                        .then(
+                            if (cameraState == QrCameraState.Unavailable) {
+                                Modifier
+                                    .weight(1f)
+                                    .verticalScroll(rememberScrollState())
+                            } else {
+                                Modifier
+                            }
+                        )
                         .fillMaxWidth()
                         .windowInsetsPadding(
                             WindowInsets.safeDrawing.only(
@@ -223,12 +255,20 @@ internal fun QrScannerScreen(
                         )
                         .padding(
                             horizontal = ScannerHorizontalPadding,
-                            vertical = ScannerVerticalPadding
+                            vertical = if (cameraState == QrCameraState.Unavailable) {
+                                ScannerSpacing
+                            } else {
+                                ScannerVerticalPadding
+                            }
                         ),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(ScannerSpacing)
+                verticalArrangement = if (cameraState == QrCameraState.Unavailable) {
+                    Arrangement.spacedBy(ScannerSpacing, Alignment.CenterVertically)
+                } else {
+                    Arrangement.spacedBy(ScannerSpacing)
+                }
             ) {
-                if (isCameraStarting) {
+                if (cameraState == QrCameraState.Starting) {
                     ShortLoadingIndicator(
                         modifier = Modifier.size(ScannerLoadingSize).clearAndSetSemantics {},
                         color = Color.White
@@ -246,14 +286,20 @@ internal fun QrScannerScreen(
                     ) {
                         Text(
                             text =
-                                scannerMessage?.asString()
-                                    ?: stringResource(
-                                        if (isCameraStarting) {
-                                            R.string.scanner_starting_camera
-                                        } else {
-                                            R.string.scanner_fit_code
-                                        }
-                                    ),
+                                when (cameraState) {
+                                    QrCameraState.Starting ->
+                                        stringResource(R.string.scanner_starting_camera)
+
+                                    QrCameraState.Unavailable ->
+                                        cameraErrorMessage?.asString()
+                                            ?: stringResource(
+                                                R.string.scanner_camera_unavailable_message
+                                            )
+
+                                    QrCameraState.Streaming ->
+                                        decodeMessage?.asString()
+                                            ?: stringResource(R.string.scanner_fit_code)
+                                },
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
                         )
@@ -263,6 +309,16 @@ internal fun QrScannerScreen(
                                 MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                             style = MaterialTheme.typography.bodySmall
                         )
+                        if (cameraState == QrCameraState.Unavailable) {
+                            FilledTonalButton(
+                                onClick = { retryAttempt += 1 },
+                                modifier = Modifier.heightIn(min = 48.dp),
+                                shapes = ButtonDefaults.shapes(),
+                                contentPadding = ButtonDefaults.ContentPadding
+                            ) {
+                                Text(stringResource(R.string.action_retry))
+                            }
+                        }
                     }
                 }
             }
@@ -331,9 +387,11 @@ private fun QrCameraPermissionScreen(
 @Composable
 private fun QrCameraPreview(
     processor: QrTransferProcessor,
+    retryAttempt: Int,
     onCameraStarting: () -> Unit,
     onCameraReady: () -> Unit,
-    onFailure: (UiText) -> Unit,
+    onCameraFailure: (UiText) -> Unit,
+    onDecodeFailure: (UiText) -> Unit,
     onReceived: (ReceivedTransferText) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -341,7 +399,8 @@ private fun QrCameraPreview(
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentOnCameraStarting by rememberUpdatedState(onCameraStarting)
     val currentOnCameraReady by rememberUpdatedState(onCameraReady)
-    val currentOnFailure by rememberUpdatedState(onFailure)
+    val currentOnCameraFailure by rememberUpdatedState(onCameraFailure)
+    val currentOnDecodeFailure by rememberUpdatedState(onDecodeFailure)
     val currentOnReceived by rememberUpdatedState(onReceived)
     val previewView =
         remember(context) {
@@ -353,21 +412,36 @@ private fun QrCameraPreview(
                 clipToOutline = true
             }
         }
-    LifecycleStartEffect(previewView, processor, lifecycleOwner = lifecycleOwner) {
+    LifecycleStartEffect(previewView, processor, retryAttempt, lifecycleOwner = lifecycleOwner) {
         currentOnCameraStarting()
         val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
         val analyzer = QrFrameAnalyzer(
             processor = processor,
-            onFailure = { message -> currentOnFailure(message) },
+            onFailure = { message -> currentOnDecodeFailure(message) },
             onReceived = { transfer -> currentOnReceived(transfer) }
         )
         val providerFuture = ProcessCameraProvider.getInstance(context)
         val mainExecutor = ContextCompat.getMainExecutor(context)
         var disposed = false
+        var hasStreamed = false
         var releaseUseCases: (() -> Unit)? = null
+        var releaseCameraStateObserver: (() -> Unit)? = null
         val streamObserver = Observer<PreviewView.StreamState> { state ->
-            if (!disposed && state == PreviewView.StreamState.STREAMING) {
+            if (disposed) {
+                return@Observer
+            }
+            if (state == PreviewView.StreamState.STREAMING) {
+                hasStreamed = true
                 currentOnCameraReady()
+            } else if (hasStreamed && state == PreviewView.StreamState.IDLE) {
+                hasStreamed = false
+                currentOnCameraFailure(CAMERA_UNAVAILABLE_MESSAGE)
+            }
+        }
+        val cameraStateObserver = Observer<CameraState> { state ->
+            if (!disposed && state.error != null) {
+                hasStreamed = false
+                currentOnCameraFailure(CAMERA_UNAVAILABLE_MESSAGE)
             }
         }
         // In COMPATIBLE mode, STREAMING means the preview is actually visible.
@@ -412,16 +486,20 @@ private fun QrCameraPreview(
                         } else {
                             CameraSelector.DEFAULT_FRONT_CAMERA
                         }
-                    cameraProvider.bindToLifecycle(
+                    val camera = cameraProvider.bindToLifecycle(
                         lifecycleOwner,
                         cameraSelector,
                         preview,
                         analysis
                     )
+                    camera.cameraInfo.cameraState.observe(lifecycleOwner, cameraStateObserver)
+                    releaseCameraStateObserver = {
+                        camera.cameraInfo.cameraState.removeObserver(cameraStateObserver)
+                    }
                 } catch (_: Exception) {
-                    currentOnFailure(CAMERA_UNAVAILABLE_MESSAGE)
+                    currentOnCameraFailure(CAMERA_UNAVAILABLE_MESSAGE)
                 } catch (_: LinkageError) {
-                    currentOnFailure(CAMERA_UNAVAILABLE_MESSAGE)
+                    currentOnCameraFailure(CAMERA_UNAVAILABLE_MESSAGE)
                 }
             },
             mainExecutor
@@ -429,6 +507,7 @@ private fun QrCameraPreview(
         onStopOrDispose {
             disposed = true
             previewView.previewStreamState.removeObserver(streamObserver)
+            releaseCameraStateObserver?.invoke()
             analyzer.close()
             try {
                 releaseUseCases?.invoke()

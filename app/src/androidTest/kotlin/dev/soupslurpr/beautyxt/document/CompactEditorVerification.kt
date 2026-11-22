@@ -14,6 +14,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableFloatStateOf
@@ -54,6 +55,7 @@ internal fun Instrumentation.verifyCompactEditorControls() {
         markdownRenderer = IsolatedMarkdownRenderer(targetContext)
     )
     val width = mutableStateOf(256.dp)
+    val height = mutableStateOf<androidx.compose.ui.unit.Dp?>(null)
     val fontScale = mutableFloatStateOf(1f)
     val activity = startActivitySync(
         Intent(targetContext, HomeActivity::class.java)
@@ -67,7 +69,9 @@ internal fun Instrumentation.verifyCompactEditorControls() {
                     LocalDensity provides Density(density, fontScale.floatValue)
                 ) {
                     BeauTyXTTheme {
-                        Box(Modifier.width(width.value).fillMaxHeight()) {
+                        val heightModifier = height.value?.let { Modifier.height(it) }
+                            ?: Modifier.fillMaxHeight()
+                        Box(Modifier.width(width.value).then(heightModifier)) {
                             DocumentEditor(session, activity::finish, closesDocumentTask = false)
                         }
                     }
@@ -186,6 +190,58 @@ internal fun Instrumentation.verifyCompactEditorControls() {
             node.contentDescription?.toString() == "Redo"
         }
         requireActionableContentDescription("Send and export")
+        // Hide any open IME so the tall portrait fixture has unobstructed height, expand at 2x
+        // font scale first, then shrink below 480 dp to verify the top bar collapses to compact.
+        val decor = activity.window.decorView
+        runOnMainSync { decor.windowInsetsController?.hide(WindowInsets.Type.ime()) }
+        waitForImeVisibility(activity, visible = false)
+        val insets = checkNotNull(decor.rootWindowInsets).getInsets(
+            WindowInsets.Type.systemBars() or
+                WindowInsets.Type.displayCutout() or
+                WindowInsets.Type.ime()
+        )
+        val usableHostHeightDp = (decor.height - insets.top - insets.bottom) / density
+        runOnMainSync {
+            fontScale.floatValue = 2f
+            height.value = null
+        }
+        if (usableHostHeightDp >= 480f) {
+            var lastDiag = ""
+            try {
+                awaitReadingCondition("tall large-text window did not expand the editor top bar") {
+                    uiAutomation.clearCache()
+                    val root = uiAutomation.rootInActiveWindow
+                    val back = root?.findNode {
+                        it.contentDescription?.toString() == "Back" && it.isVisibleToUser
+                    }
+                    val title = root?.findNode {
+                        it.text?.toString() == "Compact.md" && it.isVisibleToUser
+                    }
+                    val backBounds = back?.let { Rect().also(it::getBoundsInScreen) }
+                    val titleBounds = title?.let { Rect().also(it::getBoundsInScreen) }
+                    lastDiag = "usableHostHeightDp=$usableHostHeightDp back=$backBounds title=$titleBounds"
+                    backBounds != null && titleBounds != null &&
+                        !backBounds.isEmpty && !titleBounds.isEmpty && titleBounds.top >= backBounds.bottom
+                }
+            } catch (failure: Throwable) {
+                throw AssertionError("${failure.message} ($lastDiag)", failure)
+            }
+        }
+        runOnMainSync {
+            height.value = 420.dp
+        }
+        awaitReadingCondition("short large-text window expanded the editor top bar") {
+            uiAutomation.clearCache()
+            val back = uiAutomation.rootInActiveWindow?.findNode {
+                it.contentDescription?.toString() == "Back" && it.isVisibleToUser
+            } ?: return@awaitReadingCondition false
+            val title = uiAutomation.rootInActiveWindow?.findNode {
+                it.text?.toString() == "Compact.md" && it.isVisibleToUser
+            } ?: return@awaitReadingCondition false
+            val backBounds = Rect().also(back::getBoundsInScreen)
+            val titleBounds = Rect().also(title::getBoundsInScreen)
+            !backBounds.isEmpty && !titleBounds.isEmpty && titleBounds.top < backBounds.bottom
+        }
     } finally {
         runOnMainSync {
             activity.finishAndRemoveTask()
