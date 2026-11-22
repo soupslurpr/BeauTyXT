@@ -11,7 +11,7 @@ rust-version.workspace = true
 name = "beautyxt_diagram_service"
 crate-type = ["cdylib"]
 
-[dependencies]
+[target.'cfg(target_os = "android")'.dependencies]
 beautyxt-diagram-core = { path = "../diagram-core" }
 beautyxt-illustration-core = { path = "../illustration-core" }
 beautyxt-native-service = { path = "../native-service" }

@@ -9,7 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-skrifa = { version = "0.47.0", default-features = false, features = ["std"] }
+skrifa = { version = "0.50.0", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true

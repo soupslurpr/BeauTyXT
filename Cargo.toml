@@ -30,7 +30,7 @@ edition = "2024"
 license = "MIT"
 publish = false
 repository = "https://github.com/soupslurpr/BeauTyXT"
-rust-version = "1.98"
+rust-version = "1.100"
 
 [workspace.lints.rust]
 missing_docs = "deny"
@@ -39,6 +39,7 @@ unsafe_op_in_unsafe_fn = "deny"
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
+assert_is_empty = "allow"
 undocumented_unsafe_blocks = "deny"
 
 [profile.release]

@@ -8,8 +8,10 @@ mod svg;
 
 use beautyxt_illustration_core::DrawingError;
 use merman::{
-    Engine, MermaidConfig, OperationControl, RenderOutput, RenderRequest, Renderer, SvgRequest,
+    MermaidEngine, OperationControl, RenderOutput, RenderRequest, Renderer,
+    SourcePresentationConfig, SvgRequest,
 };
+use merman_render::diagram_theme::{ThemeAdmissionPolicy, TrustedThemeLane, TrustedThemeLanes};
 use merman_render::environment::{
     MeasurementProfileId, TextMeasurementPolicy, TextMeasurementProfile,
     TextMeasurementProfileIdentity,
@@ -82,21 +84,29 @@ fn render_diagram_with_loaded_fonts(
             .apply_override(name, value)
             .map_err(|_| DrawingError::Invalid)?;
     }
-    let config = MermaidConfig::from_value(serde_json::json!({
-        "theme": "base", "securityLevel": "strict", "htmlLabels": false,
+    let config = SourcePresentationConfig::from_value(serde_json::json!({
+        "theme": "base", "look": "classic", "securityLevel": "strict", "htmlLabels": false,
         // Opaque host-owned label surfaces keep theme contrast stable in screen and print.
         "themeCSS": host_css(family),
         "fontFamily": fonts.family, "fontSize": 16,
-        "flowchart": {"htmlLabels": false, "curve": "linear"},
-        "sequence": {"useMaxWidth": false, "actorFontFamily": fonts.family,
+        "flowchart": {"look": "classic", "htmlLabels": false, "curve": "linear"},
+        "sequence": {"look": "classic", "useMaxWidth": false, "actorFontFamily": fonts.family,
             "messageFontFamily": fonts.family, "noteFontFamily": fonts.family},
+        "state": {"look": "classic"},
+        "class": {"look": "classic"},
+        "er": {"look": "classic"},
         "themeVariables": host_theme(&fonts.family)
     }));
     let request = SvgRequest {
         environment: merman::SvgEnvironment::deterministic()
             .without_math_renderer()
             .with_text_measurement_policy(TextMeasurementPolicy::uniform(profile))
-            .with_resource_policy(resources),
+            .with_resource_policy(resources)
+            // Host site_config supplies the fixed sentinel-color themeCSS; admit_source rejects
+            // document directives and authored CSS before parsing.
+            .with_theme_admission_policy(ThemeAdmissionPolicy::default().with_trusted_lanes(
+                TrustedThemeLanes::from_allowed([TrustedThemeLane::RawThemeCss]),
+            )),
         // Set the host's background before the terminal SVG safety/resource pass. Theme variables
         // style the diagram, but do not replace Merman's separate root canvas background.
         pipeline: Some(
@@ -107,7 +117,7 @@ fn render_diagram_with_loaded_fonts(
         ..SvgRequest::default()
     };
     let result = Renderer::new()
-        .with_engine(Engine::new().with_site_config(config))
+        .with_presentation_engine(MermaidEngine::new().with_site_config(config))
         .render(RenderRequest::svg(
             source,
             OperationControl::new().with_deadline(Duration::from_millis(1_500)),
@@ -150,6 +160,8 @@ fn host_theme(family: &str) -> serde_json::Value {
     let mut values = serde_json::Map::new();
     values.insert("fontFamily".into(), family.into());
     values.insert("fontSize".into(), "16px".into());
+    // Closed vector path packets reject SVG filter effects; disable Mermaid's default drop shadow.
+    values.insert("dropShadow".into(), "none".into());
     for (names, color) in [
         (
             &[
