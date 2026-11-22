@@ -8,10 +8,10 @@ publish.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-[dependencies]
+[target.'cfg(target_os = "android")'.dependencies]
 beautyxt-native-service = { path = "../native-service" }
 beautyxt-illustration-core = { path = "../illustration-core" }
-libc = "0.2.189"
+libc = "0.2.191"
 
 [lints]
 workspace = true

@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 beautyxt-editor-bridge-protocol = { path = "../editor-bridge-protocol" }
 beautyxt-editor-core = { path = "../editor-core" }
 jni = "0.22.4"
-libc = "0.2.189"
+libc = "0.2.191"
 
 [lints]
 workspace = true

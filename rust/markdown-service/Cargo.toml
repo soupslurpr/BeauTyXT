@@ -13,9 +13,11 @@ rust-version.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-beautyxt-native-service = { path = "../native-service" }
 beautyxt-markdown-core = { path = "../markdown-core" }
-libc = "0.2.189"
+libc = "0.2.191"
+
+[target.'cfg(target_os = "android")'.dependencies]
+beautyxt-native-service = { path = "../native-service" }
 
 [lints]
 workspace = true

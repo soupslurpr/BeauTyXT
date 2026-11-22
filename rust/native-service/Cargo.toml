@@ -8,8 +8,11 @@ publish.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-[dependencies]
-libc = "0.2.189"
+[target.'cfg(target_os = "android")'.dependencies]
+libc = "0.2.191"
+
+[dev-dependencies]
+libc = "0.2.191"
 
 [lints]
 workspace = true

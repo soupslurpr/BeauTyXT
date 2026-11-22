@@ -2,6 +2,7 @@
 
 use beautyxt_illustration_core::DrawingError;
 use merman_render::text::{TextMeasurer, TextMetrics, TextStyle};
+use skrifa::{FontRef, MetadataProvider};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -112,12 +113,13 @@ impl DiagramFonts {
         let mut selected = None;
         for face in self.database.faces() {
             let supported = self.database.with_face_data(face.id, |data, index| {
-                let Ok(font) = ttf_parser::Face::parse(data, index) else { return false; };
+                let Ok(font) = FontRef::from_index(data, index) else { return false; };
+                let charmap = font.charmap();
                 grapheme.chars().all(|character| {
                     // Joining and variation controls affect shaping but need no visible glyph.
                     character.is_control()
                         || matches!(character, '\u{200c}' | '\u{200d}' | '\u{fe00}'..='\u{fe0f}' | '\u{e0100}'..='\u{e01ef}')
-                        || font.glyph_index(character).is_some()
+                        || charmap.map(character).is_some()
                 })
             }).unwrap_or(false);
             if supported {

@@ -12,10 +12,10 @@ rust-version.workspace = true
 [lib]
 crate-type = ["cdylib"]
 
-[dependencies]
+[target.'cfg(target_os = "android")'.dependencies]
 beautyxt-illustration-core = { path = "../illustration-core" }
-beautyxt-math-core = { path = "../math-core" }
 beautyxt-native-service = { path = "../native-service" }
+beautyxt-math-core = { path = "../math-core" }
 beautyxt-illustration-service = { path = "../illustration-service" }
 
 [lints]

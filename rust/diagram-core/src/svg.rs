@@ -137,7 +137,7 @@ fn visit(
                     // A partial clip does not prove which characters remain visible.
                     drawing.set_text_complete(false);
                 }
-                // usvg 0.48 propagates the text's absolute transform to its outlined paths.
+                // usvg propagates the text's absolute transform to its outlined paths.
                 // Applying it again here would displace or rescale every nested diagram label.
                 visit(text.flattened(), drawing, depth + 1, &clips)?;
             }
