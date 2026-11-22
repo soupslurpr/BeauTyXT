@@ -766,29 +766,33 @@ impl PieceTree {
         range: Utf16Range,
         replacement: &str,
     ) -> Result<ReplaceOutcome, DocumentError> {
-        self.validate_range(range)?;
         let mut cache = PieceReadCache::new();
-        let start = self.position_at_utf16(range.start, &mut cache)?;
-        let end = self.position_at_utf16(range.end, &mut cache)?;
+        self.replace_with_cache(range, replacement, &mut cache)
+    }
+
+    /// Replaces one exact global UTF-16 range while reusing an existing read cache.
+    pub(crate) fn replace_with_cache(
+        &self,
+        range: Utf16Range,
+        replacement: &str,
+        cache: &mut PieceReadCache,
+    ) -> Result<ReplaceOutcome, DocumentError> {
+        self.validate_range(range)?;
+        let start = self.position_at_utf16(range.start, cache)?;
+        let end = self.position_at_utf16(range.end, cache)?;
         let byte_range = start.bytes..end.bytes;
-        if byte_range_equals(
-            &self.root,
-            0,
-            &byte_range,
-            replacement.as_bytes(),
-            &mut cache,
-        )? {
+        if byte_range_equals(&self.root, 0, &byte_range, replacement.as_bytes(), cache)? {
             return Ok(ReplaceOutcome::Unchanged);
         }
 
-        let (prefix, remainder) = split_tree(self.root.clone(), start.bytes, &mut cache)?;
-        let (_, suffix) = split_tree(remainder, byte_range.len(), &mut cache)?;
+        let (prefix, remainder) = split_tree(self.root.clone(), start.bytes, cache)?;
+        let (_, suffix) = split_tree(remainder, byte_range.len(), cache)?;
         let with_replacement = compact_concatenate_trees(
             prefix,
             edit_tree(replacement, self.inserted_line_ending),
-            &mut cache,
+            cache,
         )?;
-        let root = compact_concatenate_trees(with_replacement, suffix, &mut cache)?;
+        let root = compact_concatenate_trees(with_replacement, suffix, cache)?;
         Ok(ReplaceOutcome::Replaced(Self {
             root,
             has_utf8_bom: self.has_utf8_bom,
@@ -1057,6 +1061,11 @@ pub(crate) struct PieceTreeReader<'tree> {
 }
 
 impl PieceTreeReader<'_> {
+    /// Releases the borrow on the tree while keeping warmed source entries reusable.
+    pub(crate) fn into_cache(self) -> PieceReadCache {
+        self.cache
+    }
+
     /// Returns the content and terminator bounds for one LF-delimited line.
     ///
     /// # Errors
@@ -1291,6 +1300,7 @@ struct SourceCacheEntry {
     byte_start: u64,
     byte_length: usize,
     logical_text: String,
+    has_cr: bool,
 }
 
 impl SourceCacheEntry {
@@ -1305,11 +1315,27 @@ impl SourceCacheEntry {
             && self.byte_start == byte_start
             && self.byte_length == byte_length
     }
+
+    /// Returns one subslice directly when raw and logical bytes are identical.
+    fn slice_identical(
+        &self,
+        source: &Arc<dyn ReadAtSource>,
+        byte_start: u64,
+        byte_length: usize,
+    ) -> Option<&str> {
+        if self.has_cr || !Arc::ptr_eq(&self.source, source) || byte_start < self.byte_start {
+            return None;
+        }
+        let rel_start = usize::try_from(byte_start - self.byte_start).ok()?;
+        let rel_end = rel_start.checked_add(byte_length)?;
+        self.logical_text.get(rel_start..rel_end)
+    }
 }
 
 /// Retains bounded decoded pieces and logical positions for one operation.
-struct PieceReadCache {
+pub(crate) struct PieceReadCache {
     entries: Vec<SourceCacheEntry>,
+    last_raw_source: Option<(Arc<dyn ReadAtSource>, u64, String)>,
     positions: Vec<CachedPiecePosition>,
     next_position_slot: usize,
 }
@@ -1325,9 +1351,26 @@ impl PieceReadCache {
     fn new() -> Self {
         Self {
             entries: Vec::with_capacity(MAX_CACHED_SOURCE_PIECES),
+            last_raw_source: None,
             positions: Vec::with_capacity(MAX_CACHED_PIECE_POSITIONS),
             next_position_slot: 0,
         }
+    }
+
+    /// Returns one raw subslice from the single retained CR/CRLF source leaf.
+    fn slice_last_raw(
+        &self,
+        source: &Arc<dyn ReadAtSource>,
+        byte_start: u64,
+        byte_length: usize,
+    ) -> Option<&str> {
+        let (cached_source, cached_start, raw) = self.last_raw_source.as_ref()?;
+        if !Arc::ptr_eq(cached_source, source) || byte_start < *cached_start {
+            return None;
+        }
+        let rel_start = usize::try_from(byte_start - *cached_start).ok()?;
+        let rel_end = rel_start.checked_add(byte_length)?;
+        raw.get(rel_start..rel_end)
     }
 
     /// Returns a nearby cached position when it is no farther than the origin.
@@ -1381,6 +1424,11 @@ impl PieceReadCache {
         byte_length: usize,
         operation: impl FnOnce(&str) -> ResultValue,
     ) -> Result<ResultValue, DocumentError> {
+        for entry in &self.entries {
+            if let Some(slice) = entry.slice_identical(source, byte_start, byte_length) {
+                return Ok(operation(slice));
+            }
+        }
         if let Some(entry_index) = self
             .entries
             .iter()
@@ -1388,13 +1436,24 @@ impl PieceReadCache {
         {
             return Ok(operation(&self.entries[entry_index].logical_text));
         }
+        if let Some(raw_slice) = self.slice_last_raw(source, byte_start, byte_length) {
+            return if raw_slice.contains('\r') {
+                let normalized = normalize_source_text(raw_slice);
+                Ok(operation(&normalized))
+            } else {
+                Ok(operation(raw_slice))
+            };
+        }
 
         let mut bytes = vec![0_u8; byte_length];
         source.read_exact_at(&mut bytes, byte_start)?;
         let source_text = String::from_utf8(bytes)
             .map_err(|_| invalid_data_error("source changed after its UTF-8 index was built"))?;
-        let logical_text = if source_text.contains('\r') {
-            normalize_source_text(&source_text)
+        let has_cr = source_text.contains('\r');
+        let logical_text = if has_cr {
+            let normalized = normalize_source_text(&source_text);
+            self.last_raw_source = Some((source.clone(), byte_start, source_text));
+            normalized
         } else {
             source_text
         };
@@ -1406,6 +1465,7 @@ impl PieceReadCache {
             byte_start,
             byte_length,
             logical_text,
+            has_cr,
         });
         let logical_text = &self
             .entries
@@ -1417,9 +1477,9 @@ impl PieceReadCache {
 
     /// Runs an operation over one source piece's raw and logical text.
     ///
-    /// Raw text is reread into one bounded temporary allocation instead of
-    /// doubling every logical cache entry. Only source-piece splitting and
-    /// invariant validation require both representations concurrently.
+    /// LF-only pieces serve both views directly from the cached entry (including
+    /// subslices created by repeated splits). CR/CRLF pieces retain at most one
+    /// bounded raw leaf so repeated splits within that leaf avoid rereading disk.
     fn with_source_text<ResultValue>(
         &mut self,
         source: &Arc<dyn ReadAtSource>,
@@ -1427,27 +1487,62 @@ impl PieceReadCache {
         byte_length: usize,
         operation: impl FnOnce(&str, &str) -> ResultValue,
     ) -> Result<ResultValue, DocumentError> {
-        if let Some(entry_index) = self
-            .entries
-            .iter()
-            .position(|entry| entry.contains(source, byte_start, byte_length))
-        {
-            let mut source_bytes = vec![0_u8; byte_length];
-            source.read_exact_at(&mut source_bytes, byte_start)?;
-            let source_text = String::from_utf8(source_bytes).map_err(|_| {
-                invalid_data_error("source changed after its UTF-8 index was built")
-            })?;
-            return Ok(operation(
-                &source_text,
-                &self.entries[entry_index].logical_text,
-            ));
+        for entry in &self.entries {
+            if let Some(slice) = entry.slice_identical(source, byte_start, byte_length) {
+                return Ok(operation(slice, slice));
+            }
+        }
+        if let Some(raw_slice) = self.slice_last_raw(source, byte_start, byte_length) {
+            if let Some(entry_index) = self
+                .entries
+                .iter()
+                .position(|entry| entry.contains(source, byte_start, byte_length))
+            {
+                return Ok(operation(
+                    raw_slice,
+                    &self.entries[entry_index].logical_text,
+                ));
+            }
+            return if raw_slice.contains('\r') {
+                let normalized = normalize_source_text(raw_slice);
+                Ok(operation(raw_slice, &normalized))
+            } else {
+                Ok(operation(raw_slice, raw_slice))
+            };
         }
 
         let mut source_bytes = vec![0_u8; byte_length];
         source.read_exact_at(&mut source_bytes, byte_start)?;
         let source_text = String::from_utf8(source_bytes)
             .map_err(|_| invalid_data_error("source changed after its UTF-8 index was built"))?;
-        let logical_text = normalize_source_text(&source_text);
+        let has_cr = source_text.contains('\r');
+        if let Some(entry_index) = self
+            .entries
+            .iter()
+            .position(|entry| entry.contains(source, byte_start, byte_length))
+        {
+            if has_cr {
+                self.last_raw_source = Some((source.clone(), byte_start, source_text));
+                let raw = &self
+                    .last_raw_source
+                    .as_ref()
+                    .expect("raw source leaf was just inserted")
+                    .2;
+                return Ok(operation(raw, &self.entries[entry_index].logical_text));
+            }
+            return Ok(operation(
+                &source_text,
+                &self.entries[entry_index].logical_text,
+            ));
+        }
+
+        let logical_text = if has_cr {
+            let normalized = normalize_source_text(&source_text);
+            self.last_raw_source = Some((source.clone(), byte_start, source_text));
+            normalized
+        } else {
+            source_text
+        };
         if self.entries.len() == MAX_CACHED_SOURCE_PIECES {
             self.entries.remove(0);
         }
@@ -1456,13 +1551,23 @@ impl PieceReadCache {
             byte_start,
             byte_length,
             logical_text,
+            has_cr,
         });
         let logical_text = &self
             .entries
             .last()
             .expect("a source cache entry was just inserted")
             .logical_text;
-        Ok(operation(&source_text, logical_text))
+        if has_cr {
+            let raw = &self
+                .last_raw_source
+                .as_ref()
+                .expect("raw source leaf was just inserted")
+                .2;
+            Ok(operation(raw, logical_text))
+        } else {
+            Ok(operation(logical_text, logical_text))
+        }
     }
 }
 
@@ -4456,6 +4561,53 @@ mod tests {
             opening_error_kind(PieceTree::open_source_reader(truncated_source)),
             ErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn shared_read_cache_avoids_rereading_source_leaf_during_batch_splits() {
+        for line_ending in ["\n", "\r\n"] {
+            let line = format!("cat dog{line_ending}");
+            let text = line.repeat(200);
+            let source = Arc::new(TrackingSource::new(&text, MAX_PIECE_BYTES));
+            let mut tree = PieceTree::open_source_reader(source.clone()).unwrap();
+            let _ = source.take_read_requests();
+
+            let mut reader = tree.reader();
+            let mut ranges = Vec::new();
+            let mut offset = 0_usize;
+            for _ in 0..200 {
+                let range = Utf16Range::new(offset, offset + 3);
+                assert_eq!(reader.bounded_text_prefix(range, 3).unwrap().text, "cat");
+                ranges.push(range);
+                offset += 8; // "cat dog\n" = 8 logical UTF-16 units
+            }
+            let mut cache = reader.into_cache();
+            for range in ranges.into_iter().rev() {
+                let ReplaceOutcome::Replaced(next) =
+                    tree.replace_with_cache(range, "fox", &mut cache).unwrap()
+                else {
+                    panic!("expected replacement to change tree");
+                };
+                tree = next;
+            }
+            let reads = source.take_read_requests();
+            assert_eq!(
+                reads.len(),
+                1,
+                "expected 1 backing read for {line_ending:?} leaf, got {}",
+                reads.len()
+            );
+            let expected = "fox dog\n".repeat(200);
+            let actual = tree
+                .reader()
+                .bounded_text_prefix(
+                    Utf16Range::new(0, tree.summary().utf16_units),
+                    expected.len(),
+                )
+                .unwrap()
+                .text;
+            assert_eq!(actual, expected);
+        }
     }
 
     /// Provides immutable raw bytes for invalid UTF-8 tests.
