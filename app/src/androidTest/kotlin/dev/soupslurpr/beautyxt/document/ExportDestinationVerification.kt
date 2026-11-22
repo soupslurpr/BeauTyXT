@@ -41,7 +41,7 @@ internal fun Instrumentation.verifyExportDestinationControls() {
         waitForAccessibilityIdle()
 
         runOnMainSync { check(session.selectReading(ReadingPoint(1, 0), ReadingPoint(1, selected.length))) }
-        requireActionableText("Send/export").performRequiredClick()
+        requireActionableContentDescription("Send/export").performRequiredClick()
         awaitDestination(export)
         waitForAccessibilityNode("selection summary contains the selected text") { it.text?.toString() == selected }
         captureRecoveryScreen("export-selected-text")
@@ -59,7 +59,7 @@ internal fun Instrumentation.verifyExportDestinationControls() {
     }
     withReadingPage(source, nfcProcessor = processor, writeNfcEnabled = true) { _, session ->
         runOnMainSync { check(session.selectReading(ReadingPoint(1, 0), ReadingPoint(1, selected.length))) }
-        requireActionableText("Send/export").performRequiredClick()
+        requireActionableContentDescription("Send/export").performRequiredClick()
         val export = session.excerptExport
         awaitDestination(export)
         requireActionableText("Write NFC tag").performRequiredClick()

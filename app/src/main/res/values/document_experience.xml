@@ -65,6 +65,7 @@
     <string name="find_edit_search">Edit search</string>
     <string name="find_enter_query">Enter a search to see matches.</string>
     <string name="find_result_representation">%1$d · %2$s</string>
+    <string name="find_current_match">Current match</string>
     <string name="find_retry">Retry search</string>
     <string name="find_continue">Continue search</string>
     <string name="find_restart">Restart search</string>

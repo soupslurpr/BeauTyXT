@@ -6,7 +6,9 @@
 package dev.soupslurpr.beautyxt.ui
 
 import android.content.ActivityNotFoundException
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -27,6 +29,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -72,30 +75,42 @@ internal fun AboutScreen(
 ) {
     var sourceCodeUnavailable by rememberSaveable { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
+    val scrollState = rememberScrollState()
+    val dividerAlpha by animateFloatAsState(
+        targetValue = if (scrollState.canScrollBackward) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "aboutTopBarDividerAlpha"
+    )
 
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(R.string.about_title),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_arrow_back),
-                            contentDescription = stringResource(R.string.navigation_back)
+            Box {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = stringResource(R.string.about_title),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                    }
-                },
-                windowInsets = WindowInsets.safeDrawing.only(
-                    WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_arrow_back),
+                                contentDescription = stringResource(R.string.navigation_back)
+                            )
+                        }
+                    },
+                    windowInsets = WindowInsets.safeDrawing.only(
+                        WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+                    )
                 )
-            )
+                HorizontalDivider(
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = dividerAlpha)
+                )
+            }
         },
         contentWindowInsets = WindowInsets.safeDrawing.only(
             WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
@@ -111,7 +126,7 @@ internal fun AboutScreen(
                 modifier = Modifier
                     .widthIn(max = AboutContentMaxWidth)
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(scrollState)
                     .padding(horizontal = AboutHorizontalPadding)
                     .padding(top = sectionSpacing, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(sectionSpacing)

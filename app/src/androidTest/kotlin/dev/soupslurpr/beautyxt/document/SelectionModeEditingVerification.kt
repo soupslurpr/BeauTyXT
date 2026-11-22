@@ -61,7 +61,7 @@ internal fun Instrumentation.verifySelectionModeEditing() {
             "source mapping for selected bold text: ${session.documentSelection}, ${session.documentSelection?.exactSource(session.readingDocumentForSelection())}"
         }
         waitForAccessibilityIdle()
-        requireActionableText("Selection actions").performRequiredClick()
+        requireActionableContentDescription("Selection actions").performRequiredClick()
         requireActionableText("Edit source text").performRequiredClick()
         awaitReadingCondition("reading selection did not become the source edit range") {
             session.presentation == EditorPresentation.Text && session.activeDraft?.let {
@@ -107,7 +107,7 @@ internal fun Instrumentation.verifySelectionModeEditing() {
     withReadingPage(large) { activity, session ->
         runOnMainSync { check(session.selectWholeDocument()) }
         check(session.documentSelection?.exactSource(session.readingDocumentForSelection()) == Utf16Range(0, large.length.toLong()))
-        requireActionableText("Selection actions").performRequiredClick()
+        requireActionableContentDescription("Selection actions").performRequiredClick()
         requireActionableText("Edit source text").performRequiredClick()
         awaitReadingCondition("large selection did not transfer beyond the bounded source window") {
             session.presentation == EditorPresentation.Text && session.activeDraft != null &&

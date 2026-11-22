@@ -214,7 +214,8 @@ internal fun FileInfoSheet(session: EditorSession, onDismiss: () -> Unit) {
             }
         },
         sheetState = sheetState,
-        sheetGesturesEnabled = !removalInProgress
+        sheetGesturesEnabled = !removalInProgress,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Column(
             modifier =
@@ -313,7 +314,7 @@ private fun FileActionsSection(
         style = MaterialTheme.typography.titleSmall
     )
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = MaterialTheme.colorScheme.surfaceContainer,
         shape = MaterialTheme.shapes.large
     ) {
         Column(

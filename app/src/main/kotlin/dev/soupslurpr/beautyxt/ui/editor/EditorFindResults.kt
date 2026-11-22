@@ -2,11 +2,14 @@
 
 package dev.soupslurpr.beautyxt.ui.editor
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,7 +46,30 @@ internal fun EditorFindResults(
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
     val resultsFocus = remember(session) { FocusRequester() }
+    val listState = rememberLazyListState()
     val review = session.findResultsPage == FindResultsPage.Replacements
+    val headerDividerAlpha by animateFloatAsState(
+        targetValue = if (listState.canScrollBackward) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "findResultsHeaderDividerAlpha"
+    )
+    LaunchedEffect(session, wide, review, session.findResultIndex) {
+        if (!wide || review) return@LaunchedEffect
+        val targetIndex = session.findResultIndex
+        if (targetIndex !in session.findResults.indices) return@LaunchedEffect
+        val layoutInfo = listState.layoutInfo
+        val visibleItem = layoutInfo.visibleItemsInfo.firstOrNull { it.key == targetIndex }
+        val fullyVisible = visibleItem != null && (
+            (visibleItem.offset >= layoutInfo.viewportStartOffset &&
+                visibleItem.offset + visibleItem.size <= layoutInfo.viewportEndOffset) ||
+                (visibleItem.offset <= layoutInfo.viewportStartOffset &&
+                    visibleItem.offset + visibleItem.size >= layoutInfo.viewportEndOffset)
+            )
+        if (!fullyVisible) {
+            // Item 0 is the "status" header when not in replacement review.
+            listState.animateScrollToItem(targetIndex + 1)
+        }
+    }
     LaunchedEffect(session, session.findFocusRequest) {
         if (session.findInputFocus != FindInputFocus.Results) return@LaunchedEffect
         withFrameNanos { }
@@ -66,18 +92,25 @@ internal fun EditorFindResults(
             session.findInputFocus == FindInputFocus.Results &&
                 handleEditorHistoryShortcut(event, session::requestUndo, session::requestRedo)
         }.focusable()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            FindIcon(R.drawable.ic_arrow_back, stringResource(R.string.find_hide_results), onReturn)
-            Column(Modifier.weight(1f).padding(vertical = 16.dp)) {
-                Text(stringResource(if (review) R.string.replace_review_title else R.string.find_results),
-                    style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                Text(findDomainScopeText(session), style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                FindIcon(R.drawable.ic_arrow_back, stringResource(R.string.find_hide_results), onReturn)
+                Column(Modifier.weight(1f).padding(vertical = 16.dp)) {
+                    Text(stringResource(if (review) R.string.replace_review_title else R.string.find_results),
+                        style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+                    Text(findDomainScopeText(session), style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onEditSearch) { Text(stringResource(R.string.find_edit_search)) }
             }
-            TextButton(onEditSearch) { Text(stringResource(R.string.find_edit_search)) }
+            HorizontalDivider(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = headerDividerAlpha)
+            )
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            state = listState,
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (review) item(key = "summary") {
                 Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer) {
@@ -104,20 +137,46 @@ internal fun EditorFindResults(
                 val included = index !in session.excludedFindResults
                 val current = index == session.findResultIndex
                 val includeDescription = stringResource(R.string.replace_include_match, index + 1)
-                Surface(shape = MaterialTheme.shapes.large,
+                Surface(
+                    shape = MaterialTheme.shapes.large,
                     color = if (review && included || !review && current) MaterialTheme.colorScheme.secondaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainer) {
+                        else MaterialTheme.colorScheme.surfaceContainer,
+                    border = if (!review && current) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
+                ) {
                     Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Top) {
                         if (review) Checkbox(included, onCheckedChange = { session.toggleFindResultIncluded(index) },
                             modifier = Modifier.semantics { contentDescription = includeDescription })
-                        Column(Modifier.weight(1f).clickable {
-                            focus.clearFocus(force = true)
-                            keyboard?.hide()
-                            if (session.selectFindResult(index) && !wide) onReturn()
-                        }.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(stringResource(R.string.find_result_representation, index + 1, representationLabel(result.representation)),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(
+                            Modifier.weight(1f)
+                                .then(if (!review) Modifier.semantics { selected = current } else Modifier)
+                                .clickable {
+                                    focus.clearFocus(force = true)
+                                    keyboard?.hide()
+                                    if (session.selectFindResult(index) && !wide) onReturn()
+                                }
+                                .padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    stringResource(R.string.find_result_representation, index + 1, representationLabel(result.representation)),
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (!review && current) {
+                                    Text(
+                                        text = stringResource(R.string.find_current_match),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                             if (result.alsoMatchesSource) Text(stringResource(R.string.find_also_source), style = MaterialTheme.typography.labelSmall)
                             val snippet = findSnippetContext(result.hit)
                             val spokenReplacement = if (review && result.hit.replacement != null)

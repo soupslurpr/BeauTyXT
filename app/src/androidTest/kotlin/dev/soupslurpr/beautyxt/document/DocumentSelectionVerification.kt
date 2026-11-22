@@ -229,7 +229,15 @@ internal fun Instrumentation.verifyDocumentSelectionControls() {
 }
 
 private fun Instrumentation.selectionControl(label: String): AccessibilityNodeInfo {
-    return requireActionableText(label)
+    waitForAccessibilityIdle()
+    uiAutomation.clearCache()
+    val match = waitForAccessibilityNode("selection control '$label'") { node ->
+        (node.text?.toString() == label || node.contentDescription?.toString() == label) &&
+            node.enabledClickableAncestor() != null
+    }
+    return checkNotNull(match.enabledClickableAncestor()) {
+        "selection control '$label' lost its enabled clickable ancestor"
+    }
 }
 
 /** Checks the displayed page number, accessible PDF content, and page boundaries together. */

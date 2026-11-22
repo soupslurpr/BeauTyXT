@@ -1,9 +1,10 @@
 /* Displays document identity, navigation, and secondary actions. */
 package dev.soupslurpr.beautyxt.ui.editor
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -45,6 +46,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.ui.UiText
 import dev.soupslurpr.beautyxt.ui.asString
@@ -103,6 +105,8 @@ private fun editorCancellation(
 internal fun EditorTopBar(
     session: EditorSession,
     actions: EditorNavigationActions,
+    availableWidth: Dp,
+    availableHeight: Dp,
     contentsEnabled: Boolean,
     scanQrEnabled: Boolean,
     readNfcEnabled: Boolean,
@@ -113,6 +117,14 @@ internal fun EditorTopBar(
     onOverflowExpandedChange: (Boolean) -> Unit,
     onClose: () -> Unit
 ) {
+    val showInlineContents = session.presentation == EditorPresentation.MarkdownPreview &&
+        usesInlineEditorContentsAction(
+            availableWidth = availableWidth,
+            fontScale = LocalDensity.current.fontScale,
+            availableHeight = availableHeight
+        )
+    val showOverflowContents =
+        session.presentation == EditorPresentation.MarkdownPreview && !showInlineContents
     val cancellation = editorCancellation(session, onCancelSave)
     val isCancelling = session.shareStatus is ShareStatus.Cancelling ||
         session.printStatus is PrintStatus.Cancelling ||
@@ -140,6 +152,7 @@ internal fun EditorTopBar(
         ).asString()
     }
     AdaptiveEditorTopAppBar(
+        availableHeight = availableHeight,
         navigationIcon = {
             IconButton(onClick = onClose, enabled = navigationEnabled) {
                 Icon(
@@ -181,7 +194,7 @@ internal fun EditorTopBar(
                         )
                     }
                 }
-                if (session.presentation == EditorPresentation.MarkdownPreview) {
+                if (showInlineContents) {
                     IconButton(onClick = actions.onContents, enabled = contentsEnabled) {
                         Icon(
                             painterResource(R.drawable.ic_format_list_bulleted),
@@ -207,6 +220,23 @@ internal fun EditorTopBar(
                         modifier = Modifier.verticalScroll(rememberScrollState()),
                         containerColor = MenuDefaults.groupStandardContainerColor
                     ) {
+                        if (showOverflowContents) {
+                            ActionMenuItem(
+                                shape = MenuDefaults.leadingItemShape,
+                                label = stringResource(R.string.editor_contents),
+                                leadingIcon = {
+                                    Icon(
+                                        painterResource(R.drawable.ic_format_list_bulleted),
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = {
+                                    onOverflowExpandedChange(false)
+                                    actions.onContents()
+                                },
+                                enabled = contentsEnabled
+                            )
+                        }
                         if (session.presentation == EditorPresentation.Text) {
                             ActionMenuItem(
                                 shape = MenuDefaults.leadingItemShape,
@@ -222,7 +252,10 @@ internal fun EditorTopBar(
                             )
                         }
                         ActionMenuItem(
-                            shape = if (session.presentation == EditorPresentation.Text) {
+                            shape = if (
+                                session.presentation == EditorPresentation.Text ||
+                                showOverflowContents
+                            ) {
                                 MenuDefaults.middleItemShape
                             } else {
                                 MenuDefaults.leadingItemShape
@@ -309,6 +342,7 @@ internal fun EditorTopBar(
 /** Adapts the title to large text while preserving the same action positions. */
 @Composable
 private fun AdaptiveEditorTopAppBar(
+    availableHeight: Dp,
     navigationIcon: @Composable () -> Unit,
     title: @Composable (Boolean) -> Unit,
     actions: @Composable RowScope.() -> Unit
@@ -318,38 +352,48 @@ private fun AdaptiveEditorTopAppBar(
         scrolledContainerColor = Color.Transparent
     )
     val insets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
-    BoxWithConstraints {
-        val expanded = usesExpandedEditorTopBar(LocalDensity.current.fontScale, maxHeight)
-        if (expanded) {
-            LargeTopAppBar(
-                title = { title(true) },
-                navigationIcon = navigationIcon,
-                actions = actions,
-                windowInsets = insets,
-                colors = colors
-            )
-        } else {
-            TopAppBar(
-                title = { title(false) },
-                navigationIcon = navigationIcon,
-                actions = actions,
-                windowInsets = insets,
-                colors = colors
-            )
-        }
+    val expanded = usesExpandedEditorTopBar(LocalDensity.current.fontScale, availableHeight)
+    if (expanded) {
+        LargeTopAppBar(
+            title = { title(true) },
+            navigationIcon = navigationIcon,
+            actions = actions,
+            windowInsets = insets,
+            colors = colors
+        )
+    } else {
+        TopAppBar(
+            title = { title(false) },
+            navigationIcon = navigationIcon,
+            actions = actions,
+            windowInsets = insets,
+            colors = colors
+        )
     }
 }
 
-/** Separates the document's controls from its uninterrupted reading surface. */
+/** Paints the document header edge to edge on surface with a zero-shift scroll divider. */
 @Composable
-internal fun EditorChromeSurface(content: @Composable () -> Unit) {
+internal fun EditorChromeSurface(
+    showDivider: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    val dividerAlpha by animateFloatAsState(
+        targetValue = if (showDivider) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "editorChromeDividerAlpha"
+    )
     Surface(
-        modifier = Modifier.fillMaxWidth().windowInsetsPadding(
-            WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
-        ),
-        color = MaterialTheme.colorScheme.surfaceContainerLow
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface
     ) {
-        Column { content() }
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth()) { content() }
+            HorizontalDivider(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = dividerAlpha)
+            )
+        }
     }
 }
 

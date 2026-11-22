@@ -158,7 +158,11 @@ internal fun Instrumentation.verifyAppTheme() {
         awaitReadingCondition("external MainActivity did not apply True black") {
             external.isNightMode() && external.windowSurfaceColor() == Color.BLACK
         }
-        verifyScreenEdgePixel(expected = Color.BLACK, label = "True black external document")
+        verifyExternalDocumentPixels(
+            expectedCanvas = Color.BLACK,
+            expectedTopBar = Color.BLACK,
+            label = "True black external document"
+        )
         requireActionableContentDescription("Back").performRequiredClick()
         waitForAccessibilityNode("external caller after closing True black document") {
             it.packageName?.toString() == DocumentCallerContract.PACKAGE
@@ -450,15 +454,40 @@ private fun Instrumentation.verifyHomePixels(
     }
 }
 
-private fun Instrumentation.verifyScreenEdgePixel(expected: Int, label: String) {
+private fun Instrumentation.verifyExternalDocumentPixels(
+    expectedCanvas: Int,
+    expectedTopBar: Int,
+    label: String
+) {
     var screenshot: Bitmap? = null
+    var lastCanvas = Color.TRANSPARENT
+    var lastStatusBarTopBar = Color.TRANSPARENT
+    var lastActionRowTopBar = Color.TRANSPARENT
     try {
-        awaitReadingCondition("$label edge pixel did not match ${expected.hexRgb()}") {
+        awaitReadingCondition(
+            "$label pixels did not match canvas=${expectedCanvas.hexRgb()} " +
+                "(got ${lastCanvas.hexRgb()}), status-bar top bar=${expectedTopBar.hexRgb()} " +
+                "(got ${lastStatusBarTopBar.hexRgb()}), action-row top bar=${expectedTopBar.hexRgb()} " +
+                "(got ${lastActionRowTopBar.hexRgb()})"
+        ) {
+            val backButton = uiAutomation.rootInActiveWindow?.findNode {
+                it.contentDescription?.toString() == "Back"
+            } ?: return@awaitReadingCondition false
+            val backBounds = Rect().also(backButton::getBoundsInScreen)
+            if (backBounds.isEmpty) return@awaitReadingCondition false
             screenshot?.recycle()
             screenshot = uiAutomation.takeScreenshot()
             val bitmap = screenshot ?: return@awaitReadingCondition false
-            val pixel = bitmap.getPixel(4, bitmap.height / 2)
-            matchesRenderedColor(pixel, expected)
+            lastCanvas = bitmap.getPixel(4, bitmap.height / 2)
+            // Sample behind the status bar away from clock, center cutout, and system icons.
+            lastStatusBarTopBar = bitmap.getPixel(bitmap.width / 3, 4)
+            // Sample inside the visible TopAppBar action row in the leading padding beside Back.
+            val actionRowX = (backBounds.left / 2).coerceIn(0, bitmap.width - 1)
+            val actionRowY = backBounds.centerY().coerceIn(0, bitmap.height - 1)
+            lastActionRowTopBar = bitmap.getPixel(actionRowX, actionRowY)
+            matchesRenderedColor(lastCanvas, expectedCanvas) &&
+                matchesRenderedColor(lastStatusBarTopBar, expectedTopBar) &&
+                matchesRenderedColor(lastActionRowTopBar, expectedTopBar)
         }
     } finally {
         screenshot?.recycle()

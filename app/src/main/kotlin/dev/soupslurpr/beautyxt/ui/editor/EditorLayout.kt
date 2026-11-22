@@ -42,6 +42,14 @@ private val CompactEditorChromeWidth = 480.dp
 
 private val MinimumExpandedEditorHeight = 480.dp
 
+private val MinimumInlineContentsWidth = 312.dp
+
+private val MinimumPaddedToolbarHeight = 208.dp
+
+private val MinimumFlushToolbarHeight = 192.dp
+
+private val MinimumTwoColumnMarginWidth = 300.dp
+
 private val MinimumInlineDocumentWidth = 160.dp
 
 private val MinimumLineNumberGutterWidth = 40.dp
@@ -102,6 +110,43 @@ internal fun usesExpandedEditorTopBar(fontScale: Float, availableHeight: Dp): Bo
     require(availableHeight >= 0.dp) { "available editor height must not be negative" }
     return fontScale > MAX_HORIZONTAL_EDITOR_ACTION_FONT_SCALE &&
         availableHeight >= MinimumExpandedEditorHeight
+}
+
+/** Returns whether Markdown's Contents button leaves at least 96 dp for the title row. */
+internal fun usesInlineEditorContentsAction(
+    availableWidth: Dp,
+    fontScale: Float,
+    availableHeight: Dp
+): Boolean {
+    require(availableWidth >= 0.dp) { "available editor width must not be negative" }
+    return usesExpandedEditorTopBar(fontScale, availableHeight) ||
+        availableWidth >= MinimumInlineContentsWidth
+}
+
+/** Vertical sizing tiers for bottom document toolbars sharing height with the document body. */
+internal enum class EditorToolbarHeightMode {
+    Padded,
+    Flush,
+    Compact
+}
+
+/** Chooses bottom toolbar vertical padding and height from the shared document-pane height. */
+internal fun editorToolbarHeightMode(availableHeight: Dp): EditorToolbarHeightMode {
+    require(availableHeight >= 0.dp) { "available toolbar height must not be negative" }
+    return when {
+        availableHeight >= MinimumPaddedToolbarHeight -> EditorToolbarHeightMode.Padded
+        availableHeight >= MinimumFlushToolbarHeight -> EditorToolbarHeightMode.Flush
+        else -> EditorToolbarHeightMode.Compact
+    }
+}
+
+/** Returns whether print/export margin inputs should stack into one full-width column. */
+internal fun usesStackedPrintMarginFields(availableWidth: Dp, fontScale: Float): Boolean {
+    require(availableWidth >= 0.dp) { "available margin width must not be negative" }
+    require(fontScale.isFinite() && fontScale > 0f) {
+        "margin layout font scale must be positive and finite"
+    }
+    return availableWidth < MinimumTwoColumnMarginWidth * maxOf(1f, fontScale)
 }
 
 /** Returns whether an embedded editor should apply its own predictive back motion. */
