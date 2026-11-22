@@ -12,7 +12,7 @@ production keystore, alias, or password in a Gradle file or commit them to Git.
 Use the versions pinned by the project:
 
 - Java 21
-- Android compile SDK 37.1 (minimum and target SDK remain 37)
+- Android compile SDK 37.2 (minimum and target SDK remain 37)
 - Android NDK 30.0.16248370, native API 37
 - the Rust toolchain in `rust-toolchain.toml`
 - cargo-ndk 4.1.2
@@ -68,23 +68,18 @@ security history, transitive dependencies, and build-time code before building
 it. Keep the ordinary development build workflow; no separate build-isolation
 infrastructure is required. Pins and checksums do not replace this review.
 
-Use current stable releases outside the existing Compose/Material and Merman
+Use current stable releases outside the existing Compose/Material and Navigation
 alpha channels. Review upstream compatibility constraints instead of forcing
 incompatible transitive updates or introducing private forks to align versions.
 
-The diagram stack uses `usvg` 0.48.1 and HarfRust/Fontations, not RustyBuzz.
-Its font adapter still directly uses `ttf-parser` 0.25.1, whose
-[maintenance advisory](https://rustsec.org/advisories/RUSTSEC-2026-0192.html)
-is an accepted, unresolved risk. Revisit it when evaluating an appropriate
-upstream update or a new relevant advisory. Isolation and Android-selected
-font inputs limit exposure but do not establish that the library is defect-free.
-`usvg` brings Skrifa 0.44; math/printing retain Skrifa 0.47 rather than being
-downgraded to match it.
-
-The unmodified Merman sequence parser also has a known contained stall. The
-[native illustration reference](native-illustrations.md#known-parser-limitation)
-describes its fallback and regression coverage. It is an accepted limitation,
-not a pending private patch or upstream submission.
+The diagram stack uses `usvg` 0.50.0, HarfRust/Fontations, and Skrifa (0.49.0,
+shared with `usvg`), eliminating the standalone `ttf-parser` crate from
+`Cargo.lock` (`fontdb` 0.24.0 retains its minimal inlined `ttf-parser` 0.25.1
+subset for font `name` and partial `OS/2` table metadata). Math and printing use
+Skrifa 0.50.0. Merman 0.11.0 enables only the five admitted diagram families and
+fixes the earlier sequence-parser empty-comment stall while BeauTyXT retains its
+isolated watchdog and regression coverage (see the
+[native illustration reference](native-illustrations.md#parser-containment-regression)).
 
 ## Reproducibility
 

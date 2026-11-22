@@ -242,10 +242,10 @@ dimensions, and upstream automatic mirroring are unchanged.
 
 ## Gradle wrapper
 
-Source: [Gradle 9.8.2](https://services.gradle.org/distributions/gradle-9.8.2-bin.zip)
+Source: [Gradle 9.9.2](https://services.gradle.org/distributions/gradle-9.9.2-bin.zip)
 
 - `gradle/wrapper/gradle-wrapper.jar`: copied unchanged; verified against the
-  wrapper JAR embedded in the Gradle 9.8.2 distribution.
+  wrapper JAR embedded in the Gradle 9.9.2 distribution.
 
 ```text
                                  Apache License
@@ -452,7 +452,7 @@ LICENSE file.
 
 ## Gradle wrapper launchers and configuration
 
-Source: [Gradle 9.8.2](https://services.gradle.org/distributions/gradle-9.8.2-bin.zip)
+Source: [Gradle 9.9.2](https://services.gradle.org/distributions/gradle-9.9.2-bin.zip)
 
 - `gradlew`: adapted; generated Unix launcher for this project's wrapper.
 - `gradlew.bat`: adapted; generated Windows launcher for this project's wrapper.
@@ -1586,7 +1586,7 @@ Copyright 2016-2024 JetBrains s.r.o and contributors
 
 ## Regex Unicode data notice
 
-Source: [Regex Unicode data notice](https://crates.io/api/v1/crates/regex-syntax/0.8.11/download)
+Source: [Regex Unicode data notice](https://crates.io/api/v1/crates/regex-syntax/0.8.12/download)
 
 - `about.hbs`: adapted; embeds `src/unicode_tables/LICENSE-UNICODE` verbatim as a supplemental dependency notice.
 - `app/src/main/res/raw/third_party_notices.txt`: adapted; generated notice containing the same upstream text.

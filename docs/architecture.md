@@ -3,7 +3,7 @@
 ## Constraints
 
 BeauTyXT edits plain-text and Markdown documents on Android 17 (API 37;
-compiled against API 37.1) with Material 3 Expressive UI. These constraints
+compiled against API 37.2) with Material 3 Expressive UI. These constraints
 are non-negotiable:
 
 - **Offline only:** no Internet permission, no accounts, no cloud services,

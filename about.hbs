@@ -18,7 +18,7 @@ Rust dependencies
 
 {{!--
 Component notice inventory at the reviewed upstream revision:
-https://github.com/Latias94/merman/tree/796915065cf7e4eadbb4e2d328c8a4372f6a9e63/THIRD_PARTY_LICENSES
+https://github.com/Latias94/merman/tree/2ce0fa4589f13c6c80c4e0be9d3292eedfbc4471/THIRD_PARTY_LICENSES
 The license texts and modification notices are verbatim; the heading and
 component-source links are adapted for this combined notice.
 --}}
@@ -83,7 +83,7 @@ SOFTWARE.
 
 Cytoscape.js
 Architecture layout and styling use source-backed Cytoscape behavior and defaults.
-Source: https://raw.githubusercontent.com/cytoscape/cytoscape.js/22716bfb75834b56fa6679648b0abb06f4ae691c/LICENSE
+Source: https://raw.githubusercontent.com/cytoscape/cytoscape.js/e394aa858b0699a67be8f9ab426823ae1aae7813/LICENSE
 
 Copyright (c) 2016-2026, The Cytoscape Consortium.
 
@@ -155,6 +155,24 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+d3-path
+The Pie SVG renderer translates D3 path rounding and arc serialization, including the 3.1.1 correction for rounded coincident endpoints of large arcs.
+Source: https://raw.githubusercontent.com/d3/d3-path/b9ab34592535861e44ce9db03de4db2c2c9c866a/LICENSE
+
+Copyright 2015-2026 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
 d3-shape
 The SVG parity layer translates D3 curve algorithms, including basis, natural, step, cardinal, bump, and Catmull-Rom variants.
 Source: https://raw.githubusercontent.com/d3/d3-shape/8ec82658454750cfa29efb1e0ea514e3dd9b2297/LICENSE
@@ -199,7 +217,7 @@ THE SOFTWARE.
 
 DOMPurify
 Merman selects DOMPurify's Apache-2.0 option for generated sanitizer defaults; the exact upstream Apache-2.0 license file is preserved.
-Source: https://raw.githubusercontent.com/Cure53/DOMPurify/3067f774676975de12306effd6db6ad7a9a8c17f/LICENSE
+Source: https://raw.githubusercontent.com/Cure53/DOMPurify/a77a3e78b59f72fa4d1c83f22e121ad9cc7d3575/LICENSE
 
 
                                  Apache License
@@ -514,7 +532,7 @@ SOFTWARE.
 
 Mermaid
 Merman independently implements Mermaid-compatible behavior while translating selected algorithms, generating defaults, copying architecture icon data, and retaining upstream fixtures and snapshots.
-Source: https://raw.githubusercontent.com/mermaid-js/mermaid/dcb694ddb58dc5ad3502e7e903cac05fd812eac3/LICENSE
+Source: https://raw.githubusercontent.com/mermaid-js/mermaid/2086904e76c692331e34a45d7cc3bc30860d040e/LICENSE
 
 The MIT License (MIT)
 
@@ -616,9 +634,51 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+roxmltree private XML DOM
+The renderer privately imports roxmltree 0.21.1 with its official iterative element parsing fix so accepted deep XHTML does not exhaust the call stack. Namespace, entity, source-range and DOM semantics are retained. The adapted tree derives from ego-tree under ISC; roxmltree offers MIT or Apache-2.0 and this distribution selects MIT.
+Source: https://raw.githubusercontent.com/RazrFalcon/roxmltree/3f5c78dea57662b43a2f41961397b1f5ffe27166/LICENSE-MIT
+
+The MIT License (MIT)
+
+Copyright (c) 2018 Yevhenii Reizner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Source: https://raw.githubusercontent.com/causal-agent/ego-tree/v0.6.3/LICENSE
+
+Copyright © 2016, June McEnroe <june@causal.agency>
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
 sanitize-url
 Merman's URL sanitization behavior is a source-backed Rust translation of sanitize-url.
-Source: https://raw.githubusercontent.com/braintree/sanitize-url/b1e8d50e4066a9af00fa042176676374747f754b/LICENSE
+Source: https://raw.githubusercontent.com/braintree/sanitize-url/206cb8b942b10dad28dd3d31db3bf39e3fcdd7aa/LICENSE
 
 MIT License
 
@@ -641,6 +701,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+unicode-linebreak
+merman-unicode-linebreak is an Apache-2.0 fork of unicode-linebreak 0.1.5, preserving its published Unicode 15.0 generated tables and extending character iteration for cooperative cancellation. UPSTREAM.json records the exact v0.1.5 Git revision and crates.io archive SHA-256 3b09c83c3c29d37506a3e260c08c03743a6bb66a9cd432c6934ab501a190571f.
+Source: https://raw.githubusercontent.com/axelf4/unicode-linebreak/829adeed3c07ed160c1c721b61806eb902a4c1f0/LICENSE
+Licensed under the Apache License 2.0 reproduced above.
 
 @upsetjs/venn.js
 The Venn family uses a modified Rust translation of the venn.js geometry and layout kernel.
@@ -696,6 +761,35 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
+fontdb inlined ttf-parser subset
+--------------------------------
+
+fontdb 0.24.0 inlines a minimal subset of ttf-parser 0.25.1 (MIT / Apache-2.0)
+for font table records, the `name` table, and parts of the `OS/2` table.
+Source: https://github.com/RazrFalcon/fontdb/blob/ecb707e6096b59146b750f66a32c125a43515192/src/ttf_parser/mod.rs
+Upstream license: https://raw.githubusercontent.com/harfbuzz/ttf-parser/v0.25.1/LICENSE-MIT
+
+Copyright (c) 2018 Yevhenii Reizner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+
 MPL-covered component sources
 -----------------------------
 
@@ -703,10 +797,9 @@ The following unmodified components are available in source form under the
 Mozilla Public License 2.0. Their complete versioned source archives, including
 license notices, are available at:
 
-- cssparser 0.36.0: https://crates.io/api/v1/crates/cssparser/0.36.0/download
-- cssparser-macros 0.6.1: https://crates.io/api/v1/crates/cssparser-macros/0.6.1/download
+- cssparser 0.38.0: https://crates.io/api/v1/crates/cssparser/0.38.0/download
+- cssparser-macros 0.7.1: https://crates.io/api/v1/crates/cssparser-macros/0.7.1/download
 - dtoa-short 0.3.5: https://crates.io/api/v1/crates/dtoa-short/0.3.5/download
-- selectors 0.37.0: https://crates.io/api/v1/crates/selectors/0.37.0/download
 
 The Mozilla Public License 2.0 is reproduced in the Rust dependency notices.
 BeauTyXT's separate original files remain under MIT.
@@ -759,60 +852,61 @@ licensed under the Apache License 2.0 reproduced above.
 - androidx.arch.core:core-common:2.2.0
 - androidx.arch.core:core-runtime:2.2.0
 - androidx.autofill:autofill:1.3.0
-- androidx.camera.featurecombinationquery:featurecombinationquery:1.6.2
+- androidx.camera.featurecombinationquery:featurecombinationquery:1.7.0
 - androidx.camera.viewfinder:viewfinder-core:1.6.2
-- androidx.camera:camera-camera2-pipe:1.6.2
-- androidx.camera:camera-camera2:1.6.2
-- androidx.camera:camera-core:1.6.2
-- androidx.camera:camera-lifecycle:1.6.2
-- androidx.camera:camera-video:1.6.2
-- androidx.camera:camera-view:1.6.2
-- androidx.collection:collection-jvm:1.6.0
-- androidx.collection:collection-ktx:1.6.0
-- androidx.collection:collection:1.6.0
-- androidx.compose.animation:animation-android:1.13.0-beta02
-- androidx.compose.animation:animation-core-android:1.13.0-beta02
-- androidx.compose.animation:animation-core:1.13.0-beta02
-- androidx.compose.animation:animation:1.13.0-beta02
-- androidx.compose.foundation:foundation-android:1.13.0-beta02
-- androidx.compose.foundation:foundation-layout-android:1.13.0-beta02
-- androidx.compose.foundation:foundation-layout:1.13.0-beta02
-- androidx.compose.foundation:foundation:1.13.0-beta02
-- androidx.compose.material3:material3-android:1.5.0-beta02
-- androidx.compose.material3:material3-ripple-android:1.5.0-beta02
-- androidx.compose.material3:material3-ripple:1.5.0-beta02
-- androidx.compose.material3:material3:1.5.0-beta02
-- androidx.compose.material:material-ripple-android:1.13.0-beta02
-- androidx.compose.material:material-ripple:1.13.0-beta02
-- androidx.compose.runtime:runtime-android:1.13.0-beta02
-- androidx.compose.runtime:runtime-annotation-android:1.13.0-beta02
-- androidx.compose.runtime:runtime-annotation:1.13.0-beta02
-- androidx.compose.runtime:runtime-retain-android:1.13.0-beta02
-- androidx.compose.runtime:runtime-retain:1.13.0-beta02
-- androidx.compose.runtime:runtime-saveable-android:1.13.0-beta02
-- androidx.compose.runtime:runtime-saveable:1.13.0-beta02
-- androidx.compose.runtime:runtime:1.13.0-beta02
-- androidx.compose.ui:ui-android:1.13.0-beta02
-- androidx.compose.ui:ui-geometry-android:1.13.0-beta02
-- androidx.compose.ui:ui-geometry:1.13.0-beta02
-- androidx.compose.ui:ui-graphics-android:1.13.0-beta02
-- androidx.compose.ui:ui-graphics:1.13.0-beta02
-- androidx.compose.ui:ui-text-android:1.13.0-beta02
-- androidx.compose.ui:ui-text:1.13.0-beta02
-- androidx.compose.ui:ui-tooling-preview-android:1.13.0-beta02
-- androidx.compose.ui:ui-tooling-preview:1.13.0-beta02
-- androidx.compose.ui:ui-unit-android:1.13.0-beta02
-- androidx.compose.ui:ui-unit:1.13.0-beta02
-- androidx.compose.ui:ui-util-android:1.13.0-beta02
-- androidx.compose.ui:ui-util:1.13.0-beta02
-- androidx.compose.ui:ui:1.13.0-beta02
-- androidx.compose:compose-bom-alpha:2026.10.01
+- androidx.camera:camera-camera2-pipe:1.7.0
+- androidx.camera:camera-camera2:1.7.0
+- androidx.camera:camera-common:1.7.0
+- androidx.camera:camera-core:1.7.0
+- androidx.camera:camera-lifecycle:1.7.0
+- androidx.camera:camera-video:1.7.0
+- androidx.camera:camera-view:1.7.0
+- androidx.collection:collection-jvm:1.7.0
+- androidx.collection:collection-ktx:1.7.0
+- androidx.collection:collection:1.7.0
+- androidx.compose.animation:animation-android:1.14.0-alpha01
+- androidx.compose.animation:animation-core-android:1.14.0-alpha01
+- androidx.compose.animation:animation-core:1.14.0-alpha01
+- androidx.compose.animation:animation:1.14.0-alpha01
+- androidx.compose.foundation:foundation-android:1.14.0-alpha01
+- androidx.compose.foundation:foundation-layout-android:1.14.0-alpha01
+- androidx.compose.foundation:foundation-layout:1.14.0-alpha01
+- androidx.compose.foundation:foundation:1.14.0-alpha01
+- androidx.compose.material3:material3-android:1.6.0-alpha01
+- androidx.compose.material3:material3-ripple-android:1.6.0-alpha01
+- androidx.compose.material3:material3-ripple:1.6.0-alpha01
+- androidx.compose.material3:material3:1.6.0-alpha01
+- androidx.compose.material:material-ripple-android:1.14.0-alpha01
+- androidx.compose.material:material-ripple:1.14.0-alpha01
+- androidx.compose.runtime:runtime-android:1.14.0-alpha01
+- androidx.compose.runtime:runtime-annotation-android:1.14.0-alpha01
+- androidx.compose.runtime:runtime-annotation:1.14.0-alpha01
+- androidx.compose.runtime:runtime-retain-android:1.14.0-alpha01
+- androidx.compose.runtime:runtime-retain:1.14.0-alpha01
+- androidx.compose.runtime:runtime-saveable-android:1.14.0-alpha01
+- androidx.compose.runtime:runtime-saveable:1.14.0-alpha01
+- androidx.compose.runtime:runtime:1.14.0-alpha01
+- androidx.compose.ui:ui-android:1.14.0-alpha01
+- androidx.compose.ui:ui-geometry-android:1.14.0-alpha01
+- androidx.compose.ui:ui-geometry:1.14.0-alpha01
+- androidx.compose.ui:ui-graphics-android:1.14.0-alpha01
+- androidx.compose.ui:ui-graphics:1.14.0-alpha01
+- androidx.compose.ui:ui-text-android:1.14.0-alpha01
+- androidx.compose.ui:ui-text:1.14.0-alpha01
+- androidx.compose.ui:ui-tooling-preview-android:1.14.0-alpha01
+- androidx.compose.ui:ui-tooling-preview:1.14.0-alpha01
+- androidx.compose.ui:ui-unit-android:1.14.0-alpha01
+- androidx.compose.ui:ui-unit:1.14.0-alpha01
+- androidx.compose.ui:ui-util-android:1.14.0-alpha01
+- androidx.compose.ui:ui-util:1.14.0-alpha01
+- androidx.compose.ui:ui:1.14.0-alpha01
+- androidx.compose:compose-bom-alpha:2026.11.01
 - androidx.concurrent:concurrent-futures-ktx:1.3.0
 - androidx.concurrent:concurrent-futures:1.3.0
 - androidx.core:core-backported-fixes:1.0.0
-- androidx.core:core-ktx:1.19.1
+- androidx.core:core-ktx:1.20.0-alpha01
 - androidx.core:core-viewtree:1.0.0
-- androidx.core:core:1.19.1
+- androidx.core:core:1.20.0-alpha01
 - androidx.cursoradapter:cursoradapter:1.0.0
 - androidx.customview:customview-poolingcontainer:1.1.0
 - androidx.customview:customview:1.2.0
@@ -825,43 +919,43 @@ licensed under the Apache License 2.0 reproduced above.
 - androidx.graphics:graphics-shapes-android:1.1.0
 - androidx.graphics:graphics-shapes:1.1.0
 - androidx.interpolator:interpolator:1.0.0
-- androidx.lifecycle:lifecycle-common-java8:2.11.0
-- androidx.lifecycle:lifecycle-common-jvm:2.11.0
-- androidx.lifecycle:lifecycle-common:2.11.0
-- androidx.lifecycle:lifecycle-livedata-core-ktx:2.11.0
-- androidx.lifecycle:lifecycle-livedata-core:2.11.0
-- androidx.lifecycle:lifecycle-livedata:2.11.0
-- androidx.lifecycle:lifecycle-process:2.11.0
-- androidx.lifecycle:lifecycle-runtime-android:2.11.0
-- androidx.lifecycle:lifecycle-runtime-compose-android:2.11.0
-- androidx.lifecycle:lifecycle-runtime-compose:2.11.0
-- androidx.lifecycle:lifecycle-runtime-ktx-android:2.11.0
-- androidx.lifecycle:lifecycle-runtime-ktx:2.11.0
-- androidx.lifecycle:lifecycle-runtime:2.11.0
-- androidx.lifecycle:lifecycle-viewmodel-android:2.11.0
-- androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0
-- androidx.lifecycle:lifecycle-viewmodel-savedstate-android:2.11.0
-- androidx.lifecycle:lifecycle-viewmodel-savedstate:2.11.0
-- androidx.lifecycle:lifecycle-viewmodel:2.11.0
+- androidx.lifecycle:lifecycle-common-java8:2.11.1
+- androidx.lifecycle:lifecycle-common-jvm:2.11.1
+- androidx.lifecycle:lifecycle-common:2.11.1
+- androidx.lifecycle:lifecycle-livedata-core-ktx:2.11.1
+- androidx.lifecycle:lifecycle-livedata-core:2.11.1
+- androidx.lifecycle:lifecycle-livedata:2.11.1
+- androidx.lifecycle:lifecycle-process:2.11.1
+- androidx.lifecycle:lifecycle-runtime-android:2.11.1
+- androidx.lifecycle:lifecycle-runtime-compose-android:2.11.1
+- androidx.lifecycle:lifecycle-runtime-compose:2.11.1
+- androidx.lifecycle:lifecycle-runtime-ktx-android:2.11.1
+- androidx.lifecycle:lifecycle-runtime-ktx:2.11.1
+- androidx.lifecycle:lifecycle-runtime:2.11.1
+- androidx.lifecycle:lifecycle-viewmodel-android:2.11.1
+- androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.1
+- androidx.lifecycle:lifecycle-viewmodel-savedstate-android:2.11.1
+- androidx.lifecycle:lifecycle-viewmodel-savedstate:2.11.1
+- androidx.lifecycle:lifecycle-viewmodel:2.11.1
 - androidx.loader:loader:1.2.0
 - androidx.media3:media3-common:1.11.1
 - androidx.media3:media3-container:1.11.1
 - androidx.media3:media3-muxer:1.11.1
-- androidx.navigation3:navigation3-runtime-android:1.3.0-alpha03
-- androidx.navigation3:navigation3-runtime:1.3.0-alpha03
-- androidx.navigation3:navigation3-ui-android:1.3.0-alpha03
-- androidx.navigation3:navigation3-ui:1.3.0-alpha03
+- androidx.navigation3:navigation3-runtime-android:1.3.0-alpha05
+- androidx.navigation3:navigation3-runtime:1.3.0-alpha05
+- androidx.navigation3:navigation3-ui-android:1.3.0-alpha05
+- androidx.navigation3:navigation3-ui:1.3.0-alpha05
 - androidx.navigationevent:navigationevent-android:1.2.0-rc01
 - androidx.navigationevent:navigationevent-compose-android:1.2.0-rc01
 - androidx.navigationevent:navigationevent-compose:1.2.0-rc01
 - androidx.navigationevent:navigationevent:1.2.0-rc01
 - androidx.profileinstaller:profileinstaller:1.4.1
 - androidx.resourceinspection:resourceinspection-annotation:1.0.1
-- androidx.savedstate:savedstate-android:1.5.0
-- androidx.savedstate:savedstate-compose-android:1.5.0
-- androidx.savedstate:savedstate-compose:1.5.0
-- androidx.savedstate:savedstate-ktx:1.5.0
-- androidx.savedstate:savedstate:1.5.0
+- androidx.savedstate:savedstate-android:1.6.0-alpha06
+- androidx.savedstate:savedstate-compose-android:1.6.0-alpha06
+- androidx.savedstate:savedstate-compose:1.6.0-alpha06
+- androidx.savedstate:savedstate-ktx:1.6.0-alpha06
+- androidx.savedstate:savedstate:1.6.0-alpha06
 - androidx.startup:startup-runtime:1.2.0
 - androidx.tracing:tracing-android:2.0.2
 - androidx.tracing:tracing-ktx:2.0.2
@@ -1124,7 +1218,7 @@ Copyright 2016-2024 JetBrains s.r.o and contributors
 Regex Unicode data notice
 -------------------------
 
-Source: https://crates.io/api/v1/crates/regex-syntax/0.8.11/download
+Source: https://crates.io/api/v1/crates/regex-syntax/0.8.12/download
 Upstream file: src/unicode_tables/LICENSE-UNICODE
 
 UNICODE, INC. LICENSE AGREEMENT - DATA FILES AND SOFTWARE
@@ -1188,7 +1282,7 @@ written authorization of the copyright holder.
 libyuv
 ------
 
-androidx.camera:camera-core:1.6.2 packages libyuv.
+androidx.camera:camera-core:1.7.0 packages libyuv.
 
 Copyright 2011 The LibYuv Project Authors. All rights reserved.
 
