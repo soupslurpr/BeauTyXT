@@ -1,143 +1,56 @@
 # Streamed vector printing
 
-The renderer streams source text or formatted Markdown as page-local vector
-appearances with a measured Unicode text layer. It does not rasterize complete
-pages.
+Source text and formatted Markdown stream directly to PDF as page-local vector
+outlines plus a measured, nonpainting Unicode text layer — without rasterizing
+full pages or buffering the complete PDF in memory or app-private files.
 
 ## Rendering boundary
 
-Android `StaticLayout` and `TextRunShaper` retain text direction, shaping, font
-fallback, glyph positioning, style runs, and decorations. Skrifa reads only the
-Android-selected platform font's read-only mapped buffer. It extracts a bounded,
-unhinted outline for that glyph and variation instance; the bridge retains no
-borrowed pointer. The Kotlin wrapper keeps the font reachable throughout JNI.
-Document-provided font files never enter this boundary.
+- **Layout & shaping:** Android `StaticLayout` and `TextRunShaper` handle bidi,
+  shaping, font fallback, glyph placement, and decorations.
+- **Outlines:** in-process Rust `print-core` reads only Android-selected
+  read-only platform font mappings via Skrifa (never document-supplied fonts),
+  extracts bounded unhinted outlines, and emits reusable page-local PDF forms
+  with flattened page coordinates.
+- **Fallback patches:** color/bitmap glyphs, synthetic bold, and partially
+  clipped glyphs emit bounded alpha-preserving native bitmap patches so
+  off-page outlines are never exposed.
+- **Palette & links:** printing uses a fixed paper palette (independent of dark
+  or dynamic UI themes), honors Android's color/monochrome setting, never
+  fetches remote resources, and emits only bounded URI or internal GoTo
+  annotations for targets present in emitted pages.
+- **Native illustrations:** supported TeX math and Mermaid diagrams draw the
+  same host-validated `BTXTILL4` vector paths as preview, with original source
+  placed in the selectable Unicode layer (see
+  [native illustrations](native-illustrations.md)).
 
-The PDF writer emits the outlines as reusable, page-local forms. The existing
-measured, nonpainting Unicode layer preserves selection/search and basic logical
-structure. This is not embedded editable font text or a claim of PDF/UA support.
-Headings, rules, table backgrounds, link underlines, and quote rails are vector.
-The fixed paper palette does not inherit a dark or dynamic screen theme.
-Android's color/monochrome print setting controls both graphics and images.
+## Retention, pagination, and limits
 
-Color/bitmap fonts and synthetic bold use Android's native glyph renderer in a
-bounded transparent patch. Genuinely clipped glyphs also use only their visible
-pixels, so a PDF form cannot expose their off-page outlines. Fully off-page
-glyphs create no visual resource. The Unicode layer independently excludes
-clipped text. Bitmap patches retain alpha rather than hiding backgrounds behind
-an opaque white rectangle. Neither links nor external images are fetched.
-Supported links create bounded URI or internal GoTo annotations, without
-scripted actions.
+Only the active page allocates drawing resources; completed pages stream to the
+caller's destination and retain only PDF object references/offsets and bounded
+link/heading metadata. Cancellation is checked throughout layout, glyph
+extraction, and output; exceeding a limit fails the job explicitly rather than
+dropping content.
 
-Layout translations are flattened into canonical page coordinates. This avoids
-PDF matrix-rounding differences when the same logical text arrives through
-different bounded source fragments. Matrix coefficients use finer precision
-than ordinary coordinates so page-scale rounding does not accumulate visibly.
+| Boundary | Limit |
+| --- | --- |
+| Single layout (complex bidi source line, prose block, table row, code line) | 64 Ki UTF-16 units |
+| Font mapping | 64 MiB, ≤ 64 variation axes |
+| Single glyph outline | 32,768 floats, 4 MiB scratch |
+| Single page | 8 MiB drawing ops, 8 MiB outlines, 4M bitmap px, 8,192 resources, 128 font instances, 128 Ki UTF-16 text layer |
 
-## Retention and limits
+Formatted pagination keeps headings paired with short introductions/compact
+blocks (≤ 2 bounded lookahead blocks, ≤ 8-line code samples) when they fit on a
+fresh page, yielding cleanly rather than cropping or creating blank pages.
 
-Only a selected page allocates drawing resources. It is written directly to the
-caller-owned destination, then closed before the next page is created. Completed
-page appearances retain primitive PDF object references and offsets, not fonts,
-bitmaps, or drawing programs. Bounded link-target and heading-destination
-metadata remains until document finalization. Output is not buffered as a
-complete document and no app-private temporary file is used.
+## Limitations and verification
 
-Primary limits:
+Selectable Unicode and basic structure do not claim full PDF/UA compliance, and
+text extraction whitespace varies by PDF reader; exact source remains available
+via document export and Copy.
 
-- Source lines requiring paragraph-level bidirectional context: 64 Ki UTF-16
-  units. Oversized complex lines report an error asking for line breaks;
-  ordinary left-to-right text streams with a bounded unfinished visual line.
-- Formatted prose blocks, table rows, and individual code lines: 64 Ki UTF-16
-  units per layout. Oversized content reports an error offering Source text.
-  Native Markdown transport fragments are reassembled before layout; code and
-  unsupported HTML stream at existing newlines rather than transport boundaries.
-- One font mapping: 64 MiB; at most 64 variation axes.
-- One outline: 32,768 command/coordinate floats; 4 MiB extraction scratch.
-- One page: 8 MiB drawing commands, 8 MiB encoded outlines, 4 million localized
-  bitmap pixels, 8,192 visual resources, and 128 font instances.
-- The separately bounded text layer retains at most 128 Ki UTF-16 units per page.
-- Existing logical-page, output-byte, and PDF-object limits remain in force.
-
-These are component limits, not a claim that total process RSS equals their
-sum. Android shaping, font mappings, allocator capacity, and PDF metadata also
-consume memory. The retained layout grid controls Android measurements and
-bitmap fallback sampling; it no longer implies a page-sized bitmap allocation.
-
-Cancellation is checked during layout, shaping, glyph loops, resource output,
-image rows, and cross-reference output. A failed initial page preparation also
-releases its already-created page resources. Unsupported drawing operations or
-font/geometry/resource failures fail the print job rather than silently losing
-content.
-
-## Pagination
-
-Formatted printing measures a block's label and first content line together.
-Complete code samples of at most eight laid-out lines also request whole-block
-placement, so a short sample does not strand its closing line on the next page.
-Long fences still stream at their existing bounded logical-line boundaries.
-
-Headings request space with the start of their following content. A heading,
-an introduction of at most three laid-out lines, and a compact code sample or
-rendered illustration can move together when the group fits a fresh page.
-Lookahead retains at most two additional bounded semantic blocks, not a section
-or a document's worth of Android layouts. Each measured layout owns its paint;
-measuring the next block cannot restyle an already measured heading.
-
-Grouping yields when it cannot fit the page body. It does not retry indefinitely,
-create blank pages, change the selected paper/margins, or silently crop content.
-The existing atomic illustration bounds and semantic table-header rules remain
-in force. Keeping related content together can increase whitespace and page count.
-
-## Verification
-
-The native instrumentation checks compare actual PDF appearances with Android
-text for Latin, combining sequences, ligatures, Arabic, Hebrew, Indic, CJK,
-emoji, variable fonts, bold/italic, horizontal scale/skew, serif, decorations,
-colored text, and translucent backgrounds. The native reference and PDF are
-inspected side by side; pixel checks permit raster hinting differences but not
-missing or displaced text.
-
-The vector phase also produces 256 streamed pages without a page bitmap or a
-complete-document buffer. It checks bounded page admission, malformed outline
-commands, and off-page resource exclusion. Color-glyph tests inspect actual
-PDF compositing for source and Markdown in color and monochrome.
-
-Existing tests still cover exact fragment-continuity images, Unicode extraction
-and search, logical bidi text, clipping, selected-page confidentiality, long
-paragraphs, formatted tables/footnotes, cancellation, and destination ownership.
-
-Also inspect PDFs exported through the installed minified app and Android's
-actual Save as PDF destination. Record the tested revision, page appearance,
-text extraction, and resource checks with ignored local evidence, not as
-permanent test counts in this reference. Run `-e phase 'vector PDF'
--e retainPrintArtifacts true` with the document bridge instrumentation to
-retain its comparison PDF and native/PDF image. Ordinary runs clear the named
-synthetic print artifacts before storage checks. See the [release process](release.md).
-
-Skrifa, read-fonts, font-types, and their resolved dependencies are covered by
-the generated in-app third-party notices.
-
-## Reader limitations
-
-Selectable Unicode and basic structure do not amount to PDF/UA compliance.
-Lists and table cells do not have a complete accessible hierarchy. Readers
-differ in their handling of logical replacement text, bidirectional runs,
-supplementary characters, and inserted whitespace. Keep correct Unicode rather
-than altering it to accommodate one reader. Exact original text remains
-available through document export and source copying; PDF extraction is not
-a lossless substitute.
-
-## Native illustrations
-
-Supported math and Mermaid use the same closed, host-validated path appearances
-as preview, bounded to the printable width and height. They do not add SVG,
-scripts, or document-controlled fonts to the PDF renderer. The original TeX or
-Mermaid is retained as the selectable text alternative, not inferred from the
-drawing. Android measures that original source into grapheme- and bidi-aware
-nonpainting text positions, which are fitted to the illustration bounds. This
-keeps mixed-script alternatives searchable without changing the vector image;
-the complete source is charged against the page's text budget. Text extraction
-and inserted whitespace vary between PDF readers;
-preview's explicit Copy action preserves the exact original source. See
-[native illustrations](native-illustrations.md) for syntax and resource limits.
+Native instrumentation verifies vector output against Android text rendering
+across scripts, styles, color/monochrome compositing, 256-page streaming,
+clipping, and bounds. Use `-e phase 'vector PDF' -e retainPrintArtifacts true`
+to inspect generated artifacts (see [CONTRIBUTING.md](../CONTRIBUTING.md) and
+[release.md](release.md)).

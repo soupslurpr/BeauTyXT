@@ -15,83 +15,64 @@ Requires **Android 17 / API 37**. The interface is currently English-only.
 - Read Markdown with tables, task lists, alerts, footnotes, and a supported HTML
   subset. Supported TeX math and Mermaid diagrams render natively, without a
   browser or JavaScript.
-- Move between rendered Markdown and source editing while keeping your place.
-  Navigate long documents with Contents, document-wide Find, and Go to line.
-- Set fonts, text size, spacing, and column layout in **Text appearance**.
-  Plain text/source and rendered Markdown have independent preferences that
-  apply across documents. Android's theme and font-size setting still apply.
-- Keep Find and Replace above the document. Open Search options directly,
-  browse Results with surrounding text, and review or exclude replacements
-  before applying a batch. **Undo replacement** reverses the applied change.
-- Edit with undo, redo, and automatic saving to compatible source files.
-- Share through Android, QR codes, or NFC tags. Save generated QR images as
-  lossless WebP or PNG.
-- Preview and share or save a whole document or a selection from **Send & export**.
-  Share comes first, with **Save a copy** underneath and visible QR code, NFC,
-  Copy, and Print actions. Selected text includes a short excerpt, and PDFs
-  show their page count and paper size. **Preview and settings** opens detailed
-  review; PDFs use **Preview and page settings**.
-  Each format explains what it preserves or changes. **Save a copy** exports
-  the reviewed output; use the editor's **Save** to give an unsaved document
-  its own file for further editing.
-  Share PDFs directly, save them to a chosen provider, or open Android's print
-  screen. Choose source or formatted output, paper size, margins, font and size,
-  a filename header, and page numbers.
+- Open Markdown directly in Reading mode and switch smoothly to Source editing
+  while keeping your place. Navigate long documents with live Contents,
+  document-wide Find, and Go to line.
+- Customize fonts, text size, spacing, and column layout independently for
+  Source and Reading in **Text appearance**, plus an optional **True black**
+  OLED dark theme in **App theme**.
+- Search and replace with literal, Whole word, and Regex options, Results with
+  context, batch replacement review, and one-step **Undo replacement**.
+- Edit with undo, redo, automatic saving to compatible files, and a read-only
+  **Compare changes** diff view if another app modifies an open file on disk.
+- Share or export whole documents or selections via Android, PDF, QR codes
+  (including lossless WebP/PNG image export), NFC tags, Copy, or Print — with
+  explicit preview and per-format explanations.
 
 ## Files and privacy
 
 Files stay with the storage provider you choose. Compatible files save
-automatically after edits. Files whose providers cannot support verified saving
-open view-only; **Save as editable** creates a compatible source without
-changing the original.
+automatically after edits; files whose providers cannot support verified saving
+open view-only (**Save as editable** creates a compatible copy without
+modifying the original).
 
-New documents and received text remain in memory until you choose **Save**.
+New documents and received text stay in memory until you choose **Save**.
 BeauTyXT keeps no app-private document copies, recent-file list, or recovery
-files. Sessions and undo history exist only in memory. Unsaved content is lost
-if its session closes or Android ends the app process.
+files. Sessions and undo history exist only in memory and are lost when closed
+or if Android ends the process.
 
-BeauTyXT checks the source before and after saving and reports conflicts or
-uncertain writes. Storage providers do not universally support atomic writes:
-another app can still race a save, and an interrupted write can leave a source
-file incomplete.
+BeauTyXT verifies the source before and after saving and reports conflicts or
+uncertain writes. Storage providers do not universally guarantee atomic writes,
+so another app can still race a save or an interrupted write can leave a file
+incomplete.
 
-The app has no Internet permission, account, or cloud service. It does not fetch
-document images or other remote resources. Your chosen storage provider may
-still sync files, and explicitly opening an external link hands it to another app.
-Keyboards receive a request not to use input for personalized learning, but
-BeauTyXT cannot enforce how an independent keyboard handles your text.
+The app has no Internet permission, account, or cloud service, and never
+fetches remote images or resources. Keyboards receive a request not to use
+input for personalized learning, though BeauTyXT cannot enforce how an
+independent keyboard handles input.
 
 ## Supported content and limits
 
-- Files must be UTF-8 plain text or Markdown, up to 256 MiB. Existing byte-order
-  marks and untouched line endings are preserved.
-- Markdown rendering accepts up to 16 MiB of source, with additional complexity
-  limits. Images appear as alternative text; CSS, scripts, and unsupported HTML
-  are not rendered. Unsupported content remains visible as source.
-- Math and diagrams support a deliberate subset, not general TeX or Mermaid
-  compatibility. Unsupported or oversized illustrations remain source with an
-  explanation. See [native illustrations](docs/native-illustrations.md).
-- Direct text sharing between apps is limited to 128 KiB of UTF-8; sharing a
-  saved file uses its existing provider location. QR transfers accept up to
-  1,536 UTF-8 bytes. Complete NFC messages are limited to 256 KiB, and writing
-  also depends on the tag's capacity.
-- PDFs provide selectable text and basic document structure, not full PDF/UA
-  accessibility. Text extraction varies by reader. See
-  [vector printing](docs/vector-printing.md).
+- UTF-8 plain text or Markdown up to 256 MiB, preserving existing BOMs and
+  untouched line endings.
+- Markdown rendering up to 16 MiB of source (images render as alt text; CSS,
+  scripts, and unsupported HTML stay source).
+- Deliberate native subsets for TeX math and Mermaid diagrams, with source
+  fallback ([native illustrations](docs/native-illustrations.md)).
+- Transfers: up to 128 KiB direct text share, 1,536 UTF-8 bytes for QR, and
+  256 KiB for NFC messages (subject to tag capacity).
+- Streamed vector PDFs with selectable text, not full PDF/UA compliance
+  ([vector printing](docs/vector-printing.md)).
 
 ## Development and documentation
 
-The interface uses Jetpack Compose. Rust implements the document engine and
+Jetpack Compose drives the Android UI; Rust implements the document engine and
 isolated import, export, Markdown, transfer, math, and diagram workers.
 
-- [Product direction](docs/product-direction.md): the app's purpose and scope,
-  including its role alongside AI assistants.
-- [Architecture](docs/architecture.md): storage, lifecycle, process boundaries,
-  rendering, and detailed resource limits.
-- [Contributing](CONTRIBUTING.md): development conventions and dependency
-  notices.
-- [Release process](docs/release.md): toolchain, verification, reproducibility,
-  and packaging.
+- [Product direction](docs/product-direction.md) — purpose, scope, and language policy.
+- [Architecture](docs/architecture.md) — privacy invariants, process isolation, engine design, and limits.
+- [Contributing](CONTRIBUTING.md) — code conventions, third-party notices, and device testing.
+- [Release process](docs/release.md) — toolchain, verification, reproducibility, and packaging.
 
 ## License
 

@@ -1,959 +1,158 @@
 # Architecture
 
-## Product constraints
-
-BeauTyXT edits plain-text and Markdown documents on Android. The first release
-has these non-negotiable constraints:
-
-- BeauTyXT never transmits document content unless the user explicitly shares
-  or exports it.
-- The application has no internet permission or background network behavior.
-- Existing files remain in their user-controlled locations and are accessed
-  only following an explicit user action.
-- App-private storage never contains document bytes, document metadata,
-  internal working files, recents, recovery data, or private autosave copies.
-- New documents and documents created from pasted or received text remain in
-  memory until the user explicitly chooses Save. Pasting into an existing
-  editable source follows that document's ordinary autosave behavior.
-- The application does not retain persistable URI grants.
-- Large documents remain responsive without materializing the complete text in
-  Compose.
-- Import, export, Markdown, and local-transfer streams cross explicit,
-  least-authority process boundaries.
-- The Android interface follows Material 3 Expressive through a shared theme
-  and motion scheme, with explicit opt-ins where UI code consumes alpha APIs.
-- Android 17 / API 37 is the target and minimum SDK; compilation uses API 37.1.
-
-Plain text and Markdown are the complete initial document scope.
-
-## Components
-
-The application has a thin Kotlin integration layer and Rust-owned document
-logic.
-
-### Application process
-
-Home, About, the bundled licenses, and documents started from Home share a
-Navigation 3 back stack inside `HomeActivity`. Each document entry owns a retained
-in-memory session, including its picker and scanner flows. The entry survives
-configuration changes and disposes its session after its exit transition. A
-closing editor stays rendered until then without restarting checkpoint or save
-work. Navigation 3 owns Home page motion, including scanner entries; a Back
-gesture stays on the editor when it must dismiss a keyboard or request a close
-confirmation. Back still passes through the editor's keyboard, nested-page,
-pending-operation, and unsaved-edit guards before navigation can close a document.
-
-Home uses Navigation 3 1.3.0-alpha01 for its `DeferredAnimatedContent` predictive
-Back handoff fix. The navigation event state is shared with `NavDisplay`; a
-committed gesture records its exit direction against the outgoing entry until
-that entry retires. This keeps both pages moving together after release, even
-when a right-edge gesture differs from toolbar Back or another Back interrupts
-the exit. Cancelled gestures do not change the stack or the next toolbar exit.
-
-Page transitions layer a full-width foreground slide over a background page
-that travels one-third as far and darkens by up to 10%. Both pages follow the
-same direction, including predictive Back and its completion or cancellation.
-Normal transitions use the shared Material spatial and effects motion specs;
-predictive progress controls placement and shading together.
-The native camera preview clips its scaled texture to its own bounds so it
-cannot draw outside the scanner page during these transitions.
-
-Only destination identities, initial actions, and ordinary page state enter
-saved navigation state. Document text and source capabilities remain in memory;
-process death replaces a live document with an ended-session notice. A pending
-system picker can deliver its result to the restored entry. External VIEW/EDIT
-documents still use `MainActivity` and Android's separate document tasks; SEND
-continues through `ShareActivity`. They retain independent Recents entries,
-canonical source task reuse, URI grants, and caller-return behavior.
-
-Legacy private-state cleanup runs once per process on an I/O dispatcher.
-Document UI, provider metadata queries, and new picker launches wait for success.
-Cleanup failure leaves these workflows gated behind an explicit Retry action;
-closing one activity does not cancel the process-owned cleanup. No persistent
-migration marker is required.
-
-Text appearance is the persistent document-view preference. Two global
-groups cover plain text/source and rendered Markdown. Missing settings follow
-app defaults; explicit values remain custom even when equal to the current
-default. A process-owned StateFlow updates open document activities immediately,
-with conflated, serialized AtomicFile writes to
-`noBackupFilesDir/text-appearance.properties`. This content-free file contains
-only known numeric display settings, outside legacy document-state cleanup.
-Each option update applies to the latest process-wide preferences. A failed
-save keeps the latest values active and offers Retry saving. The store lets
-AtomicFile recover its backup before checking for a first run. If it cannot
-read the settings, documents use defaults and the panel offers Retry loading.
-Reset saved appearance requires confirmation and verifies removal of both
-groups before editing resumes. These settings contain no document identifiers
-and never enter print/PDF configuration or saved source bytes.
-
-App theme is a separate, content-free persistent preference for the app-wide
-True black dark-theme modifier (off by default). When enabled and Android’s
-dark theme is active, `BeauTyXTTheme` sets `background`, `surface`,
-`surfaceDim`, and `surfaceContainerLowest` to `#000000` and aliases
-`onBackground` to `onSurface`, while preserving Android’s dynamic dark
-container ladder, accents, ink, and system contrast levels. Light theme,
-scan-safe QR colors, and vector printing are unaffected. Changes are reachable
-from Home and the editor overflow menu via one App theme dialog, apply
-immediately across open activities without disturbing active drafts, and
-synchronize each activity window background to `colorScheme.surface`. Launch
-themes use Android’s dynamic `system_surface_light` and `system_surface_dark`;
-a cold launch with True black enabled starts from `system_surface_dark` until
-the asynchronous read started in `BeauTyXTApplication.onCreate()` completes.
-Only an explicit toggle or confirmed reset writes to
-`noBackupFilesDir/app-theme.properties`: enabling True black writes the
-canonical ASCII entry `true_black=true\n` via `AtomicFile` and verifies the
-published bytes; returning to default removes the file and verifies that no
-base, `.bak`, or `.new` file remains. Reads are bounded, reject malformed or
-unknown content without rewriting the file, keep standard dark colors active,
-and offer Retry loading and confirmed Reset saved theme.
-
-The document surface alone consumes appearance preferences. Text sizes use sp,
-layout widths use dp, and spacing follows the displayed font size. Android font
-scaling and the Material 3 Expressive system color scheme remain active. Only
-Android's default, serif, and monospace families are offered. All six heading
-levels have distinct sizes. Every family retains the full body-weight range.
-Strong emphasis requests a heavier weight and adds an underline if the resolved
-faces are identical or only extra synthesis over an already-bold face separates
-them. The selected body and code fonts resolve emphasis independently. Android's
-Bold text accessibility adjustment is preserved and included in this decision.
-The same fallback protects emphasis within already-bold headings and table
-headers without reducing the user's selected body weight.
-The controls use a partially expanded bottom sheet on narrow windows and a
-supporting pane on wide windows, with live controls and independent resets.
-Exact numeric entry is a draft. Apply or the keyboard’s Done action commits a
-valid value. Cancel or dismissal discards the draft. Intermediate keystrokes
-never change the preference.
-The selected section, list position, and numeric draft are retained above the
-adaptive layouts, so activity recreation and sheet/pane transitions preserve
-the current operation. Short, wide windows place the number and its actions
-side by side above the keyboard. The expanded phone sheet also pins a collapsible,
-built-in sample above its scrolling controls. It reuses document style,
-spacing, tab, and Markdown emphasis rendering; its own viewport bounds the
-sample at large text sizes. The sample starts collapsed with enlarged system
-text or short windows and is omitted when the window cannot spare its header.
-Its expanded/collapsed choice is transient editor state, independent of saved
-appearance preferences. Wide layouts continue to show the document beside the
-controls.
-
-Column width caps the text area in both groups, including the built-in sample.
-The page centers the text column and reserves each side margin outside it.
-Margins shrink when needed to leave 96 dp of usable space. In read-only source
-the inline line-number gutter fits before the text, shifting the column toward
-the end edge only when needed. Narrow pages stack labels above the text.
-Start and end mirror in right-to-left layouts.
-
-With wrapping disabled, read-only source has one horizontal scroll position
-for the viewport. All text rows move together inside clipped cells. Line
-numbers, status messages and controls stay in place. The scroll range retains
-the widest measured row as the list recycles items. Explicit Find navigation
-reveals the match horizontally in both read-only and editable source.
-
-Source tab width changes the displayed advance of each tab that can display as
-a space without merging an adjacent Unicode grapheme cluster; tabs kept native
-to preserve authored grapheme boundaries use Android's native tab stops.
-The bounded editable field keeps a one-to-one UTF-16 output mapping and scopes
-a clipboard adapter to that field, because Compose's native Copy/Cut otherwise
-copies output-transformed text. Read-only document selection copies from exact
-source ranges. Spacing, wrapping, and fonts never enter the edit or undo stream.
-Each mounted reading surface restores its semantic viewport anchor when its
-effective appearance changes. Explicit navigation takes priority. Reading
-reflow preserves the source selection retained for the return to editing.
-
-The application process currently owns the Compose UI, Android lifecycle
-integration, Storage Access Framework requests, NFC, foreground camera, and
-explicit share-intent integration. Only this
-Android integration layer handles a user-authorized URI. It never gives a
-worker a URI or filesystem path. It opens the URI and gives each worker only
-the job-specific descriptor and access mode that operation requires. During
-import, a one-shot Binder parcel transfers the provider descriptor and its
-reliable status channel to the worker, closing the integration layer's local
-owner. The worker checks reliable provider errors and closes both descriptors
-at the terminal boundary. The exact selected content URI remains only in the
-live editor so it can open a fresh descriptor for each source save. The
-application never persists that URI or its grant, does not copy it into Android
-instance state, and forgets the in-process capability when the editor closes.
-Android retains control of the temporary task-scoped grant; the app does not call broad
-URI-revocation APIs that can affect other matching grants.
-
-Source and destination descriptor acquisition share four process-wide worker
-slots. A cancelled or timed-out request cannot release its slot until the
-provider call actually returns; late descriptors are closed without use.
-Queued requests remain cancellable and retain the operation's timeout. This
-bounds blocked provider calls even when a provider ignores cancellation.
-
-Document format has one shared rule: a recognized filename extension takes
-precedence over the reported MIME type. The reported type is the fallback when
-the name has no recognized extension. Opening, File info, printing defaults,
-Android sharing, and QR/NFC generation use this same resolved format.
-
-Before a source save opens a read-write provider descriptor, the
-application captures the immutable revision in a sealed anonymous package. A
-sparse package contains a piece table, only live edit and boundary-repair
-payloads, and an optional duplicate of the already sealed anonymous import
-source. It then gives the isolated export worker only that package, optional
-immutable backing, and one fresh source descriptor. Retained-source autosave
-requires the provider to return a seekable regular descriptor with exact
-read-write access and to support flush and filesystem synchronization. A
-provider that exposes only a pipe cannot be an autosave source; its selected
-URI capability remains owned by a view-only editor until that editor closes.
-The initial non-destructive editability probe checks open flags, regular-file
-type, and seeking. Synchronization and fresh-read availability are verified
-during each save rather than promised by that initial probe; failures retain
-the in-memory revision and follow the save-recovery policy below.
-Save as editable writes and verifies a
-compatible new source before the editor accepts changes, leaving the original
-source unchanged.
-During Save a copy, the application rejects an exact retained-source URI match,
-opens the newly selected destination without truncation, clears the URI, and
-retains only an idempotent descriptor owner until export claims it. Only an
-accepted native worker that wins the cancellation race truncates a supported
-destination.
-
-An in-process Rust document engine owns the editable model, immutable
-revisions, source descriptors, and document metrics. Compose requests bounded
-viewport snapshots and sends compact edit operations. This hot path avoids
-Binder and never parses Markdown or transfer envelopes. Exact in-document
-search runs in this editor core because it is another revision-bound document
-operation; it does not cross into an isolated worker or grant one additional
-document authority.
-
-### Isolated worker services
-
-The application uses separate private Android isolated services and Rust
-dynamic libraries for import, export, Markdown, local transfers, math, and diagrams:
-
-- Implemented: the import service reads an untrusted descriptor and produces a
-  byte-identical, strictly validated UTF-8 session source.
-- Implemented: the export service reads a trusted snapshot stream or validated
-  source-save package and copies its exact serialized bytes to a
-  user-authorized destination descriptor.
-- Implemented: the Markdown service reads an immutable normalized snapshot and
-  produces a sanitized, bounded render model for Compose. It preserves
-  CommonMark and the selected GFM semantics plus a narrow structural HTML
-  allowlist. HTML is tokenized without a browser; scripts, styles, event
-  handlers, embeds, forms, media, and unsupported attributes stay inert source.
-  The render packet marks each semantic table's first row independently of
-  header styling. Preview and printing preserve adjacent tables as separate
-  groups, including headerless HTML tables and tables with multiple header rows.
-  Continuation chunks never repeat that table-start marker.
-  A separate first-list-item flag preserves original list groups through
-  reading search and excerpt generation. Transport continuation chunks never
-  repeat that flag or acquire a new displayed marker.
-- Implemented: the transfer service creates and validates bounded QR and NFC
-  envelopes, decodes bounded QR luminance frames, and strictly parses complete
-  bounded NDEF messages into inert text.
-- Implemented: separate math and diagram services render bounded TeX or a narrow
-  Mermaid subset into a closed path-and-clip packet. Each receives only its
-  snippet and an app-owned fixed-size anonymous output descriptor. Neither
-  receives a provider capability, full document, URI, or app-private path.
-  Preview work is viewport-prioritized with a revision-owned bounded cache;
-  print preparation has a separate total budget. A failed worker is replaced
-  for later input. Platform-font fallback and authored accessibility text remain
-  inside the closed [illustration contract](native-illustrations.md).
-
-Every implemented service is non-exported, uses `isolatedProcess`, explicitly
-disables shared isolated processes, and exposes a narrow Binder interface.
-Every binding uses `bindIsolatedService` with a new opaque random instance name;
-the manifest's process names identify roles, not shared worker instances.
-Import, export, Markdown, and individual transfer operations own fresh
-bindings. A foreground QR scanner prepares one private transfer worker and
-reuses it for sequential camera frames within that scan. Success, cancellation,
-or leaving the foreground releases it; reopening or resuming scanning gets a
-new worker. Worker/protocol failures also replace the instance. QR encoding
-and NFC operations never borrow a scanner's worker. Math and diagram clients
-may reuse their own healthy instance within one document's preview or print
-preparation, never across document clients. Closing one
-binding cannot cancel or occupy a different document's worker. Multiple open
-documents can therefore use the same role concurrently, at the cost of separate
-process startup and memory. Unbinding releases the operation's worker;
-illustration workers also terminate themselves on unbind.
-All six production workers are Android 17 ART-free native isolated services.
-Each manifest component sets `nativeService` and names its Rust shared library;
-Android calls `ANativeService_onCreate` without loading a Kotlin service or ART.
-A shared Rust adapter owns NDK Binder references, bounded AIDL decoding,
-descriptor ownership, serial admission, and callback-death cancellation. The
-pinned NDK r30 targets native API 37, matching the app's minimum OS. The editor
-and print bridges still use JNI in the application process. A compromised
-worker gains neither the app's identity nor another worker's authority.
-
-Native service entry libraries, including the debug hard-stop probe, retain
-their executable and static mappings with ELF `DF_1_NODELETE` until their
-isolated process exits. The native runtime can `dlclose` its service handle
-after `onDestroy` returns; cancellation does not join detached jobs or drain
-pending Binder death-recipient callbacks. Keeping mappings resident covers
-those code lifetimes without waiting on provider I/O on the main thread.
-Fresh private worker processes bound this retention; job cancellation,
-descriptor cleanup, and process release remain separate requirements.
-
-Reliable descriptors transfer their data and status handles separately. The
-ordinary NDK parcel-file-descriptor reader detaches a reliable descriptor's
-error channel, so the custom Parcelable preserves both capabilities before
-the native worker takes ownership. Rust checks the bounded provider status
-after input completion and reports success or a fixed error before closing
-the handles. The format is internal to this APK and is tested against Android
-provider failures and ownership transitions.
-
-The control plane carries job identifiers, options, status, cancellation, and
-descriptors. Full documents, snapshots, transfer envelopes, and render output use
-descriptors, reliable pipes, or shared memory, not Binder transaction payloads.
-The illustration interfaces have one explicit bounded exception: a single TeX
-snippet (at most 4 KiB) or Mermaid fence (at most 16 KiB) travels in a one-way
-Binder call. Output still uses an app-owned 512 KiB anonymous descriptor whose
-identity, size, seals, and complete packet are validated before publication.
-
-### Native printing
-
-Printing consumes one immutable source revision or a bounded model from the
-isolated Markdown service. `EditorPrintContent` transfers or releases that
-snapshot exactly once; the retained editor session still owns operation
-serialization, generation checks, and cancellation. Android's print adapter
-owns the prepared content after an explicit handoff.
-
-Transient print setup offers source text or formatted Markdown, four independent
-margins, font family and size, source-line wrapping, a filename header, and page
-numbers. Formatted Markdown defaults to 12-point sans-serif text; source printing
-defaults to 10-point monospace. Formatted printing hands the renderer's bounded
-model to the print adapter. The export review retains its own frozen source and
-preview until dismissed, so format changes and later handoffs use that revision.
-Android's print service owns the printer or
-its Save as PDF destination. Direct PDF exports instead retain a sealed,
-anonymous preview for sharing or a provider save; neither path creates an
-app-private output file or persistent print preferences.
-
-Formatted output retains aligned table cells, reading-order footnote numbers,
-quote and alert rails, code-language labels, and visibly labeled inert HTML.
-Pathological table rows fall back to bounded styled text rather than exceeding
-the page's layout budget. Links and images are never fetched.
-
-Source and formatted output share the streamed vector PDF writer. Android owns
-text layout, font selection, shaping, and glyph placement. A small in-process
-Rust outline bridge reads only Android-selected platform font mappings, never
-document-supplied fonts. It has no URI or storage API and retains no borrowed
-buffer. This is not another isolated parser service: the document parsing
-boundary remains the editor core or the existing Markdown worker.
-
-The writer retains only one selected page's vector resources and measured
-Unicode text, then streams that page to the print destination. Color glyphs,
-synthetic bold, and partially clipped glyphs use bounded native bitmap patches.
-There is no full-page image allocation, whole-PDF buffer, or app-private print
-file. Text selection/search, page ranges, fixed paper colors, monochrome,
-physical margins, cancellation, and explicit failure on exceeded limits remain
-part of the contract. See [vector printing](vector-printing.md) for exact
-boundaries and verification.
-
-Formatted printing reuses the same validated math and diagram appearances as
-preview. Source text remains in the PDF's selectable text layer. Neither raw
-SVG nor a formula interpreter enters the app's print renderer. See
-[native illustrations](native-illustrations.md) for the separate worker and
-admission contracts.
-
-## Large-document model
-
-Compose text fields are not a whole-document storage strategy. The primary
-editor model is a persistent source-backed Rust AVL piece tree. The source is a
-byte-identical anonymous descriptor, not the provider's mutable descriptor.
-Unchanged pieces refer to physical ranges in that source and expose LF-normalized
-logical text through bounded reads. Edit allocations of at most 64 KiB own new
-and modified logical text. Contiguous ranges from the same backing rejoin
-without copying. Similarly sized edit-backed boundaries coalesce, and
-fragmented edit-backed regions rechunk locally within the same bound, so
-repeated edits do not retain obsolete fragmentation. Compaction never copies
-source-backed bytes. Sparse changes can retain source pieces proportional to
-the current disjoint changes, but not to superseded operation history. Tree
-summaries independently track logical UTF-8 length, exact serialized length,
-Unicode scalar count, UTF-16 length, and newline count so most navigation and
-snapshot accounting skip unrelated text.
-
-Opening performs one streaming UTF-8 validation and byte-preserving copy in the
-isolated worker followed by one bounded indexing scan in the document engine.
-The scan is linear in the source byte length and uses a 64 KiB buffer; it does
-not create a second whole-document Rust or ART heap copy. Viewport operations
-use positioned reads and retain at most four decoded source pieces for the
-duration of one request. The anonymous source itself still occupies
-kernel-managed memory proportional to the original document size.
-
-The engine returns immutable viewport snapshots containing visible logical
-lines plus bounded overscan. The UI lays out only that snapshot. Selection,
-search, and navigation use stable document offsets rather than offsets into a
-temporary Compose string.
-
-The editor derives its visible logical-line range from the laid-out document
-blocks, excluding auxiliary pagination items and clipped content-padding
-boundaries. Go to line sends one revision-bound cursor directly to Rust with
-the ordinary viewport limits. The previous cache and scroll position remain
-published until that response is validated, so failure cannot blank or move
-the document. Successful navigation atomically replaces the cache, while a
-failed target remains retryable or dismissible.
-
-Find shares one Rust matcher between exact LF-normalized source and displayed
-reading flows. Literal search supports simple Unicode case folding, Match case,
-and Unicode 17 whole-word boundaries. Regex uses the bounded Rust dialect,
-including named captures, multiline patterns, and zero-width positions; pattern
-backreferences and look-around are unsupported. Whole word remains a literal
-option. Replacement syntax is validated before applying any source change.
-
-Queries are limited to 4,096 UTF-16 units / 16 KiB UTF-8, with a 4 MiB compiled
-pattern limit. Literal source traversal uses 256 Ki-unit pages and bounded
-lookahead; Regex retains original boundary context up to 8 Mi UTF-16 units.
-BESR version 1 packets hold at most 256 matches and 256 Ki retained text units.
-The session retains at most 4,096 results / 256 Ki copied match and replacement
-units, with a three-second scan budget. Continue search resumes time-limited
-work while retaining the review, or replaces a full result batch with later
-matches. Query, scope, revision, and illustration changes invalidate its cursor.
-Restart returns to the first batch. Context or non-progressing work limits
-require narrowing the selection or query. Only a review retaining the complete
-scope can produce a Replace all plan or a whole-document zero-match claim.
-
-Typing, retries, and illustration completion update counts and highlights
-without moving the document. Submission, match arrows, and result selection
-navigate explicitly. Compact navigation reveals the passage and dismisses the
-keyboard; a wide results pane remains open and can switch to Contents. Source
-and reading keep a document focus target for hardware commands after Find is
-dismissed or a match is revealed. The session retains whether Find focus belongs
-to the document, query, replacement input, or results controls; newer input
-intent supersedes an older pending reveal. Apply and review Undo/Redo leave
-keyboard focus in the results pane, where document history shortcuts work even
-when the compact layout hides the document. Editing query or replacement text
-keeps its own field history. Reading navigation also reveals the first
-match line inside nested horizontal code and table scrollers. Recreating the
-same reading layout does not restart search unless illustration content changed.
-Source highlights are output transformations and never change document characters.
-Zero-width matches have position markers. Source navigation retains bounded
-context around a match, and stale query/revision responses cannot move it.
-
-Reading joins styled prose and transport fragments, with explicit paragraph
-and list separators. Cells, diagram labels, and formula runs remain distinct.
-BTXTILL4 supplies validated semantic text and glyph/label geometry. Reading Find
-defaults to displayed text so matches correspond to what the reader can see.
-TeX/Mermaid source is opt-in and labeled separately because those matches may
-have no visible counterpart. Consolidation requires an exact occurrence
-mapping: bare single-run literal TeX currently provides one;
-unproven general TeX/Mermaid correspondences remain separate. Missing semantic
-coverage is visible, independent of the viewport illustration cache.
-
-Selection scopes, replacement reviews, and locations belong to one revision.
-Exactly mappable edits rebase their anchors; ambiguous/deleted scopes pause.
-Location history retains 128 session-only entries and coalesces consecutive
-Find jumps. Dedicated controls keep those jumps separate from Android Back's
-dismissal and document-navigation behavior. Returns restore presentation and
-source caret; an unavailable reading render falls back to source with a notice.
-
-Replacement batches validate ordering, expected text, revision, output size,
-the bounded review packet, and native history memory before publishing one
-persistent-tree revision.
-BEBT version 1 carries at most 4,096 patches. The commit and its returned metrics
-are a non-cancellable publication boundary; a committed batch retains one Undo
-and Redo even if preparation was canceled concurrently. Autosave sees the final
-revision. Excluded review entries remain excluded when only replacement text
-changes and are reset when match identity changes. The review and Apply button
-count only included changes; matches already equal to their replacement are
-reported separately and do not consume a revision or Undo entry.
-Replace current's automatic advancement is captured by its follow-up search
-coroutine rather than retained as session-wide pending navigation. Superseding
-the search or its input intent drops that jump without reversing a published
-edit. Exhausting verified results claims the end of the scope only after complete
-coverage, including when replacement text equals the current match.
-
-IME interaction uses a bounded editable window around the active selection.
-The ordinary target is 16 Ki UTF-16 code units, and both the native protocol
-and Compose draft enforce a 32 Ki hard ceiling. Window edges prefer extended
-grapheme boundaries and always fall back to valid Unicode scalar boundaries.
-`ActiveEditDraft` owns each bounded `TextFieldState`, its selection, and scroll
-positions. Native `Document` history owns before/after persistent tree roots
-under a combined 128-entry / 64 MiB changed-allocation budget. `EditorHistory`
-retains only revision tokens, edit ranges, inserted lengths, and selections; it
-mirrors native eviction after successful publication. Neither removed nor
-inserted document strings remain in the Kotlin journal. Both belong to the
-retained in-memory editor session. Those objects never use a `Saver`,
-`rememberSaveable`,
-`SavedStateHandle`, or serialization,
-so BeauTyXT does not serialize document content or retained editor state into
-Android instance state. Transfer metadata drafts, including an optional NFC
-tag label, use the same process-memory-only retention. The retained session and
-its operation scope survive Activity configuration changes, while process
-death still discards them. Compose's separate internal field history is cleared
-periodically outside active composition; the session journal retains logical
-edits until its shared budget requires eviction. The journal advances only
-after a successful native edit and rejects stale completions. Edits are reduced
-to the smallest scalar-aligned replacement before they enter the document
-engine, then a new window is published with a monotonically increasing
-generation. Stale UI and
-worker responses are discarded. Active IME composition is allowed to finish
-before applying or moving the window. Explicit Undo and Redo first commit the
-visible composing word without changing its characters, selection, or focus.
-
-Bulk paste is independent of the small input-method window. The content
-receiver takes a single large plain-text clipboard item before Compose builds
-an oversized field buffer. Large IME and accessibility input also routes out
-of the field before publication or layout. One immutable input string is kept;
-a worker normalizes CRLF and bare CR to LF and validates Unicode while sending
-at most 8 Ki UTF-16 units per chunk (the JNI boundary independently enforces
-64 KiB UTF-8). The native builder coalesces transfers into scalar-aligned
-64 KiB storage chunks and accounts chunk/node overhead during preparation.
-It checks no-op equality as chunks arrive, keeping long comparisons outside
-the final publication call. The unpublished tree belongs to one document and
-revision. Cancellation, invalid Unicode, stale revisions, and resource
-rejections discard the builder and preserve both history stacks. Commit checks
-the editable offset space, the 256 MiB serialized-document limit, and the native
-history budget before publishing one revision and its Undo together. Pending
-typing settles first, and an accepted insertion cannot be discarded by Back.
-The same focused field then shows a bounded window around the result.
-
-Native Undo/Redo restores exact tree roots, preserving original source bytes,
-BOM, and mixed line endings, while advancing the revision monotonically. It
-never sends inverse document text across JNI. Each history entry tracks the
-allocation identities present on only one side of its tree change. Reference
-counts charge shared changed nodes and entire edited-text backings once across
-both stacks, including new text still present in the live document. Original
-source bytes are not duplicated; history can keep that document's
-immutable source descriptor alive even after the live tree deletes its last
-source piece. The original source's separate 256 MiB bound still applies.
-Oldest-first eviction makes room for an admissible new entry; an entry that
-cannot fit alone rejects the edit before discarding Redo or evicting anything.
-Dropping history releases its roots without invalidating independently owned
-save/preview snapshots. The allocation budget excludes allocator bookkeeping
-and the bounded journal/map containers; construction can temporarily retain the
-old journal plus one prepared insertion. A separate 64 Mi UTF-16 platform-input
-ceiling bounds copies on the fallback field-input path. Neither limit promises
-that every paste below that text length fits: UTF-8 size, preserved source
-format, tree overhead, and retained removed allocations also matter.
-
-The document host wraps Compose text-input requests with a stable interceptor
-that adds Android's
-[`IME_FLAG_NO_PERSONALIZED_LEARNING`](https://developer.android.com/reference/android/view/inputmethod/EditorInfo#IME_FLAG_NO_PERSONALIZED_LEARNING)
-after the field creates its input connection. The original connection, field
-metadata, action flags, and ownership are preserved; ordinary recomposition
-does not replace the interceptor or restart input. This covers source editing,
-Find, and editable dialog fields. It is only an advisory request: the selected
-keyboard remains an independent application that receives typed content.
-
-`DocumentEditor` coordinates lifecycle and actions. Source windows, Markdown
-blocks and navigation, Find, dialogs, feedback, and status descriptions live in
-separate UI modules. Rendering does not own source-save or worker lifetimes;
-those remain serialized by `EditorSession`.
-
-The migrated presentation modules describe app wording with Android resources.
-`UiText` carries a string/plural identifier and formatting arguments, or a
-sanitized operation message, without retaining a Context in session state.
-Resolution happens at the UI or print boundary. English remains the only
-supported language; resource preparation does not solicit translations.
-
-Opening and saving stream through fixed-size buffers while the ART heap stays
-viewport-sized. Every selected source, seekable or streaming, is copied
-byte-for-byte with cancellation, strict UTF-8 validation, and fixed input and
-output limits into an anonymous seekable descriptor. Once the isolated writer
-closes and reports success, the application verifies its identity and length,
-then Rust permanently seals writes and size changes before indexing it. The
-provider descriptor is released, and the sealed descriptor has no app-private
-path. Its final source-backed tree reference closes when the document and its
-snapshots no longer need it. Oversized sources are rejected rather than copied
-into app-private storage.
-
-Saving captures a constant-time immutable piece-tree revision. Untouched source
-spans retain their BOM and mixed LF, CRLF, or bare-CR line endings. New logical
-line breaks use the most common source convention, with the first observed form
-as the deterministic tie-breaker and LF as the empty-source default. Both
-output paths enforce an exact expected byte count and a 256 MiB hard bound.
-
-The document engine also rejects an edit before publication if it would
-increase the exact serialized size beyond that ceiling, including BOM and
-line-ending bytes. Non-growing recovery edits remain available. A rejected
-submission never enters history or source autosave; newer input is not rolled
-back when an older submission fails.
-
-Source autosave encodes the captured revision into a versioned package with a
-fixed header, a bounded ordered record table, and a compact trailing payload.
-Source records address unchanged ranges in one duplicate of the immutable
-anonymous import source. In sparse packages, payload records address only live
-edit bytes, serialized new line endings, a preserved BOM when no source record
-can carry it, and boundary repairs that keep adjacent bare CR and LF
-terminators distinct. Contiguous source ranges coalesce. If no transferable
-source remains, fragmentation exceeds the record bound, or sparse encoding is
-not smaller, the producer streams one full-payload record instead.
-
-The package `memfd` is allocated to its exact declared size before the provider
-is opened for writing. Its type, owner, link count, identity, size, and offset
-are checked; growth is sealed before native output, and writes, growth,
-shrinking, and further seal changes are sealed afterward. The optional source
-backing is already anonymous, exact-size, and permanently sealed. The isolated
-export worker rejects descriptor aliases and validates the complete header,
-table, backing ranges, payload coverage, and reconstructed output length before
-provider preflight begins. After a matching preflight, it reconstructs the
-revision with fixed 64 KiB buffers and positioned reads, without changing the
-package or backing cursor or status flags.
-
-Sparse autosave staging therefore uses memory proportional to the current live
-edits and record table rather than the complete document. A full-payload
-fallback remains bounded by the same 256 MiB output limit and never creates an
-app-private pathname or exposes a partially captured revision to the source.
-The isolated import stream and each verified source write produce an exact
-raw-byte version made of a byte length and SHA-256 digest. That version remains
-only in process memory. Before truncation, the export worker hashes the same
-seekable read-write descriptor and compares it with the retained version. A
-mismatch reports a conflict without modifying the source. After a matching
-preflight, the worker copies and hashes the reconstructed revision, then
-verifies the source bytes again before reporting success. The application
-performs one final isolated check through a fresh read descriptor before
-advancing the clean revision baseline.
-
-An active source write is not cancelled for a newer edit; after it settles,
-only the newest pending revision is written. Retryable failures stay latched
-until explicit retry. A source conflict never exposes ordinary Retry. Any
-failure after the destructive boundary is conservatively uncertain and cannot
-fall back to an unconditional write; the user can preserve the in-memory
-revision by selecting another destination.
-
-A conflict also offers separately confirmed Reload file and Overwrite file
-actions when the source supports them. Reload discards local changes and opens
-the current provider content. Overwrite captures the local revision, reads a
-fresh exact-byte source baseline, and performs the same conditional write and
-post-write verification against that baseline. It is not an unconditional
-write: another change after inspection can cause a new conflict. These actions
-do not turn an uncertain post-boundary failure into an automatic retry.
-
-Save a copy streams the immutable revision through a reliable pipe and does not
-retain the selected destination URI. A one-shot Parcelable transfer silently
-releases each sending-process descriptor copy during Binder marshalling,
-leaving the worker as the sole owner that can publish its reliable terminal
-status. The producer traverses immutable source pieces without a
-document-sized allocation, while the worker uses a fixed 64 KiB buffer. Saving
-a copy never changes the source clean baseline.
-
-New and received content has no source until the user selects Save. That first
-empty destination becomes the live autosave source. Ordinary later Save actions
-create copies. After a source failure, Save elsewhere explicitly replaces the
-retained source, while Save a copy leaves the existing source and its baseline
-unchanged. Export workers write only to the descriptor authorized for that
-operation. Provider atomicity is never assumed: generic Storage Access
-Framework descriptors cannot guarantee rollback or atomic replacement, and a
-provider or process failure after truncation can leave the source incomplete.
-They also expose no generic compare-and-swap replacement. The exact-byte
-preflight prevents silent overwrite of any differing bytes present when that
-check completes, while post-write checks prevent a mismatching result from
-being reported as saved. A noncooperating writer can still race after the
-preflight because the provider owns the backing object. The UI reports conflict
-and uncertainty separately and retains the newest in-memory revision while the
-process remains alive. Markdown changes only the selected MIME type and file
-extension; it does not grant the export worker parsing authority.
-
-URI equality rejects the live source selected directly as a replacement or
-copy destination, but Android exposes no provider-independent way to prove that
-two different content URIs are not aliases. A provider already controls its
-own backing objects and must not return the retained source under a different
-URI for a newly created destination.
-
-## Markdown reading
-
-Markdown preview captures one exact immutable revision and renders it through
-a dedicated isolated Rust worker. Compose displays its bounded semantic
-block-and-span model directly; BeauTyXT does not use a WebView or execute raw
-HTML. CommonMark, GFM tables, tasks, strikethrough, alerts, extended autolinks,
-footnotes, and the enabled superscript and subscript extensions retain their
-presentation semantics.
-
-A narrow semantic HTML subset converts nested sections, paragraphs, headings,
-quotes, lists, preformatted code, tables, links, line breaks, images, emphasis,
-deletion, superscript, and subscript to the same model. Only link destinations
-and titles, image sources, alternative text and titles, and ordered-list start
-values are parsed. Structural ordered-list numbers are limited to nine decimal
-digits, including subsequent item numbers; larger lists remain inert source.
-Image sources are discarded, never fetched, and represented
-by labeled alternative text. Unsupported tags and every other attribute,
-including CSS and event handlers, remain inert source text.
-
-Rendering is limited to 16 MiB of source, 16,384 blocks, 131,072 spans, and
-bounded nesting, metadata, links, and output size. Every worker-emitted text
-block is at most 4 KiB of UTF-8. Compose lays out those blocks and bounded table
-runs lazily. Table rows carry explicit structural separator positions so literal
-tabs remain cell data. Source maps may leave generated text unmapped; exact
-source-selection actions require complete, monotonic coverage of the selected
-text. Structural HTML with only enclosing provenance supports approximate
-source navigation rather than an exact selected source range.
-Selected list output preserves explicit item ancestry. Placement of an untyped
-child block requires unambiguous, strict source containment; equal enclosing
-HTML ranges do not establish a parent. Such content remains standalone rather
-than acquiring an inferred list owner.
-The ephemeral render protocol uses version 6 (`BTXTMDR6`). Its 72-byte block
-header carries the alert owner's quote depth at byte offset 68, separately from
-the content's quote depth. Zero means no alert; an alert owner must be within
-the content's quote depth and the existing nesting limit. Producer and consumer
-upgrade together and reject earlier packet versions. Selected output uses this
-owner depth to retain enclosing alerts when their first selected content is
-nested more deeply, including when an inner alert returns to an outer alert.
-An item continuation whose first paragraph is absent remains ordinary prose
-at its authored quote depth, without importing the missing marker or parent.
-Complete supported diagram fences can join their fragments within
-the separate 16 KiB illustration limit. Native TeX and supported Mermaid
-appearances use the separate workers, source-preserving fallback, and
-accessibility alternatives described in [native illustrations](native-illustrations.md).
-If joining or cache eviction changes the text slots used by a reading
-selection, the selection clears with a request to select again. An affected
-captured reading Find scope pauses. Output actions check this projection before
-using it, including before the UI observes a cache update; unrelated selections
-and unchanged projections survive cache refreshes.
-
-Link destinations become accessible native Compose links. Lazy grouping and
-local heading and footnote indexes are prepared off the UI thread once per
-rendered revision. Repeated heading names retain stable, collision-free
-destinations without rescanning on every tap. Footnote references navigate only
-within the rendered document. Explicit taps navigate to rendered headings or
-pass destinations with approved web, communication, and map schemes to Android
-without granting URI permissions. Unfamiliar app schemes require confirmation;
-executable and local data schemes are blocked. BeauTyXT retains no Internet
-permission.
-
-The same in-memory preview can be reused when returning from the source editor
-without a document change. An edit invalidates that revision; neither the
-preview nor its illustration cache is persisted. In editable documents,
-tapping rendered text opens its source position; tapping blank space below the
-final rendered block opens the editor at the document end. Other unused
-reading-page space returns to the retained editing position. Links, code-copy
-buttons, scrolling, and long-press selection keep their own gestures. Back
-clears a reading selection first; the next Back follows normal navigation.
-Canceling a Back gesture leaves the selection intact. These shortcuts do not
-make view-only sources editable.
-
-Code blocks offer explicit whole-block copying, including off-screen renderer
-fragments, as plain text without fences or added separators. Copies are bounded
-to 65,536 UTF-16 code units; larger blocks remain selectable without silently
-copying a prefix. Copying writes plain text to Android's clipboard with the
-ordinary system preview. It never executes the code or creates an app-private
-copy. No clipboard content is read as part of this action.
-
-## Storage and lifecycle
-
-BeauTyXT never writes document bytes or document-identifying metadata to its
-private files, databases, preferences, logs, or crash reports. It creates no
-internal working files, import or export staging files, recents, content
-indexes, autosaves, recovery copies, or persistent session records. Android
-backup remains disabled, and URI grants are not persisted. Import sources and
-source-autosave stages are pathname-free anonymous descriptors, not private
-storage entries. Sparse source-autosave packages retain only a sealed piece
-table and payload plus an optional duplicate capability for the already sealed
-session source.
-
-Document text, edits, undo history, indexes, render results, and transfer
-payloads and exact-byte source versions are session state. They live only in
-process memory or bounded anonymous descriptors with explicit owners and
-lifetimes. Closing a document drops its document descriptors and memory. The
-selected URI and exact source version remain only with the live editor's source
-owner and are forgotten when that editor closes. If closing overlaps an active
-source job, the job retains its source owner, sealed package, and optional
-source backing only until the write settles. Process death drops in-memory
-state immediately and can also interrupt a provider-owned write, so unsaved
-edits are intentionally lost and a source may be incomplete. The UI
-communicates failures and requests confirmation before a deliberate close with
-unsaved changes; BeauTyXT provides no process-death recovery or
-provider-atomicity promise.
-
-Find queries, matches, direction, and wrap state are transient session state.
-They are never written to private storage, instance state, logs, indexes, or
-the document. Closing Find releases results, highlights, scopes, and replacement reviews,
-while retaining the last query, replacement, and options in the live session.
-Closing the document or losing the process clears all of them. Provider reload
-transfers inputs only and recomputes Document scope in the new session.
-
-The Activity composition retains one application-session owner through
-Compose's lifecycle-aware in-memory retain store. It owns any in-flight import,
-live editor, bounded draft, and document-operation coroutine scope. Temporary
-configuration destruction therefore neither closes a native document nor
-cancels an operation after it has entered a loading or applying state. Terminal
-Activity removal retires and closes that owner. None of these objects is
-converted into instance state, selected source identity is not copied there,
-and a new process always starts with an empty session.
-
-This policy does not prevent Android from maintaining ordinary application
-artifacts such as compiled code and runtime profiles, or BeauTyXT from storing
-content-free interface preferences. Those artifacts must never contain
-document content or identifying metadata.
-
-## Selection and excerpts
-
-Global logical selections span lazy reading items and source windows. Only
-composed text geometry is retained. Touch, keyboard, and accessibility handles
-use character boundaries; renderer chunks prefer complete extended graphemes,
-and reading endpoint validation checks at most 64 Ki UTF-16 units of adjacent
-fragments rather than guessing across an unresolved giant cluster. Whole
-illustrations are atomic; diagram-label text has a separate selection action.
-Source field selections also expose the common selection output controls.
-The focused source field retains its native editing and accessibility selection
-actions; the global layer follows those changes without replacing them.
-Presentation changes transfer a selection only through an exact mapping.
-Selection edges use the inward source affinity at invisible formatting
-delimiters. Editing a mapped passage restores the actual native edit range and
-its direction; a selection exceeding the IME window stays a global selection.
-Paragraph extension crosses complete logical paragraphs, including their
-renderer fragments.
-Generated footnote numbers retain interior displayed positions, so selecting
-or searching one digit does not expand into the entire marker. Such interior
-positions have no assumed exact source counterpart. A partial marker exports
-as superscript text without importing its note.
-
-Immediate Copy uses displayed plain text or exact logical source. A visual
-selection may span source formatting boundaries, so reading Copy avoids
-inventing Markdown syntax; generated Markdown is an explicit export format.
-Send/export owns one frozen revision and offers Copy, Android share, save, QR,
-NFC, and PDF under their existing destination limits. The document toolbar and
-selection actions open the same review, with an explicit scope label. Whole
-document capture synchronizes the latest IME draft, preserves exact source
-bytes, and leaves the retained selection unchanged. Whole Markdown offers its
-original source, displayed plain text, or PDF; selected content can additionally
-generate independent Markdown. New and plain-text documents can export exact
-source bytes with a Markdown filename and MIME type before their first save.
-The initial summary keeps Share and Save a copy above visible QR, NFC, Copy,
-and Print actions. Selected text includes a short excerpt; PDFs show their page
-count and paper size. Explicit preview and settings entries open detailed
-review. Share and Save use the same prepared output; the detailed preview keeps
-its output actions outside the preview's scroll container. Generated Markdown is
-complete syntax for selected structure, including retained table columns/headers, list numbering,
-footnote closure and renumbering, and safe link destinations. Explicit inline
-HTML styles preserve clipped whitespace and adjacent runs. Unselected body text
-is not imported to repair links or headings. Source formatting is offered only
-for a precisely mapped visible passage. Preview additions and removed links
-are shown before handoff; document edits require an explicit preview refresh.
-Generated list markers preserve derived numbering beyond nine digits when the
-retained group begins with a supported start. If a selection instead starts a
-group above 999,999,999, formatted output requests an earlier item or text
-output rather than reparsing an invalid starting marker. Whole-source export
-and whole-document PDF do not need that generated starting marker.
-
-PDF exports reuse the native text/vector print path, with real URI and internal
-GoTo annotations. Internal links are resolved against the pages actually emitted;
-a target excluded by a print page range does not leave a broken annotation.
-Preview uses PdfRenderer over a read-only anonymous descriptor. Saving creates
-a separate provider document and rejects the source URI and known aliases.
-
-Generated-file sharing uses a non-exported grant-capable ExcerptProvider, random
-single-output URIs, and bounded session-owned leases (four / 256 MiB). It never
-grants the source URI or creates a private staging file. Sharing an existing
-whole source file uses the original provider-backed share flow described below;
-conversions and selections always receive independent capabilities. Each opened
-read-only proxy descriptor has independent seek position and retains its sealed
-backing until the recipient closes it. Revoking a lease prevents future opens;
-already opened descriptors have the normal lifetime of a granted file handle.
-Anonymous readers are bounded to 32 active callbacks on one handler thread.
-Chooser refinement acknowledges a selected receiver before handoff; returning
-without that acknowledgment releases the pending lease. Failed launches also
-release it. Only an opaque request ID survives activity recreation. Successful
-shares remain readable until the session closes or the user explicitly ends
-previous shares through the capacity-recovery action. Separate-UID native tests
-exercise delayed reads, recreation, read-only grants, revocation, and PDF bytes.
-
-## Sharing and local transfer
-
-The Android Sharesheet is the general-purpose sharing path. A source-backed
-document waits for its latest verified autosave and then shares the existing
-provider URI with a temporary read grant. A small transient document is read
-from one immutable snapshot into a bounded text extra. Neither path creates an
-app-private file. Sharing first settles the newest editor draft. Incoming
-`ACTION_SEND` content accepts one supported text or Markdown value or one
-unambiguous content URI and requires explicit review before opening it. Direct
-incoming and outgoing text share the same 128 KiB UTF-8 budget. Untouched
-received content still requires confirmation before closing without saving,
-with wording distinct from user edits.
-
-QR and BeauTyXT-authored NFC records carry the same versioned,
-integrity-checked Rust envelope containing the exact UTF-8 text and plain-text
-or Markdown format. NFC can also receive a deliberately narrow set of standard
-NDEF text representations. The transfer service runs separately from the
-document and Markdown processes. It receives only bounded anonymous
-descriptors and has no network or storage authority.
-
-The reviewed transfer text remains exact until the user confirms Open. Opening
-it creates an unsaved editor with LF-normalized logical text, as for other
-transient documents. This does not alter the sender's bytes or a provider-backed
-source's preserved line-ending format.
-
-QR sharing accepts at most 1,536 UTF-8 bytes and returns a packed module grid
-for direct Compose drawing. Foreground scanning requires camera consent, copies
-only one bounded luminance frame at a time, and never saves frames. Frames are
-copied only when the scanner's prepared worker can receive them, so camera
-buffers do not wait through process startup or queue behind prior decodes.
-Each request has distinct descriptors and a callback identity. The isolated
-worker rejects missing, ambiguous, malformed, oversized, or damaged codes.
-
-Saving a QR image encodes the 1,024-pixel bitmap as lossless WebP by default,
-with PNG offered for compatibility. Both preserve identical pixels; WebP's
-compression effort is 100 and does not reduce image quality. The selected
-format, filename extension, and picker MIME type stay fixed throughout the
-destination and write operation, including configuration changes. The image
-is encoded into a size-bounded anonymous memory file and sealed before opening
-the selected destination. A fresh instance of the isolated export service
-used for document copies owns provider writes,
-cancellation, and terminal verification. No temporary image path or second
-image-sized byte array is created in the application.
-
-NFC reading sends one complete serialized NDEF message, bounded to 256 KiB, to
-the isolated Rust decoder. Ordinary messages must contain exactly one supported
-top-level record: the BeauTyXT MIME envelope, an NFC Forum Text or URI record,
-`text/plain`, a supported Markdown MIME type, or `text/html`. A single Smart
-Poster is accepted only when its nested records resolve to exactly one URI;
-one optional title is retained for review while action, icon, and unrelated
-metadata is ignored. Multiple ordinary records, multiple candidate URIs,
-malformed framing, invalid Unicode, unsupported types, and decoded text beyond
-the 256 KiB UTF-8 ceiling are rejected. URI records never navigate. HTML stays
-editable source and can enter only the existing non-executable Compose
-Markdown presentation.
-
-NFC writing creates one BeauTyXT MIME record with an optional one-to-three
-character physical tag label. The complete serialized message remains within
-the same 256 KiB ceiling. Writing requires a separate confirmation after
-payload preparation, replaces the existing message only on an already
-formatted, writable tag whose reported NDEF capacity is sufficient, and
-verifies the exact serialized message by reading it back. Each confirmation
-allows only one tag attempt; failure requires a new confirmation. Leaving the
-foreground also disarms the writer. BeauTyXT never
-formats a tag or makes it read-only. Android's reported hardware tag ID is
-shown only as transient technical metadata and is never treated as identity.
-
-Received QR and NFC text enters the same explicit review flow as Android shared
-text. It remains in process memory and is not persisted until the user chooses
-Save.
-
-## Defensive limits
-
-Each job declares its applicable byte and elapsed-work limits before work
-starts. Parsers also enforce bounded block text, metadata, links, nesting,
-node counts, and output size. Cancellation closes the worker's descriptors and
-invalidates its generation.
-
-Worker death is a normal error path. BeauTyXT never treats a partial output as
-success. Cancellation that wins before the native output boundary leaves an
-existing supported regular copy destination unchanged. After ordinary copy
-output begins, native rollback best-effort resets a failed seekable destination
-and every accepted failure closes a reliable provider descriptor with an error.
-A provider may still retain incomplete output because atomicity is
-provider-owned. Retryable pre-output source failures are rebound only for an
-explicit Retry. Source conflicts and indeterminate post-boundary writes never
-retry automatically or unconditionally; the in-memory document remains
-available for Save elsewhere or Save a copy.
+## Constraints
+
+BeauTyXT edits plain-text and Markdown documents on Android 17 (API 37;
+compiled against API 37.1) with Material 3 Expressive UI. These constraints
+are non-negotiable:
+
+- **Offline only:** no Internet permission, no accounts, no cloud services,
+  and no fetching of remote images or resources.
+- **No app-private document retention:** app-private storage never holds
+  document bytes, metadata, staging files, recents, recovery data, or
+  autosave copies. Android backup is disabled and URI grants are never
+  persisted.
+- **User-owned locations:** existing files remain with the user's storage
+  provider. New and received documents stay in memory until explicitly saved.
+- **Least-authority isolation:** untrusted import, export, Markdown, local
+  transfer, math, and diagram work runs in private ART-free native
+  `isolatedProcess` services. Workers never receive content URIs or
+  filesystem paths — only job-specific file descriptors or anonymous
+  `memfd` buffers.
+- **Bounded memory:** large documents stream through fixed buffers and render
+  via bounded viewports without materializing full text in Compose.
+- **Safe core:** core Rust document and parsing crates forbid `unsafe` code;
+  JNI and Binder interop is confined to small boundary crates.
+
+## Process and crate layout
+
+| Process | Role | Notes |
+| --- | --- | --- |
+| App process | Kotlin/Compose UI, Navigation 3 (`HomeActivity`), separate-task external handlers (`MainActivity`, `ShareActivity`), SAF/NFC/camera/print integration, in-process Rust `editor-core` & `print-core` via JNI | Owns the sole retained in-memory session (`retain` store); never serializes document content or source URIs into Android instance state. Stores only content-free preferences in `noBackupFilesDir/text-appearance.properties` and `noBackupFilesDir/app-theme.properties` via `AtomicFile`. |
+| `import-service` | Streaming UTF-8 validation & byte-preserving copy to an anonymous `memfd` | Private `isolatedProcess`, `nativeService` (no ART), fresh opaque instance per operation. |
+| `export-service` | Exact-byte verified source autosave & reliable-pipe Save a copy | Verifies preflight/post-write SHA-256 on seekable read-write source descriptors. |
+| `markdown-service` | CommonMark, GFM, and narrow structural HTML allowlist → sanitized render model (`BTXTMDR6`) | No WebView or script execution; unsupported HTML/CSS stays inert source. |
+| `transfer-service` | QR encoding/decoding and NDEF parsing/building | Foreground QR scanner reuses one private instance per scan; NFC & QR encoding use fresh instances. |
+| `math-service` / `diagram-service` | Native TeX (RaTeX) and Mermaid subset (Merman) → closed path packet (`BTXTILL4`) | Lazy-bound per document; independent process watchdog. See [native illustrations](native-illustrations.md). |
+
+All six worker services are non-exported, disable shared isolated processes,
+bind with random opaque instance names via `bindIsolatedService`, and mark
+their entry libraries `DF_1_NODELETE` so detached cancellation does not race
+`dlclose`. Bulk payloads travel over file descriptors, reliable pipes (passing
+data and status channels separately across NDK Binder), or sealed `memfd`
+buffers — never Binder transaction payloads (except bounded 4 KiB math /
+16 KiB diagram snippets).
+
+## Document engine, editing, search, and diff
+
+- **Piece tree (`editor-core`):** persistent source-backed AVL piece tree over
+  a permanently sealed anonymous `memfd` source. Unchanged spans stay
+  source-backed with preserved BOM and mixed LF/CRLF/CR endings; edits live in
+  bounded 64 KiB chunks with local compaction. Tree summaries track logical
+  UTF-8, exact serialized bytes, scalars, UTF-16 units, and line counts.
+- **Bounded editing & history:** Compose edits inside a viewport-bounded
+  `BasicTextField` window (16 Ki UTF-16 target, 32 Ki ceiling; floating bottom
+  toolbars overlay the viewport with nested-scroll trailing clearance and
+  obstruction-aware selection handles). Bulk paste streams directly into Rust
+  outside the field. Native undo/redo restores immutable tree roots under a
+  128-entry / 64 MiB changed-allocation budget. All editable fields request
+  `IME_FLAG_NO_PERSONALIZED_LEARNING` (advisory to the keyboard).
+- **Unified Find & Replace:** one Rust matcher (`memmem` for case-sensitive
+  literals, bounded Rust regex without backreferences/look-around, lazy
+  UAX #29 whole-word boundaries) serves both source and Reading. Reading Find
+  uses an off-UI segment/source-range index (`O(log N)` mapping) and bounded
+  literal windows; `BTXTILL4` supplies semantic text coverage for illustrations.
+  Batch replacements (`BEBT` v1, ≤ 4,096 patches) validate revision, ordering,
+  and size before publishing one atomic Undo revision.
+- **Conflict comparison (`diff.rs`):** read-only bounded Myers line diff with
+  indexed linear fallback, contiguous hunk projection, and streaming
+  BOM/line-ending format detection (`BEDF` v1 packet via
+  `NativeDocument.diffSnapshots`). Comparing a conflict imports the external
+  file into an isolated read-only snapshot without altering the live baseline.
+
+## Storage, autosave, and conflict safety
+
+- **Descriptor limits:** provider open calls share 4 process-wide slots so
+  hung providers remain bounded even when ignoring cancellation.
+- **Format resolution:** recognized filename extension takes precedence over
+  provider MIME type across opening, File info, sharing, printing, and
+  transfers. Recognized Markdown opened from Home starts in Reading while
+  keeping writable source access.
+- **Verified autosave:** captures an immutable revision into an exact-size,
+  permanently sealed sparse `memfd` package (referencing unchanged ranges in
+  the sealed session source plus live edit bytes). Before truncating, the
+  export worker verifies the seekable read-write provider descriptor's exact
+  byte length and SHA-256 against the in-memory baseline, writes and re-hashes,
+  and the app performs a final fresh-read verification before advancing the
+  clean baseline.
+- **Fail-closed conflict & uncertainty handling:** Storage Access Framework
+  providers are not universally atomic and cannot prevent external races.
+  Conflicts and post-truncation failures never retry unconditionally:
+  - Conflicts offer **Compare changes**, **Save as new file**, **Reload**, and
+    **Overwrite file**. Reviewed overwrite binds strictly to the reviewed
+    `(localRevision, reviewedExternalVersion)` and still runs conditional
+    preflight/post-write verification against the current disk bytes.
+  - Non-seekable/pipe providers open view-only; **Save as editable** writes a
+    verified new file without modifying the original.
+- **Session lifetime:** all document state, history, caches, and Find state
+  live only in process memory and drop on close or process death.
+
+## Reading, printing, excerpts, and transfer
+
+- **Markdown reading:** Compose renders the worker's lazy block/span model
+  directly, with off-UI heading/footnote indexes, shared-scroll tables,
+  reversible source-to-Reading selection round-trips, and explicit
+  scheme-checked external links. See [native illustrations](native-illustrations.md).
+- **Streamed vector printing & PDF:** Android shapes text; in-process
+  `print-core` extracts outlines from Android-selected platform fonts and
+  streams one page at a time with a selectable Unicode layer. See
+  [vector printing](vector-printing.md).
+- **Excerpts & sharing:** whole-source sharing waits for verified autosave and
+  grants a temporary read permission on the provider URI. Generated outputs
+  (excerpts, conversions, PDFs) use a non-exported `ExcerptProvider` with
+  random single-output URIs and bounded session-owned leases (4 / 256 MiB)
+  backed by sealed anonymous descriptors.
+- **QR & NFC:** versioned, integrity-checked Rust envelopes. QR images export
+  as lossless WebP (default) or PNG via the isolated export service. NFC
+  writing requires explicit confirmation per attempt, checks capacity without
+  formatting or locking tags, and verifies by reading back.
+
+## Resource limits
+
+| Boundary | Limit |
+| --- | --- |
+| Document import & serialized save | 256 MiB UTF-8 |
+| Markdown render input / model | 16 MiB source, 16,384 blocks, 131,072 spans, 4 KiB per text block |
+| Editable Compose window | 16 Ki UTF-16 target, 32 Ki ceiling |
+| Native Undo/Redo history | 128 entries / 64 MiB changed allocations |
+| Find query / regex / batch | 4,096 UTF-16 query, 4 MiB regex, 4,096 results / patches, 3 s scan |
+| Conflict diff preview | 2,048 lines / 256 Ki UTF-16 per side, 512 Myers distance, 512 output lines |
+| Code-block copy | 65,536 UTF-16 units |
+| Direct text share / QR / NFC | 128 KiB share / 1,536 B QR / 256 KiB NDEF |
+| Excerpt share leases | 4 active leases / 256 MiB total |
+| Native math / diagram | 4 KiB math (2 s watchdog) / 16 KiB diagram (3 s watchdog), 512 KiB packet, 128 entries / 8 MiB cache |
+
+Limits constrain work and retention per component rather than acting as an OS
+RSS quota. Worker death and cancellation are normal error paths; partial
+output is never treated as success.
 
 ## Dependency policy
 
-Material 3 Expressive is pinned to an exact alpha version. Shared theme and
-motion construction live in `ui/designsystem`; feature UI consumes Material
-components directly and opts into experimental APIs at its use sites. Upgrades
-include visual, accessibility, and interaction regression tests.
+Material 3 Expressive is pinned to an exact version. Shared theme and motion
+setup lives in `ui/designsystem`; feature UI uses Material components directly
+with local opt-ins for experimental APIs.
 
-Dependencies follow their existing stable or explicitly selected alpha channels;
-transitive versions remain subject to upstream compatibility constraints. Rust
-dependencies use explicit features and a checked-in lockfile. Licenses and
-provenance are reviewed before adoption, including obligations for MPL-covered
-components and bundled OFL fonts. Third-party notices and source references do
-not inherit BeauTyXT's MIT license. See [contributing](../CONTRIBUTING.md#third-party-notices)
-and the [release dependency policy](release.md#dependency-review).
-
-Core crates forbid unsafe code. Android Binder and JNI interop lives in small
-boundary crates with focused tests and documented safety invariants.
+Rust dependencies use explicit features and a checked-in `Cargo.lock`. Review
+licenses, provenance, and transitive obligations (including MPL components and
+OFL fonts) before adopting or updating dependencies; third-party notices do
+not inherit BeauTyXT's MIT license. See
+[contributing](../CONTRIBUTING.md#third-party-notices) and
+[release dependency review](release.md#dependency-review).
 
 ## Verification
 
-Deterministic tests cover persistent Unicode edits, cross-piece UTF-8 and CRLF,
-bounded positioned I/O, import and export limits, cancellation races, provider
-and worker failure, descriptor cleanup, Markdown model bounds, transfer
-integrity, and 100 MiB import, editing, and sparse-save acceptance cases.
-
-See the [release process](release.md) for candidate verification and
-reproducibility requirements. Keep results with their tested revision in ignored
-local evidence directories; a previous result does not verify a later checkout.
+Unit, host Rust, and separate-UID Android instrumentation tests cover piece-tree
+invariants, bounded I/O, worker death/cancellation, storage audits, Markdown
+and illustration containment, vector printing, and 100 MiB large-document
+acceptance cases. See [CONTRIBUTING.md](../CONTRIBUTING.md) and
+[release.md](release.md).
