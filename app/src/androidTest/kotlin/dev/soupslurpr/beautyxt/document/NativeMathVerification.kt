@@ -462,12 +462,12 @@ internal fun Instrumentation.verifyNativeDiagramUi() = verifyIllustrationUi(
 )
 
 internal fun Instrumentation.verifyNativeDiagramParserUi() = verifyIllustrationUi(
-    "# Parser recovery\n\n```mermaid\n$sequenceEmptyCommentRegression\n```\n\n" +
+    "# Parser recovery\n\n```mermaid\n$sequenceParserUiRegression\n```\n\n" +
         "```mermaid\nsequenceDiagram\nAlice->>Bob: Ready\n```",
     "Parser recovery.md",
     "Diagram: sequenceDiagram",
     "Copy code",
-    "$sequenceEmptyCommentRegression\n",
+    "$sequenceParserUiRegression\n",
     "native-diagram-parser-recovery.webp",
     expectedEditedSource = "sequenceDiagram\nAlice->>Bob: Ready\n",
     requiredMessage = "Shown as source—"

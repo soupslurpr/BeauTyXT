@@ -455,7 +455,7 @@ android {
     namespace = "dev.soupslurpr.beautyxt"
     compileSdk {
         version = release(37) {
-            minorApiLevel = 1
+            minorApiLevel = 2
         }
     }
     ndkVersion = "30.0.16248370"

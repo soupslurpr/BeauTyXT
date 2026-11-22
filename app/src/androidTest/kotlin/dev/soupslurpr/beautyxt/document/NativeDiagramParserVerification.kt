@@ -45,6 +45,7 @@ import kotlinx.coroutines.withTimeout
 private val sequenceParserRegression =
     "sequenceDiagram\n  <|--ici-icipant A\n  pai()nt B\n%%\r\rako" +
         "\r".repeat(16) + ">B-: Horld\n"
+internal val sequenceParserUiRegression = sequenceParserRegression.replace('\r', '\n').trimEnd('\n')
 private const val READY_DIAGRAM = "sequenceDiagram\nAlice->>Bob: Ready"
 internal const val sequenceEmptyCommentRegression = "sequenceDiagram\n%%\n\nAlice->>Bob: Hello"
 
@@ -69,9 +70,12 @@ internal fun verifyNativeDiagramParserContainment(context: Context) = runBlockin
             "a parser failure prevented the next valid diagram"
         }
 
-        // A minimized, valid empty comment also reproduced the no-progress loop. A fixed
-        // upstream parser may render it; either result must remain bounded and recoverable.
-        withTimeout(6_000) { worker.render(sequenceEmptyCommentRegression, true) }
+        // Merman 0.11.0 fixes the minimized empty-comment no-progress loop; verify it renders
+        // within the worker budget and leaves the worker healthy for subsequent diagrams.
+        val emptyCommentResult = withTimeout(6_000) { worker.render(sequenceEmptyCommentRegression, true) }
+        check(emptyCommentResult is IllustrationResult.Rendered) {
+            "valid empty-comment sequence diagram did not render: $emptyCommentResult"
+        }
         check(withTimeout(6_000) { worker.render(READY_DIAGRAM, true) } is IllustrationResult.Rendered)
 
         val cancelled = async { worker.render(sequenceParserRegression, true) }

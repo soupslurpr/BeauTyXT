@@ -24,6 +24,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.maxLengthReject
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.retain.retain
@@ -52,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.markdown.markdownFootnoteNumbers
 import dev.soupslurpr.beautyxt.printing.*
+import dev.soupslurpr.beautyxt.transfer.isValidNfcTagLabelInput
 import dev.soupslurpr.beautyxt.ui.asString
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -345,22 +349,51 @@ private fun ExportOptionsSheet(controller: ExcerptExportController, ordinaryOutp
         dragHandle = if (scrollActions) null else ({ BottomSheetDefaults.DragHandle() }),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
-        Column(Modifier.fillMaxWidth().then(if (scrollActions) Modifier.verticalScroll(scroll) else Modifier)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .documentToolFocus(controller)
+                .then(if (scrollActions) Modifier.verticalScroll(scroll) else Modifier)
+        ) {
             Column(Modifier.then(if (scrollActions) Modifier else Modifier.weight(1f, fill = false).verticalScroll(scroll))
                 .fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                 .padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(stringResource(if (controller.format == ExcerptFormat.Pdf) R.string.excerpt_settings else R.string.export_options),
                     style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-                OutlinedTextField(controller.fileName, controller::updateFileName, enabled = controller.canConfigure,
-                    label = { Text(stringResource(R.string.export_filename)) }, singleLine = true,
-                    isError = !controller.validFileName, modifier = Modifier.fillMaxWidth())
+                val fileNameState = rememberSyncedTextFieldState(
+                    value = controller.fileName,
+                    onValueChange = controller::updateFileName
+                )
+                OutlinedTextField(
+                    state = fileNameState,
+                    enabled = controller.canConfigure,
+                    label = { Text(stringResource(R.string.export_filename)) },
+                    inputTransformation = InputTransformation.maxLengthReject(240),
+                    lineLimits = TextFieldLineLimits.SingleLine,
+                    isError = !controller.validFileName,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 if (!controller.validFileName) Text(stringResource(R.string.excerpt_invalid_filename))
                 if (ordinaryOutput && controller.format != ExcerptFormat.Pdf) {
                     ExcerptToggle(stringResource(R.string.excerpt_share_file), controller.shareAsFile, controller.canConfigure, controller::updateShareAsFile)
                 }
                 if (controller.destination == ExcerptDestination.Nfc) {
-                    OutlinedTextField(controller.tagLabel, controller::updateTagLabel, enabled = controller.canConfigure, singleLine = true,
-                        label = { Text(stringResource(R.string.excerpt_label)) }, modifier = Modifier.fillMaxWidth())
+                    val tagLabelState = rememberSyncedTextFieldState(
+                        value = controller.tagLabel,
+                        onValueChange = controller::updateTagLabel
+                    )
+                    OutlinedTextField(
+                        state = tagLabelState,
+                        enabled = controller.canConfigure,
+                        inputTransformation = InputTransformation {
+                            if (!isValidNfcTagLabelInput(asCharSequence().toString())) {
+                                revertAllChanges()
+                            }
+                        },
+                        lineLimits = TextFieldLineLimits.SingleLine,
+                        label = { Text(stringResource(R.string.excerpt_label)) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
                 if (controller.format == ExcerptFormat.Pdf) ExcerptPrintSettings(controller)
             }
@@ -479,11 +512,21 @@ private fun ExcerptPrintSettings(controller: ExcerptExportController) {
                 PrintFontFamily.Monospace -> R.string.print_font_mono
             }), draft.fontFamily == family, { updateDraft { it.copy(fontFamily = family) } }, enabled)
         })
-        OutlinedTextField(draft.fontSize, { value -> updateDraft { it.copy(fontSize = value) } }, enabled = enabled,
-            label = { Text(stringResource(R.string.print_text_size)) }, suffix = { Text(stringResource(R.string.print_point_unit)) },
+        val fontSizeState = rememberSyncedTextFieldState(draft.fontSize) { value ->
+            updateDraft { it.copy(fontSize = value) }
+        }
+        OutlinedTextField(
+            state = fontSizeState,
+            enabled = enabled,
+            label = { Text(stringResource(R.string.print_text_size)) },
+            suffix = { Text(stringResource(R.string.print_point_unit)) },
             isError = validation.isFontSizeInvalid,
             supportingText = if (validation.isFontSizeInvalid) ({ Text(stringResource(R.string.print_text_size_error)) }) else null,
-            singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+            inputTransformation = InputTransformation.maxLengthReject(MAXIMUM_PRINT_NUMBER_CHARACTERS),
+            lineLimits = TextFieldLineLimits.SingleLine,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth()
+        )
         ExcerptToggle(stringResource(R.string.print_wrap_source_lines), draft.wrapLongLines,
             enabled && draft.contentMode == PrintContentMode.Source) { checked ->
             updateDraft { it.copy(wrapLongLines = checked) }
@@ -515,7 +558,7 @@ private fun ExcerptPrintSettings(controller: ExcerptExportController) {
             @Composable
             fun marginField(field: PrintMarginField, label: Int, value: String, fieldModifier: Modifier) {
                 val invalid = field in validation.invalidMarginFields
-                OutlinedTextField(
+                val marginState = rememberSyncedTextFieldState(
                     value = value,
                     onValueChange = { updated ->
                         updateDraft { current ->
@@ -527,10 +570,15 @@ private fun ExcerptPrintSettings(controller: ExcerptExportController) {
                             }
                         }
                     },
+                    historyKey = draft.marginUnit
+                )
+                OutlinedTextField(
+                    state = marginState,
                     enabled = enabled,
                     label = { Text(stringResource(label)) },
                     suffix = { Text(unit) },
-                    singleLine = true,
+                    inputTransformation = InputTransformation.maxLengthReject(MAXIMUM_PRINT_NUMBER_CHARACTERS),
+                    lineLimits = TextFieldLineLimits.SingleLine,
                     isError = invalid,
                     supportingText = if (invalid) {
                         {

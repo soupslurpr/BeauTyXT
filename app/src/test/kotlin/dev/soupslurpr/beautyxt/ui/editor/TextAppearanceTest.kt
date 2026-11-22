@@ -11,7 +11,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.TextFieldValue
 import android.content.res.Configuration
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -193,11 +192,11 @@ class TextAppearanceTest {
             Locale.setDefault(Locale.US)
             for ((value, expected) in listOf(16f to "16", 16.5f to "16.5", 16.004f to "16.004")) {
                 val draft = AppearanceNumberDraft(AppearanceGroup.Source, AppearanceOption.Size, value, isCustom = true)
-                assertEquals(expected, draft.text.text)
+                assertEquals(expected, draft.textFieldState.text.toString())
                 assertEquals(value, draft.parsed)
                 assertTrue(draft.apply { error("untouched custom value was rewritten") })
                 if (value == 16.004f) {
-                    draft.updateText(TextFieldValue("16"))
+                    draft.updateText("16")
                     val applied = mutableListOf<Float>()
                     assertTrue(draft.apply(applied::add))
                     assertEquals(listOf(16f), applied)
@@ -212,13 +211,13 @@ class TextAppearanceTest {
         val option = AppearanceOption.LineSpacing
         val draft = AppearanceNumberDraft(group, option, option.default(group), isCustom = false)
         val rounded = appearanceNumber(option.default(group))
-        assertEquals(rounded, draft.text.text)
+        assertEquals(rounded, draft.textFieldState.text.toString())
         assertEquals(1.56f, draft.parsed)
-        draft.updateText(draft.text.copy(selection = TextRange.Zero))
+        draft.textFieldState.edit { selection = TextRange.Zero }
         assertTrue(draft.apply { error("moving the caret pinned the inherited default") })
-        draft.updateText(TextFieldValue(""))
+        draft.textFieldState.edit { replace(0, length, "") }
         assertFalse(draft.apply { error("an invalid draft was committed") })
-        draft.updateText(TextFieldValue(rounded))
+        draft.textFieldState.edit { replace(0, length, rounded) }
         val applied = mutableListOf<Float>()
         assertTrue(draft.apply(applied::add))
         assertEquals(listOf(1.56f), applied)
