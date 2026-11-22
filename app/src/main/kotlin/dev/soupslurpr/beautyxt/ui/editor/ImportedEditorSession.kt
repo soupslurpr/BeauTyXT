@@ -1,5 +1,6 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
+import android.net.Uri
 import dev.soupslurpr.beautyxt.document.DocumentFormat
 import dev.soupslurpr.beautyxt.exporting.client.IsolatedDocumentExporter
 import dev.soupslurpr.beautyxt.importing.client.ImportedDocument
@@ -36,7 +37,8 @@ internal fun createImportedEditorSession(
     nfcTransferProcessor: NfcTransferProcessor?,
     sourcePolicy: ImportedSourcePolicy = ImportedSourcePolicy.PreferWritable,
     sourceFormat: DocumentFormat = DocumentFormat.PlainText,
-    sourcePurpose: IncomingSourcePurpose = IncomingSourcePurpose.Edit
+    sourcePurpose: IncomingSourcePurpose = IncomingSourcePurpose.Edit,
+    readOnlyImporter: (suspend (Uri) -> ImportedDocument)? = null
 ): EditorSession {
     var documentOwner: ImportedDocument? = importedDocument
     var selectedSource: SelectedDocumentSource? = null
@@ -52,7 +54,8 @@ internal fun createImportedEditorSession(
             ) {
                 SelectedEditorDocumentSource.takeImportedOwnership(
                     selectedSource = checkNotNull(selectedSource),
-                    exporter = exporter
+                    exporter = exporter,
+                    readOnlyImporter = readOnlyImporter
                 )
             } else {
                 SelectedReadOnlyEditorDocumentSource.takeImportedOwnership(

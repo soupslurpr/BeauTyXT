@@ -2,6 +2,8 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -25,10 +28,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.then
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.retain.retain
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -49,6 +56,7 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -56,6 +64,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -65,6 +74,8 @@ import dev.soupslurpr.beautyxt.ui.BindDocumentNavigationBack
 import dev.soupslurpr.beautyxt.ui.LocalDocumentNavigationBack
 import dev.soupslurpr.beautyxt.ui.PredictiveBackMotionHandler
 import dev.soupslurpr.beautyxt.ui.designsystem.AppThemeDialog
+import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceButtons
+import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceOption
 import dev.soupslurpr.beautyxt.ui.predictiveBackMotion
 import dev.soupslurpr.beautyxt.ui.rememberPredictiveBackMotionState
 import kotlinx.coroutines.delay
@@ -334,6 +345,9 @@ internal fun DocumentEditor(
             session.sourceConflictResolution != null ->
                 session.dismissSourceConflictConfirmation()
 
+            session.sourceConflictComparison != null ->
+                session.dismissSourceConflictComparison()
+
             session.saveStatus is SaveStatus.ChoosingFormat ->
                 session.dismissSaveFormatSelection()
 
@@ -420,6 +434,7 @@ internal fun DocumentEditor(
             session.isGoToLineDialogVisible -> false
             session.isDiscardConfirmationVisible -> false
             session.sourceConflictResolution != null -> false
+            session.sourceConflictComparison != null -> false
             session.saveStatus is SaveStatus.ChoosingFormat -> false
             readyQrShare != null -> false
             session.isFindVisible -> false
@@ -673,59 +688,132 @@ internal fun DocumentEditor(
                             EditorFindResults(session, wide = false, Modifier.weight(1f),
                                 onReturn = returnFromFindResults, onEditSearch = editFindQuery)
                         } else Row(Modifier.weight(1f)) {
-                            BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
-                                val documentPaneHeight = maxHeight
-                                Column(Modifier.fillMaxSize()) {
+                            val bottomOverlayState = remember { EditorBottomOverlayState() }
+                            val showsSelectionOverlay =
+                                session.documentSelection != null || session.selectionMessage != null
+                            val showsActionBarOverlay =
+                                !showsSelectionOverlay &&
+                                    !useImeFocusLayout &&
+                                    !session.isFindVisible &&
+                                    state.metrics != null
+                            val hasBottomOverlay = showsSelectionOverlay || showsActionBarOverlay
+                            LaunchedEffect(hasBottomOverlay) {
+                                if (!hasBottomOverlay) bottomOverlayState.clear()
+                            }
+                            CompositionLocalProvider(LocalEditorBottomOverlayState provides bottomOverlayState) {
+                                BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                                    val documentPaneHeight = maxHeight
                                     EditorBody(
                                         session,
                                         activeDraft,
                                         requestSave,
                                         restartExplicitSave,
-                                        Modifier.weight(1f),
+                                        Modifier.fillMaxSize(),
                                         documentFocus
                                     )
-                                    if (session.documentSelection != null || session.selectionMessage != null) {
-                                        DocumentSelectionActions(
-                                            session = session,
-                                            availableHeight = documentPaneHeight
-                                        )
-                                    } else if (!useImeFocusLayout && !session.isFindVisible && state.metrics != null) {
-                                        EditorActionBar(
-                                            session = session,
-                                            availableHeight = documentPaneHeight,
-                                            onPreview = requestPreview,
-                                            onEdit = requestTextEditor,
-                                            onSave = requestSave,
-                                            onShare = requestSend,
-                                            shareEnabled = sendEnabled
-                                        )
+                                    if (hasBottomOverlay) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomCenter)
+                                                .fillMaxWidth()
+                                                .onSizeChanged { size ->
+                                                    bottomOverlayState.heightPx = size.height
+                                                },
+                                            contentAlignment = Alignment.BottomCenter
+                                        ) {
+                                            if (showsSelectionOverlay) {
+                                                DocumentSelectionActions(
+                                                    session = session,
+                                                    availableHeight = documentPaneHeight
+                                                )
+                                            } else {
+                                                EditorActionBar(
+                                                    session = session,
+                                                    availableHeight = documentPaneHeight,
+                                                    onPreview = requestPreview,
+                                                    onEdit = requestTextEditor,
+                                                    onSave = requestSave,
+                                                    onShare = requestSend,
+                                                    shareEnabled = sendEnabled
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
                             val contentsPane = activeSheet == DocumentToolSheet.Contents && readyPreview != null
                             if (wideTools && activeSheet == DocumentToolSheet.Appearance) {
+                                VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                 TextAppearancePanel(appearancePanelState, appearanceGroup, { appearanceGroup = it },
                                     appearanceStore, storedAppearances, { activeSheet = null },
                                     Modifier.width(400.dp).fillMaxSize().documentToolFocus(appearancePanelState))
                             } else if (wideTools && (contentsPane || session.isFindVisible && session.isFindResultsExpanded)) {
-                                Column(Modifier.width(380.dp)) {
-                                    FlowRow {
-                                        TextButton(onClick = requestContents, enabled = readyPreview != null) {
-                                            Text(stringResource(R.string.outline_title))
+                                VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                Surface(
+                                    modifier = Modifier.width(380.dp).fillMaxHeight(),
+                                    color = MaterialTheme.colorScheme.surfaceContainerLow
+                                ) {
+                                    Column(Modifier.fillMaxSize()) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            SingleChoiceButtons(
+                                                choices = listOf(
+                                                    SingleChoiceOption(
+                                                        label = stringResource(R.string.outline_title),
+                                                        selected = contentsPane,
+                                                        onClick = requestContents,
+                                                        enabled = readyPreview != null
+                                                    ),
+                                                    SingleChoiceOption(
+                                                        label = stringResource(R.string.find_results),
+                                                        selected = !contentsPane,
+                                                        onClick = {
+                                                            activeSheet = null
+                                                            if (!session.isFindVisible) session.showFind(showKeyboard = false)
+                                                            session.updateFindResultsExpanded(true)
+                                                        },
+                                                        enabled = true
+                                                    )
+                                                ),
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            IconButton(
+                                                onClick = {
+                                                    activeSheet = null
+                                                    session.updateFindResultsExpanded(false)
+                                                }
+                                            ) {
+                                                Icon(
+                                                    painterResource(R.drawable.ic_close),
+                                                    contentDescription = stringResource(R.string.action_close)
+                                                )
+                                            }
                                         }
-                                        TextButton(onClick = {
-                                            activeSheet = null
-                                            if (!session.isFindVisible) session.showFind(showKeyboard = false)
-                                            session.updateFindResultsExpanded(true)
-                                        }) { Text(stringResource(R.string.find_results)) }
-                                        TextButton(onClick = { activeSheet = null; session.updateFindResultsExpanded(false) }) {
-                                            Text(stringResource(R.string.action_close))
+                                        if (contentsPane) {
+                                            DocumentOutlineContent(
+                                                title = session.title,
+                                                entries = readyPreview.layout.outline,
+                                                documentListState = session.markdownPreviewListState,
+                                                onSelect = { session.navigateToHeading(readyPreview.revision, it) },
+                                                modifier = Modifier.weight(1f).documentToolFocus(),
+                                                isWidePane = true,
+                                                showTitleHeading = false
+                                            )
+                                        } else {
+                                            EditorFindResults(
+                                                session = session,
+                                                wide = true,
+                                                modifier = Modifier.weight(1f),
+                                                onReturn = returnFromFindResults,
+                                                onEditSearch = editFindQuery
+                                            )
                                         }
                                     }
-                                    if (contentsPane) DocumentOutlineContent(session.title, readyPreview.layout.outline,
-                                        session.markdownPreviewListState, { session.navigateToHeading(readyPreview.revision, it) }, Modifier.weight(1f))
-                                    else EditorFindResults(session, wide = true, Modifier.weight(1f),
-                                        onReturn = returnFromFindResults, onEditSearch = editFindQuery)
                                 }
                             }
                         }
@@ -762,6 +850,7 @@ internal fun DocumentEditor(
         session.isPrintSetupVisible,
         session.excerptExport.visible,
         session.sourceConflictResolution,
+        session.sourceConflictComparison != null,
         isAppThemeVisible
     ) {
         if (
@@ -771,6 +860,7 @@ internal fun DocumentEditor(
             session.isPrintSetupVisible ||
             session.excerptExport.visible ||
             session.sourceConflictResolution != null ||
+            session.sourceConflictComparison != null ||
             isAppThemeVisible
         ) {
             softwareKeyboardController?.hide()
@@ -825,6 +915,26 @@ internal fun DocumentEditor(
                 }
             },
             onDismiss = session::dismissSourceConflictConfirmation
+        )
+    }
+    session.sourceConflictComparison?.let { comparisonState ->
+        SourceConflictCompareSheet(
+            state = comparisonState,
+            hasNewerLocalEdits = session.hasNewerLocalEditsSinceComparison,
+            canSaveAsNewFile = session.canStartSaveAs,
+            canReload = session.canRequestSourceReload,
+            canOverwriteReviewed =
+                comparisonState is SourceConflictComparisonState.Ready &&
+                    !session.hasNewerLocalEditsSinceComparison &&
+                    session.canRequestSourceOverwrite,
+            onRefresh = { session.requestSourceConflictComparison() },
+            onSaveAsNewFile = {
+                session.dismissSourceConflictComparison()
+                requestSave()
+            },
+            onReload = { session.requestReloadFromComparison() },
+            onOverwriteReviewed = { session.confirmReviewedSourceOverwrite() },
+            onDismiss = session::dismissSourceConflictComparison
         )
     }
     if (readyQrShare != null) {

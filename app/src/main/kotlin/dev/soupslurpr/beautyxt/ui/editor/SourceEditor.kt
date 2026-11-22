@@ -1,4 +1,5 @@
 /* Displays bounded source windows while retaining input and scroll state. */
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 package dev.soupslurpr.beautyxt.ui.editor
 
 import androidx.compose.foundation.content.contentReceiver
@@ -17,11 +18,14 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,8 +33,17 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldDecorator
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -493,8 +506,22 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
     val previousFailure = state.status as? EditorDocumentStatus.Failed
     val lineCount = metrics.lineCount
     val firstCachedLogicalLine = state.blocks.first().block.logicalLine
+    val bottomOverlayState = LocalEditorBottomOverlayState.current
+    val bottomOverlayDp = bottomOverlayState?.let { with(LocalDensity.current) { it.heightPx.toDp() } } ?: 0.dp
 
     Column(modifier = modifier.fillMaxSize()) {
+        if (!session.isFindVisible) {
+            DocumentViewportFooter(
+                visibleRange = visibleLineRange,
+                fallbackLogicalLine = firstCachedLogicalLine,
+                lineCount = lineCount,
+                navigationEnabled = session.canNavigateToLine,
+                onNavigate = { logicalLine ->
+                    session.showGoToLineDialog(logicalLine)
+                }
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
         BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
             val lineNumberStyle =
                 MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace)
@@ -540,8 +567,12 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
                 LazyColumn(
                     state = viewportListState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = startPadding, end = endPadding,
-                        top = EditorVerticalPadding, bottom = EditorVerticalPadding)
+                    contentPadding = PaddingValues(
+                        start = startPadding,
+                        end = endPadding,
+                        top = EditorVerticalPadding,
+                        bottom = EditorVerticalPadding + bottomOverlayDp
+                    )
                 ) {
                     items(
                         items = state.blocks,
@@ -594,6 +625,12 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
                 }
             }
 
+            val bottomOverlayPadding = PaddingValues(
+                start = EditorHorizontalPadding,
+                end = EditorHorizontalPadding,
+                top = EditorVerticalPadding,
+                bottom = EditorVerticalPadding + bottomOverlayDp
+            )
             when (
                 val overlay =
                     editorViewportOverlay(
@@ -608,10 +645,7 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
                         modifier =
                             Modifier
                                 .align(Alignment.BottomCenter)
-                                .padding(
-                                    horizontal = EditorHorizontalPadding,
-                                    vertical = EditorVerticalPadding
-                                )
+                                .padding(bottomOverlayPadding)
                     )
                 }
 
@@ -622,10 +656,7 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
                         modifier =
                             Modifier
                                 .align(Alignment.BottomCenter)
-                                .padding(
-                                    horizontal = EditorHorizontalPadding,
-                                    vertical = EditorVerticalPadding
-                                )
+                                .padding(bottomOverlayPadding)
                     )
                 }
 
@@ -638,10 +669,7 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
                         modifier =
                             Modifier
                                 .align(Alignment.BottomCenter)
-                                .padding(
-                                    horizontal = EditorHorizontalPadding,
-                                    vertical = EditorVerticalPadding
-                                )
+                                .padding(bottomOverlayPadding)
                     )
                 }
 
@@ -651,10 +679,7 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
                         modifier =
                             Modifier
                                 .align(Alignment.BottomCenter)
-                                .padding(
-                                    horizontal = EditorHorizontalPadding,
-                                    vertical = EditorVerticalPadding
-                                )
+                                .padding(bottomOverlayPadding)
                     )
                 }
 
@@ -691,18 +716,6 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
                     )
                 }
             }
-        }
-        if (!session.isFindVisible) {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            DocumentViewportFooter(
-                visibleRange = visibleLineRange,
-                fallbackLogicalLine = firstCachedLogicalLine,
-                lineCount = lineCount,
-                navigationEnabled = session.canNavigateToLine,
-                onNavigate = { logicalLine ->
-                    session.showGoToLineDialog(logicalLine)
-                }
-            )
         }
     }
 }
@@ -995,16 +1008,35 @@ private fun ActiveEditWindowEditor(
     val sourceClipboard = remember(clipboard, clipboardSelection) { SourceAppearanceClipboard(clipboard, clipboardSelection) }
     val selectionInset = with(LocalDensity.current) { 16.dp.toPx() }
     var viewportClip by remember(draft) { mutableStateOf<Rect?>(null) }
+    var bottomClearancePx by remember(draft.scrollState) { mutableFloatStateOf(0f) }
+    LaunchedEffect(draft.edit.generation) {
+        bottomClearancePx = 0f
+    }
     val sourceSelectionModifier = Modifier.documentSelectionText(
         key = "source-edit-${edit.generation}", layout = textLayoutResult,
         nativeSelection = draft.isEditorFocused,
         point = { SelectionPoint.Source(edit.snapshot.range.start + it) },
         offset = { (it as? SelectionPoint.Source)?.offset?.takeIf { offset -> offset in edit.snapshot.range.start..edit.snapshot.range.end }
             ?.let { (it - edit.snapshot.range.start).toInt() } },
-        contentOffset = { androidx.compose.ui.geometry.Offset(0f, selectionInset - draft.scrollState.value) },
+        contentOffset = {
+            androidx.compose.ui.geometry.Offset(
+                0f,
+                selectionInset - draft.scrollState.value.toFloat()
+            )
+        },
         sourceFindDecoration = SourceFindDecoration(edit.snapshot.metrics.revision, edit.snapshot.text),
         sourceIsCurrent = { draft.edit == edit && draft.textFieldState.text.contentEquals(edit.snapshot.text) },
-        clipBounds = { viewportClip }
+        clipBounds = {
+            viewportClip?.let { clip ->
+                val visibleTopInset = (selectionInset - bottomClearancePx).coerceAtLeast(0f)
+                Rect(
+                    left = clip.left,
+                    top = (clip.top + visibleTopInset).coerceAtMost(clip.bottom),
+                    right = clip.right,
+                    bottom = clip.bottom
+                )
+            }
+        }
     )
     val highlights = rememberFindHighlights(
         session = session,
@@ -1165,8 +1197,7 @@ private fun ActiveEditWindowEditor(
             }
             val scrollValuePixels = draft.scrollState.value
             val maxScrollPixels = draft.scrollState.maxValue
-            val viewportHeightPixels =
-                (layoutResult.size.height - maxScrollPixels).coerceAtLeast(1)
+            val viewportHeightPixels = draft.scrollState.viewportSize.coerceAtLeast(1)
             val direction =
                 automaticEditWindowDirection(
                     scrollValuePixels = scrollValuePixels,
@@ -1201,6 +1232,134 @@ private fun ActiveEditWindowEditor(
         }
     }
 
+    val density = LocalDensity.current
+    val bottomOverlayState = LocalEditorBottomOverlayState.current
+    val bottomOverlayPx = bottomOverlayState?.heightPx ?: 0
+    val bottomOverlayDp = with(density) { bottomOverlayPx.toDp() }
+    val hasBottomBanners =
+        fieldMessage != null ||
+            pendingActionMessage != null ||
+            state.staleEditRecovery != null ||
+            (state.editorMessage != null && hasChanges)
+    val caretRevealMarginPx = with(density) { 12.dp.toPx() }
+    val maxBottomClearancePx by remember(
+        bottomOverlayPx,
+        hasBottomBanners,
+        textLayoutResult,
+        draft.scrollState
+    ) {
+        derivedStateOf {
+            if (hasBottomBanners || bottomOverlayPx <= 0) {
+                0f
+            } else {
+                val viewportPx = draft.scrollState.viewportSize
+                val contentHeightPx = (textLayoutResult?.size?.height ?: 0).toFloat()
+                if (viewportPx <= 0) {
+                    0f
+                } else {
+                    (contentHeightPx - (viewportPx - bottomOverlayPx)).coerceIn(0f, bottomOverlayPx.toFloat())
+                }
+            }
+        }
+    }
+    val currentMaxClearance by rememberUpdatedState(maxBottomClearancePx)
+    LaunchedEffect(draft.scrollState) {
+        snapshotFlow {
+            Triple(
+                currentMaxClearance,
+                draft.scrollState.value,
+                draft.scrollState.maxValue
+            )
+        }.collect { (maxClearance, scrollValue, scrollMax) ->
+            if (scrollValue < scrollMax && bottomClearancePx > 0f) {
+                bottomClearancePx = 0f
+            } else if (bottomClearancePx > maxClearance) {
+                bottomClearancePx = maxClearance
+            }
+        }
+    }
+    val bottomClearanceConnection = remember(draft.scrollState) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y > 0f && bottomClearancePx > 0f) {
+                    val consumed = minOf(available.y, bottomClearancePx)
+                    bottomClearancePx -= consumed
+                    return Offset(0f, consumed)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                val maxClearance = currentMaxClearance
+                if (
+                    available.y < 0f &&
+                    maxClearance > 0f &&
+                    draft.scrollState.value >= draft.scrollState.maxValue &&
+                    bottomClearancePx < maxClearance
+                ) {
+                    val delta = minOf(-available.y, maxClearance - bottomClearancePx)
+                    bottomClearancePx += delta
+                    return Offset(0f, -delta)
+                }
+                return Offset.Zero
+            }
+        }
+    }
+    val capsuleObstructionPx = remember(bottomOverlayState, viewportClip) {
+        derivedStateOf {
+            val clip = viewportClip
+            if (hasBottomBanners || bottomOverlayState == null || clip == null || clip.isEmpty) {
+                0f
+            } else {
+                bottomOverlayState.obstructions.values
+                    .filter { rect -> rect.right > clip.left && rect.left < clip.right }
+                    .maxOfOrNull { rect -> (clip.bottom - rect.top).coerceAtLeast(0f) }
+                    ?: 0f
+            }
+        }
+    }.value
+    LaunchedEffect(
+        textFieldState.selection,
+        textFieldState.text,
+        textLayoutResult,
+        capsuleObstructionPx,
+        hasBottomBanners,
+        draft.isEditorFocused
+    ) {
+        val layout = textLayoutResult ?: return@LaunchedEffect
+        if (hasBottomBanners || capsuleObstructionPx <= 0f || !draft.isEditorFocused) {
+            return@LaunchedEffect
+        }
+        val viewportPx = draft.scrollState.viewportSize
+        if (viewportPx <= 0) return@LaunchedEffect
+        val textLen = layout.layoutInput.text.length
+        val caretOffset = textFieldState.selection.end.coerceIn(0, textLen)
+        val caretRect = layout.getCursorRect(caretOffset)
+        val visibleCaretTop = caretRect.top - draft.scrollState.value - bottomClearancePx
+        if (visibleCaretTop < 0f && bottomClearancePx > 0f) {
+            bottomClearancePx = (bottomClearancePx + visibleCaretTop).coerceAtLeast(0f)
+            return@LaunchedEffect
+        }
+        val visibleCaretBottom = caretRect.bottom - draft.scrollState.value - bottomClearancePx
+        val safeBottom = viewportPx - capsuleObstructionPx - caretRevealMarginPx
+        if (safeBottom > 0f && visibleCaretBottom > safeBottom) {
+            val needed = visibleCaretBottom - safeBottom
+            val scrollRoom = (draft.scrollState.maxValue - draft.scrollState.value).coerceAtLeast(0)
+            val scrollAdvance = minOf(needed.roundToInt(), scrollRoom)
+            if (scrollAdvance > 0) {
+                draft.scrollState.scrollTo(draft.scrollState.value + scrollAdvance)
+            }
+            val remaining = needed - scrollAdvance
+            if (remaining > 0f && maxBottomClearancePx > bottomClearancePx) {
+                bottomClearancePx = (bottomClearancePx + remaining).coerceAtMost(maxBottomClearancePx)
+            }
+        }
+    }
+
     BoxWithConstraints(
         modifier =
             modifier
@@ -1210,14 +1369,29 @@ private fun ActiveEditWindowEditor(
         val controlsMaxHeight = recoveryPanelMaxHeight(maxHeight)
         val column = appearance.textColumn(AppearanceGroup.Source, maxWidth)
         val columnModifier = Modifier.padding(start = column.textStart).width(column.textWidth)
+        val resolvedSourceStyle = sourceStyle.copy(
+            color = if (sourceStyle.color == Color.Unspecified) MaterialTheme.colorScheme.onSurface else sourceStyle.color
+        )
+        val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
+        val cursorColor = if (fieldMessage != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
         Column(modifier = Modifier.fillMaxSize()) {
-            Box(columnModifier.weight(1f).clipToBounds().onGloballyPositioned { viewportClip = it.boundsInWindow() }
-                .then(if (wraps) Modifier else Modifier.horizontalScroll(horizontalScroll))) {
+            Box(
+                columnModifier
+                    .weight(1f)
+                    .clipToBounds()
+                    .nestedScroll(bottomClearanceConnection)
+                    .onGloballyPositioned { viewportClip = it.boundsInWindow() }
+                    .then(if (wraps) Modifier else Modifier.horizontalScroll(horizontalScroll))
+            ) {
                 CompositionLocalProvider(LocalClipboard provides sourceClipboard) {
-                    TextField(
+                    BasicTextField(
                         state = textFieldState,
                         modifier =
-                            Modifier.fillMaxSize().widthIn(min = column.textWidth)
+                            Modifier
+                                .widthIn(min = column.textWidth)
+                                .fillMaxWidth()
+                                .fillMaxHeight()
+                                .offset { IntOffset(0, -bottomClearancePx.roundToInt()) }
                                 .semantics { if (fieldMessage != null) error(fieldMessage) }
                                 .focusRequester(focusRequester)
                                 .then(sourceSelectionModifier)
@@ -1273,17 +1447,9 @@ private fun ActiveEditWindowEditor(
                                 canAcceptInput = canAcceptInput,
                                 preserveInputSession = session.preservesEditorInputSession
                             ),
-                        isError = fieldMessage != null,
-                        placeholder =
-                            if (editsCompleteDocument) {
-                                { Text(stringResource(R.string.source_start_writing)) }
-                            } else {
-                                null
-                            },
                         inputTransformation = inputTransformation,
                         outputTransformation = outputTransformation,
                         lineLimits = TextFieldLineLimits.MultiLine(),
-                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 16.dp),
                         onTextLayout = { getResult ->
                             val result = getResult()
                             if (result != null) {
@@ -1292,53 +1458,61 @@ private fun ActiveEditWindowEditor(
                             textLayoutResult = result
                         },
                         scrollState = draft.scrollState,
-                        colors =
-                            TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                disabledContainerColor = Color.Transparent,
-                                errorContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                disabledIndicatorColor = Color.Transparent,
-                                errorIndicatorColor = Color.Transparent
-                            ),
-                        shape = MaterialTheme.shapes.medium,
-                        textStyle = sourceStyle
+                        cursorBrush = SolidColor(cursorColor),
+                        textStyle = resolvedSourceStyle,
+                        decorator = TextFieldDecorator { innerTextField ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(top = 16.dp)
+                            ) {
+                                if (editsCompleteDocument && textFieldState.text.isEmpty()) {
+                                    Text(
+                                        text = stringResource(R.string.source_start_writing),
+                                        style = resolvedSourceStyle.copy(color = placeholderColor)
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        }
                     )
                 }
             }
-            if (fieldMessage != null) {
-                Text(fieldMessage, columnModifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    .semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error)
-            }
-            val controlsModifier =
-                Modifier
-                    .heightIn(max = controlsMaxHeight)
-                    .padding(
-                        horizontal = EditorHorizontalPadding,
-                        vertical = EditorCompactSpacing
-                    )
-            when {
-                pendingActionMessage != null ->
-                    PendingEditWindowActionMessage(
-                        message = pendingActionMessage,
-                        canCancel = session.canCancelPendingEditWindowAction,
-                        onCancel = session::cancelPendingEditWindowAction,
-                        modifier = controlsModifier
-                    )
+            if (hasBottomBanners) {
+                Column(modifier = Modifier.padding(bottom = bottomOverlayDp)) {
+                    if (fieldMessage != null) {
+                        Text(fieldMessage, columnModifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                            .semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error)
+                    }
+                    val controlsModifier =
+                        Modifier
+                            .heightIn(max = controlsMaxHeight)
+                            .padding(
+                                horizontal = EditorHorizontalPadding,
+                                vertical = EditorCompactSpacing
+                            )
+                    when {
+                        pendingActionMessage != null ->
+                            PendingEditWindowActionMessage(
+                                message = pendingActionMessage,
+                                canCancel = session.canCancelPendingEditWindowAction,
+                                onCancel = session::cancelPendingEditWindowAction,
+                                modifier = controlsModifier
+                            )
 
-                state.staleEditRecovery != null ||
-                    (state.editorMessage != null && hasChanges) ->
-                    EditWindowRecoveryActions(
-                        staleRecovery = state.staleEditRecovery,
-                        showRetry = state.editorMessage != null && hasChanges,
-                        canRetry = !isBusy && canAcceptInput && !hasComposition,
-                        onReloadStale = { session.reloadStaleActiveEdit(draft) },
-                        onRetry = { session.retryActiveEdit(draft) },
-                        modifier = controlsModifier
-                    )
+                        state.staleEditRecovery != null ||
+                            (state.editorMessage != null && hasChanges) ->
+                            EditWindowRecoveryActions(
+                                staleRecovery = state.staleEditRecovery,
+                                showRetry = state.editorMessage != null && hasChanges,
+                                canRetry = !isBusy && canAcceptInput && !hasComposition,
+                                onReloadStale = { session.reloadStaleActiveEdit(draft) },
+                                onRetry = { session.retryActiveEdit(draft) },
+                                modifier = controlsModifier
+                            )
+                    }
+                }
             }
         }
     }
@@ -1369,7 +1543,8 @@ private fun EditWindowRecoveryActions(
             if (staleRecovery != null) {
                 FilledTonalButton(
                     onClick = onReloadStale,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shapes = ButtonDefaults.shapes()
                 ) {
                     Text(
                         if (staleRecovery == StaleEditRecovery.VerifyAppliedEdit) {

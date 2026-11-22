@@ -93,11 +93,23 @@ internal fun EditorFindResults(
                 handleEditorHistoryShortcut(event, session::requestUndo, session::requestRedo)
         }.focusable()) {
         Box(Modifier.fillMaxWidth()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                FindIcon(R.drawable.ic_arrow_back, stringResource(R.string.find_hide_results), onReturn)
-                Column(Modifier.weight(1f).padding(vertical = 16.dp)) {
-                    Text(stringResource(if (review) R.string.replace_review_title else R.string.find_results),
-                        style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = if (wide) 16.dp else 8.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (!wide) {
+                    FindIcon(R.drawable.ic_arrow_back, stringResource(R.string.find_hide_results), onReturn)
+                }
+                Column(Modifier.weight(1f).padding(vertical = if (wide) 4.dp else 16.dp)) {
+                    if (!wide || review) {
+                        Text(
+                            stringResource(if (review) R.string.replace_review_title else R.string.find_results),
+                            style = if (wide) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.semantics { heading() }
+                        )
+                    }
                     Text(findDomainScopeText(session), style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -216,11 +228,17 @@ internal fun EditorFindResults(
             }
         }
         if (review) Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
-            Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = if (wide) 8.dp else 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Button(onClick = { focusReview(); session.applyFindReplacements() },
                     enabled = session.canApplyFindReplacements,
-                    shapes = ButtonDefaults.shapes(), modifier = Modifier.weight(1f).heightIn(min = 56.dp)) {
+                    shapes = ButtonDefaults.shapes(),
+                    modifier = Modifier.weight(1f).heightIn(min = if (wide) 48.dp else 56.dp)) {
                     Text(pluralStringResource(R.plurals.replace_apply, session.includedReplacementCount, session.includedReplacementCount))
                 }
             }

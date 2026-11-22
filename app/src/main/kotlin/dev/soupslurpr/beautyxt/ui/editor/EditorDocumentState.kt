@@ -1701,6 +1701,7 @@ internal constructor(
      */
     suspend fun saveDocument(
         purpose: DocumentSavePurpose,
+        requiredRevision: Long? = null,
         saveRevision: suspend (EditorDocumentSnapshot, Long) -> Unit
     ): Long? {
         val capturedSave =
@@ -1709,7 +1710,8 @@ internal constructor(
                     status != EditorDocumentStatus.Ready ||
                     hasActiveDraftChanges ||
                     activeSaveRevision != null ||
-                    closeStarted.get()
+                    closeStarted.get() ||
+                    (requiredRevision != null && currentRevision != requiredRevision)
                 ) {
                     return@withLock null
                 }

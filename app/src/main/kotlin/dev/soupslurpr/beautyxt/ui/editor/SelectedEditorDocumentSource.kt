@@ -1,5 +1,6 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
+import android.net.Uri
 import dev.soupslurpr.beautyxt.document.DocumentRemovalAction
 import dev.soupslurpr.beautyxt.document.DocumentRemovalCapabilities
 import dev.soupslurpr.beautyxt.document.EditorDocumentSnapshot
@@ -10,6 +11,7 @@ import dev.soupslurpr.beautyxt.exporting.client.DocumentExportFailure
 import dev.soupslurpr.beautyxt.exporting.client.SourceDocumentExporter
 import dev.soupslurpr.beautyxt.exporting.client.StagedSourceSavePackage
 import dev.soupslurpr.beautyxt.exporting.client.TransientSourceDescriptor
+import dev.soupslurpr.beautyxt.importing.client.ImportedDocument
 import dev.soupslurpr.beautyxt.importing.client.SelectedDocumentSource
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -17,9 +19,33 @@ import kotlinx.coroutines.withContext
 /** Saves revisions to one retained source through anonymous isolated staging. */
 internal class SelectedEditorDocumentSource private constructor(
     private val selectedSource: SelectedDocumentSource,
-    private val exporter: SourceDocumentExporter
+    private val exporter: SourceDocumentExporter,
+    private val readOnlyImporter: (suspend (Uri) -> ImportedDocument)?
 ) : ConflictRecoverableEditorDocumentSource,
     RemovableEditorDocumentSource {
+    override val canCompareExternalSource: Boolean
+        get() = readOnlyImporter != null
+
+    /** Opens a read-only external snapshot paired with its exact imported version, leaving the baseline untouched. */
+    override suspend fun openExternalForComparison(): ExternalSourceComparisonInput? {
+        val importer = readOnlyImporter ?: return null
+        val imported = importer(selectedSource.uri)
+        return try {
+            val snapshot = imported.captureSnapshot(0L)
+            ExternalSourceComparisonInput(
+                snapshot = snapshot,
+                sourceVersion = imported.sourceVersion,
+                owner = imported
+            )
+        } catch (failure: Throwable) {
+            try {
+                imported.close()
+            } catch (closeFailure: Throwable) {
+                failure.addSuppressed(closeFailure)
+            }
+            throw failure
+        }
+    }
     /** Returns whether this source retains the exact encoded content URI. */
     override fun matchesSourceUri(encodedUri: String): Boolean =
         selectedSource.matchesUri(encodedUri)
@@ -80,10 +106,32 @@ internal class SelectedEditorDocumentSource private constructor(
         }
     }
 
+    /** Overwrites only if the live file still matches [reviewedExternalVersion], advancing from the live baseline. */
+    override suspend fun overwriteReviewedRevision(
+        snapshot: EditorDocumentSnapshot,
+        expectedBytes: Long,
+        reviewedExternalVersion: SourceVersion
+    ) {
+        StagedSourceSavePackage.capture(
+            snapshot = snapshot,
+            expectedBytes = expectedBytes
+        ).use { stagedPackage ->
+            withContext(NonCancellable) {
+                val priorLiveBaseline = selectedSource.sourceVersion
+                saveStagedPackage(
+                    stagedPackage = stagedPackage,
+                    expectedSourceVersion = reviewedExternalVersion,
+                    baselineToAdvanceFrom = priorLiveBaseline
+                )
+            }
+        }
+    }
+
     /** Saves and verifies one staged package against an exact source baseline. */
     private suspend fun saveStagedPackage(
         stagedPackage: StagedSourceSavePackage,
-        expectedSourceVersion: SourceVersion?
+        expectedSourceVersion: SourceVersion?,
+        baselineToAdvanceFrom: SourceVersion? = expectedSourceVersion
     ) {
         val receipt =
             TransientSourceDescriptor.from(
@@ -105,7 +153,7 @@ internal class SelectedEditorDocumentSource private constructor(
                 )
             }
             selectedSource.advanceSourceVersion(
-                expectedVersion = expectedSourceVersion,
+                expectedVersion = baselineToAdvanceFrom,
                 newVersion = receipt.sourceVersion
             )
         } catch (failure: Exception) {
@@ -130,28 +178,32 @@ internal class SelectedEditorDocumentSource private constructor(
         /** Takes an imported source that already has an exact byte version. */
         fun takeImportedOwnership(
             selectedSource: SelectedDocumentSource,
-            exporter: SourceDocumentExporter
+            exporter: SourceDocumentExporter,
+            readOnlyImporter: (suspend (Uri) -> ImportedDocument)? = null
         ): SelectedEditorDocumentSource {
             requireNotNull(selectedSource.sourceVersion) {
                 "imported document source requires an exact version"
             }
             return SelectedEditorDocumentSource(
                 selectedSource = selectedSource,
-                exporter = exporter
+                exporter = exporter,
+                readOnlyImporter = readOnlyImporter
             )
         }
 
         /** Takes a newly created source that has no prior save baseline. */
         fun takeCreatedOwnership(
             selectedSource: SelectedDocumentSource,
-            exporter: SourceDocumentExporter
+            exporter: SourceDocumentExporter,
+            readOnlyImporter: (suspend (Uri) -> ImportedDocument)? = null
         ): SelectedEditorDocumentSource {
             require(selectedSource.sourceVersion == null) {
                 "created document source already has an exact version"
             }
             return SelectedEditorDocumentSource(
                 selectedSource = selectedSource,
-                exporter = exporter
+                exporter = exporter,
+                readOnlyImporter = readOnlyImporter
             )
         }
     }

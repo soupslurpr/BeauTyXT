@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 package dev.soupslurpr.beautyxt.ui.transfer
 
 import android.app.Activity
@@ -30,6 +31,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -462,7 +464,8 @@ private fun NfcTransferScaffold(
                     onOpenNfcSettings?.let { openSettings ->
                         FilledTonalButton(
                             onClick = openSettings,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shapes = ButtonDefaults.shapes()
                         ) {
                             Text(stringResource(R.string.nfc_open_settings))
                         }
@@ -471,7 +474,8 @@ private fun NfcTransferScaffold(
                         Button(
                             onClick = action.onClick,
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = action.enabled
+                            enabled = action.enabled,
+                            shapes = ButtonDefaults.shapes()
                         ) {
                             Text(action.label)
                         }
@@ -480,7 +484,8 @@ private fun NfcTransferScaffold(
                         OutlinedButton(
                             onClick = action.onClick,
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = action.enabled
+                            enabled = action.enabled,
+                            shapes = ButtonDefaults.shapes()
                         ) {
                             Text(action.label)
                         }

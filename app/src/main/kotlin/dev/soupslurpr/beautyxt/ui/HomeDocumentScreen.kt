@@ -120,7 +120,7 @@ internal fun HomeDocumentScreen(
                     IncomingDocumentShare.Source(
                         encodedUri = source.uri.toString(),
                         format = format,
-                        purpose = IncomingSourcePurpose.Edit
+                        purpose = IncomingSourcePurpose.Open
                     )
                 }
             } catch (cancellation: CancellationException) {

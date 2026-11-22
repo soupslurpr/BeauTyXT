@@ -64,7 +64,8 @@ private fun markdownPreviewHeadings(
     var heading: MarkdownPreviewHeadingItem? = null
     var joinedText: StringBuilder? = null
     items.forEachIndexed { itemIndex, item ->
-        item.blocks.forEach { block ->
+        item.blocks.forEachIndexed { localIndex, block ->
+            val blockIndex = item.firstBlockIndex + localIndex
             val isHeading = block.kind == MarkdownBlockKind.Heading
             if (isHeading && block.continuesPrevious && heading != null) {
                 val text = joinedText ?: StringBuilder(checkNotNull(heading).text).also {
@@ -76,7 +77,7 @@ private fun markdownPreviewHeadings(
                     yield(joinedText?.let { first.copy(text = it.toString()) } ?: first)
                 }
                 joinedText = null
-                val entry = MarkdownPreviewHeadingItem(itemIndex, isHeading, block.text)
+                val entry = MarkdownPreviewHeadingItem(itemIndex, isHeading, block.text, blockIndex)
                 heading = entry.takeIf { isHeading }
                 if (!isHeading) yield(entry)
             }
@@ -134,6 +135,7 @@ internal fun markdownPreviewItems(blocks: List<MarkdownRenderBlock>): List<Markd
                 !firstBlock.startsTable &&
                 firstBlockIndex != 0 &&
                 blocks[firstBlockIndex - 1].kind == MarkdownBlockKind.TableRow &&
+                blocks[firstBlockIndex - 1].markdownFootnoteLabel() == firstBlock.markdownFootnoteLabel() &&
                 blocks[firstBlockIndex - 1].quoteDepth == 0
         val followsSameAlert =
             isQuoteAlert &&
@@ -173,6 +175,54 @@ internal fun markdownPreviewItems(blocks: List<MarkdownRenderBlock>): List<Markd
                         !followsSameCode
             )
         firstBlockIndex = endBlockIndex
+    }
+    var itemCursor = 0
+    while (itemCursor < items.size) {
+        if (!items[itemCursor].isTable) {
+            itemCursor += 1
+            continue
+        }
+        val tableStartItem = itemCursor
+        val tableId = items[tableStartItem].firstBlockIndex
+        var tableEndItem = tableStartItem + 1
+        while (
+            tableEndItem < items.size &&
+            items[tableEndItem].isTable &&
+            !items[tableEndItem].blocks.first().startsTable &&
+            items[tableEndItem].blocks.first().markdownFootnoteLabel() ==
+                items[tableStartItem].blocks.first().markdownFootnoteLabel()
+        ) {
+            tableEndItem += 1
+        }
+        var maxColumns = 0
+        var totalLogicalRows = 0
+        val chunkFirstRow = IntArray(tableEndItem - tableStartItem)
+        for (chunkOffset in 0 until (tableEndItem - tableStartItem)) {
+            val chunk = items[tableStartItem + chunkOffset]
+            chunkFirstRow[chunkOffset] = totalLogicalRows
+            chunk.blocks.forEach { block ->
+                val cols = markdownTableColumnCount(block)
+                if (cols > maxColumns) maxColumns = cols
+                if (!block.continuesPrevious || totalLogicalRows == 0) {
+                    totalLogicalRows += 1
+                }
+            }
+        }
+        for (chunkOffset in 0 until (tableEndItem - tableStartItem)) {
+            val idx = tableStartItem + chunkOffset
+            val chunk = items[idx]
+            val nextChunkContinuesRow = (idx + 1 < tableEndItem) &&
+                items[idx + 1].blocks.first().continuesPrevious
+            val hasFragmentedRow = chunk.showsWrappedPreview || nextChunkContinuesRow
+            items[idx] = chunk.copy(
+                tableId = tableId,
+                tableColumnCount = maxColumns,
+                tableUsesWideLayout = maxColumns > MAX_MARKDOWN_TABLE_COLUMNS || hasFragmentedRow,
+                tableRowCount = totalLogicalRows,
+                tableFirstLogicalRowIndex = chunkFirstRow[chunkOffset]
+            )
+        }
+        itemCursor = tableEndItem
     }
     return items
 }
@@ -222,14 +272,28 @@ internal data class MarkdownPreviewItem(
     val isQuoteAlert: Boolean,
     val startsWrappedPreview: Boolean,
     val showsWrappedPreview: Boolean,
-    val hasSpacingBefore: Boolean
+    val hasSpacingBefore: Boolean,
+    val tableId: Int = firstBlockIndex,
+    val tableColumnCount: Int = 0,
+    val tableUsesWideLayout: Boolean = false,
+    val tableRowCount: Int = 0,
+    val tableFirstLogicalRowIndex: Int = 0
+)
+
+/** Identifies an exact reading destination within a lazy preview item. */
+internal data class MarkdownReadingTarget(
+    val itemIndex: Int,
+    val blockIndex: Int,
+    val renderedOffset: Int = 0
 )
 
 /** Holds lazy-list targets for footnote definitions and their first references. */
 internal data class MarkdownFootnoteItemTargets(
     val definitions: Map<String, Int>,
     val references: Map<String, Int>,
-    val numbers: Map<String, Int>
+    val numbers: Map<String, Int>,
+    val definitionTargets: Map<String, MarkdownReadingTarget> = emptyMap(),
+    val referenceTargets: Map<String, MarkdownReadingTarget> = emptyMap()
 )
 
 /** Finds bounded local footnote targets within prepared lazy preview items. */
@@ -238,12 +302,24 @@ internal fun markdownFootnoteItemTargets(
 ): MarkdownFootnoteItemTargets {
     val definitions = LinkedHashMap<String, Int>()
     val references = LinkedHashMap<String, Int>()
+    val definitionTargets = LinkedHashMap<String, MarkdownReadingTarget>()
+    val referenceTargets = LinkedHashMap<String, MarkdownReadingTarget>()
     items.forEachIndexed { itemIndex, item ->
-        item.blocks.forEach { block ->
-            block.markdownFootnoteLabel()?.let { label -> definitions.putIfAbsent(label, itemIndex) }
+        item.blocks.forEachIndexed { localIndex, block ->
+            val blockIndex = item.firstBlockIndex + localIndex
+            block.markdownFootnoteLabel()?.let { label ->
+                definitions.putIfAbsent(label, itemIndex)
+                definitionTargets.putIfAbsent(label, MarkdownReadingTarget(itemIndex, blockIndex))
+            }
             block.spans.forEach { span ->
                 if (span.destinationKind == MarkdownInlineDestinationKind.FootnoteReference) {
-                    span.destination?.let { label -> references.putIfAbsent(label, itemIndex) }
+                    span.destination?.let { label ->
+                        references.putIfAbsent(label, itemIndex)
+                        referenceTargets.putIfAbsent(
+                            label,
+                            MarkdownReadingTarget(itemIndex, blockIndex, span.start)
+                        )
+                    }
                 }
             }
         }
@@ -255,6 +331,8 @@ internal fun markdownFootnoteItemTargets(
     return MarkdownFootnoteItemTargets(
         definitions = definitions,
         references = references,
-        numbers = numbers
+        numbers = numbers,
+        definitionTargets = definitionTargets,
+        referenceTargets = referenceTargets
     )
 }

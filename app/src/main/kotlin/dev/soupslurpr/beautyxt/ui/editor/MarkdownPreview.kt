@@ -1,6 +1,7 @@
 /* Coordinates rendered Markdown navigation and virtualized preview items. */
 package dev.soupslurpr.beautyxt.ui.editor
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +65,7 @@ import dev.soupslurpr.beautyxt.markdown.MarkdownInlinePresentation
 import dev.soupslurpr.beautyxt.markdown.MarkdownInlineSpan
 import dev.soupslurpr.beautyxt.markdown.MarkdownLinkAction
 import dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock
+import dev.soupslurpr.beautyxt.markdown.MarkdownRenderedSourcePosition
 import dev.soupslurpr.beautyxt.markdown.markdownLinkAction
 import dev.soupslurpr.beautyxt.markdown.markdownRenderedPositionForSourceOffset
 import dev.soupslurpr.beautyxt.markdown.renderedUtf16OffsetForSource
@@ -133,6 +136,15 @@ internal data class MarkdownPreviewTextMeasurement(
             sourceSpans = sourceSpans
         ) ?: localSourceOffset
     }
+}
+
+/** Holds per-table shared horizontal scroll state across lazy table row chunks. */
+private class SharedTableScrollRegistry {
+    private val gridStates = HashMap<Int, ScrollState>()
+    private val wideOffsets = HashMap<Int, MutableIntState>()
+
+    fun gridState(tableId: Int): ScrollState = gridStates.getOrPut(tableId) { ScrollState(0) }
+    fun wideOffset(tableId: Int): MutableIntState = wideOffsets.getOrPut(tableId) { mutableIntStateOf(0) }
 }
 
 /** Retains only the currently composed Markdown text layouts for source navigation. */
@@ -273,10 +285,19 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
             val restorationPosition =
                 remember(document.blocks, status.scrollRestoration) {
                     status.scrollRestoration?.let { restoration ->
-                        markdownRenderedPositionForSourceOffset(
-                            blocks = document.blocks,
-                            sourceUtf16Offset = restoration.anchor.sourceUtf16Offset
-                        )
+                        val explicitBlock = restoration.targetBlockIndex
+                        if (explicitBlock != null && explicitBlock in document.blocks.indices) {
+                            val clamped = restoration.targetRenderedOffset.coerceIn(
+                                0,
+                                document.blocks[explicitBlock].text.length
+                            )
+                            MarkdownRenderedSourcePosition(explicitBlock, clamped)
+                        } else {
+                            markdownRenderedPositionForSourceOffset(
+                                blocks = document.blocks,
+                                sourceUtf16Offset = restoration.anchor.sourceUtf16Offset
+                            )
+                        }
                     }
                 }
             val illustrationResults = rememberMarkdownIllustrations(
@@ -330,22 +351,36 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                     val measurement =
                         withTimeoutOrNull(MARKDOWN_PREVIEW_RESTORATION_TIMEOUT_MILLIS) {
                             snapshotFlow {
-                                matchSegment?.let { navigationState.measurementFor(it.block, it.blockStart, layoutGeneration) }
-                                    ?: navigationState.measurementForSource(restoration.anchor.sourceUtf16Offset, layoutGeneration)
-                                    ?: navigationState.measurementFor(
+                                if (restoration.targetBlockIndex != null) {
+                                    navigationState.measurementFor(
                                         blockIndex = position.blockIndex,
                                         renderedUtf16Offset = position.renderedUtf16Offset,
                                         layoutGeneration = layoutGeneration
                                     )
+                                } else {
+                                    matchSegment?.let { navigationState.measurementFor(it.block, it.blockStart, layoutGeneration) }
+                                        ?: navigationState.measurementForSource(restoration.anchor.sourceUtf16Offset, layoutGeneration)
+                                        ?: navigationState.measurementFor(
+                                            blockIndex = position.blockIndex,
+                                            renderedUtf16Offset = position.renderedUtf16Offset,
+                                            layoutGeneration = layoutGeneration
+                                        )
+                                }
                             }.filterNotNull().first()
                         }
                     // Keep the first heading and its container visible at the document start.
                     val isDocumentStart =
-                        restoration.anchor.sourceUtf16Offset == 0L &&
+                        restoration.targetBlockIndex == null &&
+                            restoration.anchor.sourceUtf16Offset == 0L &&
                             restoration.anchor.viewportTopOffsetPixels >= 0
                     val presentationOffset = measurement?.let {
                         val part = matchSegment?.takeIf { part -> part.block == it.key.blockIndex }
-                        val rendered = part?.blockStart ?: it.block.renderedUtf16OffsetForSource(restoration.anchor.sourceUtf16Offset)
+                        val rendered = when {
+                            restoration.targetBlockIndex != null && it.key.blockIndex == position.blockIndex ->
+                                position.renderedUtf16Offset
+                            part != null -> part.blockStart
+                            else -> it.block.renderedUtf16OffsetForSource(restoration.anchor.sourceUtf16Offset)
+                        }
                         (it.presentationUtf16OffsetForRendered(rendered) + (part?.markerStart ?: 0))
                             .coerceIn(0, it.layoutResult.layoutInput.text.length)
                     }
@@ -439,19 +474,22 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
             val context = LocalContext.current
             val coroutineScope = rememberCoroutineScope()
             var linkDialogState by remember { mutableStateOf<MarkdownLinkDialogState?>(null) }
+            val lastTappedFootnoteReferences = remember(session, status.revision) {
+                mutableStateMapOf<String, MarkdownReadingTarget>()
+            }
+            val tableScrollRegistry = remember(status.revision) { SharedTableScrollRegistry() }
             val onInlineInteraction: (MarkdownInlineInteraction, Int) -> Unit =
                 { interaction, sourceItemIndex ->
                     when (interaction) {
                         is MarkdownInlineInteraction.Link -> {
                             when (val action = markdownLinkAction(interaction.destination)) {
                                 is MarkdownLinkAction.Heading -> {
-                                    val itemIndex =
-                                        status.layout.headings.itemIndex(action.fragment)
-                                    if (itemIndex == null) {
+                                    val target = status.layout.headings.target(action.fragment)
+                                    if (target == null) {
                                         linkDialogState =
                                             MarkdownLinkDialogState.MissingHeading(action.fragment)
                                     } else {
-                                        session.navigateToReadingBlock(status.revision, previewItems[itemIndex].firstBlockIndex)
+                                        session.navigateToReadingBlock(status.revision, target.blockIndex)
                                     }
                                 }
 
@@ -472,19 +510,34 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                         }
 
                         is MarkdownInlineInteraction.FootnoteReference -> {
-                            val itemIndex = footnoteTargets.definitions[interaction.label]
-                            if (itemIndex == null) {
+                            val target = footnoteTargets.definitionTargets[interaction.label]
+                            if (target == null) {
                                 linkDialogState =
                                     MarkdownLinkDialogState.MissingFootnote(interaction.label)
                             } else {
-                                session.navigateToReadingBlock(status.revision, previewItems[itemIndex].firstBlockIndex)
+                                val originBlock = interaction.blockIndex ?: previewItems[sourceItemIndex].firstBlockIndex
+                                lastTappedFootnoteReferences[interaction.label] = MarkdownReadingTarget(
+                                    itemIndex = sourceItemIndex,
+                                    blockIndex = originBlock,
+                                    renderedOffset = interaction.renderedOffset
+                                )
+                                session.navigateToReadingBlock(status.revision, target.blockIndex)
                             }
                         }
 
                         is MarkdownInlineInteraction.FootnoteDefinition -> {
-                            val itemIndex = footnoteTargets.references[interaction.label]
-                            if (itemIndex != null && itemIndex != sourceItemIndex) {
-                                session.navigateToReadingBlock(status.revision, previewItems[itemIndex].firstBlockIndex)
+                            val target = lastTappedFootnoteReferences[interaction.label]
+                                ?: footnoteTargets.referenceTargets[interaction.label]
+                            val sourceBlock = interaction.blockIndex ?: previewItems[sourceItemIndex].firstBlockIndex
+                            val sameDestination = target != null &&
+                                target.itemIndex == sourceItemIndex &&
+                                target.blockIndex == sourceBlock
+                            if (target != null && !sameDestination) {
+                                session.navigateToReadingLocation(
+                                    status.revision,
+                                    target.blockIndex,
+                                    target.renderedOffset
+                                )
                             }
                         }
                     }
@@ -501,6 +554,9 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                 LocalMarkdownCodeCopies provides status.layout.codeCopies
             ) {
                 val paragraphGap = markdownParagraphGap()
+                val bottomOverlayDp = LocalEditorBottomOverlayState.current?.let { overlay ->
+                    with(density) { overlay.heightPx.toDp() }
+                } ?: 0.dp
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val column = appearance.textColumn(AppearanceGroup.Markdown, maxWidth)
                     LazyColumn(
@@ -518,7 +574,8 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                             PaddingValues(
                                 start = column.textStart,
                                 end = (maxWidth - column.textStart - column.textWidth).coerceAtLeast(0.dp),
-                                top = EditorSectionSpacing, bottom = EditorSectionSpacing
+                                top = EditorSectionSpacing,
+                                bottom = EditorSectionSpacing + bottomOverlayDp
                             ),
                         verticalArrangement = Arrangement.Top
                     ) {
@@ -569,12 +626,28 @@ internal fun MarkdownPreviewContent(session: EditorSession, modifier: Modifier =
                                             onInlineInteraction = { onInlineInteraction(it, itemIndex) },
                                             modifier = itemModifier
                                         ) { groupModifier ->
+                                            val sharedTableScroll = if (!previewItem.tableUsesWideLayout) {
+                                                tableScrollRegistry.gridState(previewItem.tableId)
+                                            } else {
+                                                null
+                                            }
+                                            val sharedWideOffset = if (previewItem.tableUsesWideLayout) {
+                                                tableScrollRegistry.wideOffset(previewItem.tableId)
+                                            } else {
+                                                null
+                                            }
                                             MarkdownTable(
                                                 blocks = previewItem.blocks,
                                                 firstBlockIndex = previewItem.firstBlockIndex,
                                                 showWrappedPreview = previewItem.showsWrappedPreview,
                                                 onInlineInteraction = { onInlineInteraction(it, itemIndex) },
-                                                modifier = groupModifier
+                                                modifier = groupModifier,
+                                                tableColumnCount = previewItem.tableColumnCount.takeIf { it > 0 },
+                                                useWideLayout = previewItem.tableUsesWideLayout,
+                                                totalLogicalRows = previewItem.tableRowCount.takeIf { it > 0 },
+                                                firstLogicalRowIndex = previewItem.tableFirstLogicalRowIndex,
+                                                sharedScrollState = sharedTableScroll,
+                                                sharedWideScrollOffset = sharedWideOffset
                                             )
                                         }
 
@@ -749,10 +822,14 @@ internal sealed interface MarkdownInlineInteraction {
     data class Link(val destination: String) : MarkdownInlineInteraction
 
     /** Requests navigation from one reference to its local footnote definition. */
-    data class FootnoteReference(val label: String) : MarkdownInlineInteraction
+    data class FootnoteReference(
+        val label: String,
+        val blockIndex: Int? = null,
+        val renderedOffset: Int = 0
+    ) : MarkdownInlineInteraction
 
     /** Requests navigation from one footnote definition to its first reference. */
-    data class FootnoteDefinition(val label: String) : MarkdownInlineInteraction
+    data class FootnoteDefinition(val label: String, val blockIndex: Int? = null) : MarkdownInlineInteraction
 }
 
 /** Displays an empty preview with an action appropriate to the source mode. */
