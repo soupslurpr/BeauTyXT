@@ -15,7 +15,7 @@ private const val MINIMUM_FONT_SIZE_POINTS = 6
 private const val MAXIMUM_FONT_SIZE_POINTS = 72
 private const val MAXIMUM_MARGIN_MILS = 20_000
 private const val MARGIN_DECIMAL_SCALE = 3
-private const val MAXIMUM_PRINT_NUMBER_CHARACTERS = 32
+internal const val MAXIMUM_PRINT_NUMBER_CHARACTERS = 32
 
 /** Selects the document representation sent to the bounded PDF renderer. */
 internal enum class PrintContentMode {

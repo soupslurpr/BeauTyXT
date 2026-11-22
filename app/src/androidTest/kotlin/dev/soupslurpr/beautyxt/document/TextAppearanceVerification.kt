@@ -52,11 +52,44 @@ internal fun Instrumentation.verifyTextAppearance() {
     }
     fun openSizeEditor(value: String): AccessibilityNodeInfo {
         // Store updates precede recomposition; wait for the button's announced value.
-        val control = waitForAccessibilityNode("displayed text size $value") {
-            it.contentDescription?.toString() == "Edit Text size" &&
-                it.enabledClickableAncestor()?.stateDescription?.toString() == "$value sp"
+        // If the modal sheet opens partially expanded and hides "Edit Text size" below the fold,
+        // expand it once its drag handle exposes ACTION_EXPAND, then scroll the list if needed.
+        var expandedSheet = false
+        var control: AccessibilityNodeInfo? = null
+        awaitReadingCondition("displayed text size $value did not appear in appearance panel") {
+            uiAutomation.clearCache()
+            val panelWindow = uiAutomation.windows.sortedByDescending { it.layer }.firstNotNullOfOrNull { window ->
+                window.root?.takeIf { it.findNode { node -> node.viewIdResourceName == "appearance_panel" } != null }
+            }
+            control = panelWindow?.findNode {
+                it.contentDescription?.toString() == "Edit Text size" &&
+                    it.enabledClickableAncestor()?.stateDescription?.toString() == "$value sp"
+            }
+            if (control != null) {
+                true
+            } else {
+                if (panelWindow != null && !expandedSheet) {
+                    panelWindow.findNode { node ->
+                        node.actionList.any { action -> action.id == AccessibilityNodeInfo.ACTION_EXPAND }
+                    }?.let { expandHandle ->
+                        if (expandHandle.performAction(AccessibilityNodeInfo.ACTION_EXPAND)) {
+                            expandedSheet = true
+                            SystemClock.sleep(400)
+                            waitForAccessibilityIdle()
+                        }
+                    }
+                } else if (panelWindow != null && expandedSheet) {
+                    panelWindow.findNode { it.viewIdResourceName == "appearance_controls" }
+                        ?.takeIf { list ->
+                            list.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD }
+                        }?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+                    SystemClock.sleep(300)
+                    waitForAccessibilityIdle()
+                }
+                false
+            }
         }
-        checkNotNull(control.enabledClickableAncestor()).performRequiredClick()
+        checkNotNull(checkNotNull(control).enabledClickableAncestor()).performRequiredClick()
         return waitForAccessibilityNode("selected exact size $value") {
             it.isEditable && it.isFocused && it.text?.toString() == value &&
                 it.textSelectionStart == 0 && it.textSelectionEnd == value.length
@@ -148,11 +181,17 @@ internal fun Instrumentation.verifyTextAppearance() {
                 SystemClock.sleep(150)
                 waitForAccessibilityIdle()
             }
-            fun revealInAppearanceList(description: String, find: (AccessibilityNodeInfo) -> AccessibilityNodeInfo?): AccessibilityNodeInfo {
-                awaitReadingCondition("appearance panel not available before revealing $description") {
-                    appearancePanelRoot() != null
+            fun requireAppearancePanelRoot(contextLabel: String): AccessibilityNodeInfo {
+                var resolved: AccessibilityNodeInfo? = null
+                awaitReadingCondition("appearance panel not available while $contextLabel") {
+                    resolved = appearancePanelRoot()
+                    resolved != null
                 }
-                appearancePanelRoot()?.let(find)?.let { return it }
+                return checkNotNull(resolved)
+            }
+            fun revealInAppearanceList(description: String, find: (AccessibilityNodeInfo) -> AccessibilityNodeInfo?): AccessibilityNodeInfo {
+                waitForAccessibilityIdle()
+                requireAppearancePanelRoot("preparing to reveal $description").let(find)?.let { return it }
                 // Expanding a partially expanded modal sheet first keeps touch drags inside LazyColumn instead of snapping the sheet.
                 appearancePanelWindow()?.findNode { node ->
                     node.actionList.any { action -> action.id == AccessibilityNodeInfo.ACTION_EXPAND }
@@ -160,7 +199,7 @@ internal fun Instrumentation.verifyTextAppearance() {
                     expandHandle.performAction(AccessibilityNodeInfo.ACTION_EXPAND)
                     SystemClock.sleep(400)
                     waitForAccessibilityIdle()
-                    appearancePanelRoot()?.let(find)?.let { return it }
+                    requireAppearancePanelRoot("expanding sheet for $description").let(find)?.let { return it }
                 }
                 val trace = mutableListOf<String>()
                 for ((forward, action) in listOf(
@@ -168,7 +207,7 @@ internal fun Instrumentation.verifyTextAppearance() {
                     false to AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
                 )) {
                     for (attempt in 0 until 24) {
-                        val root = appearancePanelRoot() ?: break
+                        val root = requireAppearancePanelRoot("scrolling for $description")
                         find(root)?.let { return it }
                         val list = root.findNode { it.viewIdResourceName == "appearance_controls" }
                         if (list == null) {

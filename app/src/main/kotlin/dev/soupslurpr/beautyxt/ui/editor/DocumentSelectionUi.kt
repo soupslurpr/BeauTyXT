@@ -38,13 +38,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import dev.soupslurpr.beautyxt.illustration.NativeIllustration
 import dev.soupslurpr.beautyxt.ui.designsystem.ActionMenuItem
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -674,14 +676,51 @@ internal fun DocumentSelectionActions(
     val activeLabelSelection = session.documentSelection as? DocumentSelection.Label
     val showInlineLabelField = activeLabelSelection != null &&
         availableHeight >= SelectionInlineLabelMinHeight
+    val labelFieldVisible = showInlineLabelField || labelDialogVisible
+    val labelFieldBinding = if (activeLabelSelection != null && labelFieldVisible) {
+        remember(
+            activeLabelSelection.revision,
+            activeLabelSelection.block,
+            activeLabelSelection.spanStart,
+            activeLabelSelection.run,
+            activeLabelSelection.text
+        ) {
+            TextFieldState(
+                initialText = activeLabelSelection.text,
+                initialSelection = activeLabelSelection.range
+            ) to LabelSelectionSyncState(activeLabelSelection.range)
+        }
+    } else {
+        null
+    }
+    val syncLabelSelection = {
+        val currentSelection = session.documentSelection as? DocumentSelection.Label
+        val binding = labelFieldBinding
+        if (currentSelection != null && binding != null) {
+            val (fieldState, syncState) = binding
+            val fieldRange = fieldState.selection
+            if (
+                currentSelection.range == syncState.lastSynced &&
+                !fieldRange.collapsed &&
+                fieldRange != syncState.lastSynced
+            ) {
+                syncState.lastSynced = fieldRange
+                session.updateLabelSelection(fieldRange)
+            }
+        }
+    }
     val performCopy = {
+        syncLabelSelection()
         session.copyDocumentSelection { text ->
             checkNotNull(context.getSystemService(ClipboardManager::class.java)).setPrimaryClip(
                 ClipData.newPlainText(selectionTitle, text)
             )
         }
     }
-    val performSend = { session.excerptExport.open(context, session.title) }
+    val performSend = {
+        syncLabelSelection()
+        session.excerptExport.open(context, session.title)
+    }
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val textMeasurer = rememberTextMeasurer()
@@ -712,11 +751,12 @@ internal fun DocumentSelectionActions(
                 shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.surfaceContainerLow
             ) {
-                OutlinedTextField(
-                    value = TextFieldValue(activeLabelSelection.text, activeLabelSelection.range),
-                    onValueChange = { session.updateLabelSelection(it.selection) },
-                    readOnly = true,
-                    maxLines = 4,
+                val (fieldState, syncState) = checkNotNull(labelFieldBinding)
+                ReadOnlyLabelSelectionField(
+                    state = fieldState,
+                    syncState = syncState,
+                    range = activeLabelSelection.range,
+                    onSelectionChange = session::updateLabelSelection,
                     label = { Text(stringResource(R.string.selection_label)) },
                     modifier = Modifier.fillMaxWidth().padding(8.dp)
                 )
@@ -878,14 +918,21 @@ internal fun DocumentSelectionActions(
                                 SelectionMenuEntry(
                                     label = stringResource(R.string.selection_find),
                                     iconRes = R.drawable.ic_search,
-                                    onClick = session::findSelectedText
+                                    onClick = {
+                                        syncLabelSelection()
+                                        session.findSelectedText()
+                                    }
                                 )
                             )
                             add(
                                 SelectionMenuEntry(
                                     label = stringResource(R.string.selection_scope),
                                     iconRes = R.drawable.ic_search,
-                                    onClick = { session.showFind(); session.captureSelectionFindScope() }
+                                    onClick = {
+                                        syncLabelSelection()
+                                        session.showFind()
+                                        session.captureSelectionFindScope()
+                                    }
                                 )
                             )
                             add(
@@ -960,25 +1007,87 @@ internal fun DocumentSelectionActions(
         }
     }
     if (labelDialogVisible && activeLabelSelection != null) {
+        val dismissLabelDialog = {
+            syncLabelSelection()
+            labelDialogVisible = false
+        }
         AlertDialog(
-            onDismissRequest = { labelDialogVisible = false },
+            onDismissRequest = dismissLabelDialog,
             title = { Text(stringResource(R.string.selection_label)) },
             text = {
-                OutlinedTextField(
-                    value = TextFieldValue(activeLabelSelection.text, activeLabelSelection.range),
-                    onValueChange = { session.updateLabelSelection(it.selection) },
-                    readOnly = true,
-                    maxLines = 4,
+                val (fieldState, syncState) = checkNotNull(labelFieldBinding)
+                ReadOnlyLabelSelectionField(
+                    state = fieldState,
+                    syncState = syncState,
+                    range = activeLabelSelection.range,
+                    onSelectionChange = session::updateLabelSelection,
                     modifier = Modifier.fillMaxWidth()
                 )
             },
             confirmButton = {
-                TextButton(onClick = { labelDialogVisible = false }) {
+                TextButton(onClick = dismissLabelDialog) {
                     Text(stringResource(R.string.action_close))
                 }
             }
         )
     }
+}
+
+private class LabelSelectionSyncState(initialRange: TextRange) {
+    @Volatile
+    var lastSynced: TextRange = initialRange
+}
+
+@Composable
+private fun ReadOnlyLabelSelectionField(
+    state: TextFieldState,
+    syncState: LabelSelectionSyncState,
+    range: TextRange,
+    onSelectionChange: (TextRange) -> Unit,
+    modifier: Modifier = Modifier,
+    label: (@Composable () -> Unit)? = null
+) {
+    val latestOnSelectionChange by rememberUpdatedState(onSelectionChange)
+    DisposableEffect(state) {
+        val ownerThread = Thread.currentThread()
+        val handle = Snapshot.registerApplyObserver { _, _ ->
+            if (Thread.currentThread() === ownerThread) {
+                val current = state.selection
+                if (!current.collapsed && current != syncState.lastSynced) {
+                    syncState.lastSynced = current
+                    latestOnSelectionChange(current)
+                }
+            }
+        }
+        onDispose { handle.dispose() }
+    }
+    val currentSelection = state.selection
+    if (range != syncState.lastSynced || currentSelection != syncState.lastSynced) {
+        SideEffect {
+            when {
+                range != syncState.lastSynced -> {
+                    syncState.lastSynced = range
+                    if (state.selection != range) {
+                        state.edit { selection = range }
+                    }
+                }
+                !currentSelection.collapsed -> {
+                    syncState.lastSynced = currentSelection
+                    latestOnSelectionChange(currentSelection)
+                }
+                !range.collapsed && state.selection != range -> {
+                    state.edit { selection = range }
+                }
+            }
+        }
+    }
+    OutlinedTextField(
+        state = state,
+        readOnly = true,
+        lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 4),
+        label = label?.let { labelContent -> { labelContent() } },
+        modifier = modifier
+    )
 }
 
 @Composable

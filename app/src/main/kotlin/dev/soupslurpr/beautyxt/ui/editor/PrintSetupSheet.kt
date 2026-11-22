@@ -27,6 +27,11 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.maxLengthReject
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -46,8 +51,11 @@ import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.retain.retain
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -65,6 +73,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
+import dev.soupslurpr.beautyxt.printing.MAXIMUM_PRINT_NUMBER_CHARACTERS
 import dev.soupslurpr.beautyxt.printing.PrintContentMode
 import dev.soupslurpr.beautyxt.printing.PrintFontFamily
 import dev.soupslurpr.beautyxt.printing.PrintMarginField
@@ -322,11 +331,14 @@ internal fun PrintSetupSheet(session: EditorSession) {
                         )
                     }
                     val fontSizeControl: @Composable () -> Unit = {
-                        OutlinedTextField(
+                        val fontSizeState = rememberSyncedTextFieldState(
                             value = draft.fontSize,
                             onValueChange = { value ->
                                 updateDraft { it.copy(fontSize = value) }
-                            },
+                            }
+                        )
+                        OutlinedTextField(
+                            state = fontSizeState,
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text(stringResource(R.string.print_text_size)) },
                             suffix = { Text(stringResource(R.string.print_point_unit)) },
@@ -336,7 +348,8 @@ internal fun PrintSetupSheet(session: EditorSession) {
                                 null
                             },
                             isError = validation.isFontSizeInvalid,
-                            singleLine = true,
+                            inputTransformation = InputTransformation.maxLengthReject(MAXIMUM_PRINT_NUMBER_CHARACTERS),
+                            lineLimits = TextFieldLineLimits.SingleLine,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                         )
                     }
@@ -641,9 +654,13 @@ private fun PrintMarginTextField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    OutlinedTextField(
+    val state = rememberSyncedTextFieldState(
         value = value,
         onValueChange = onValueChange,
+        historyKey = unit
+    )
+    OutlinedTextField(
+        state = state,
         modifier = modifier,
         label = { Text(field.label) },
         suffix = { Text(unit.abbreviation) },
@@ -663,9 +680,51 @@ private fun PrintMarginTextField(
             null
         },
         isError = isError,
-        singleLine = true,
+        inputTransformation = InputTransformation.maxLengthReject(MAXIMUM_PRINT_NUMBER_CHARACTERS),
+        lineLimits = TextFieldLineLimits.SingleLine,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
     )
+}
+
+/** Synchronizes a Compose [TextFieldState] with an externally owned string field. */
+@Composable
+internal fun rememberSyncedTextFieldState(
+    value: String,
+    historyKey: Any? = Unit,
+    onValueChange: (String) -> Unit
+): TextFieldState {
+    val latestOnValueChange by rememberUpdatedState(onValueChange)
+    val syncingFromExternal = remember { BooleanArray(1) }
+    val state = remember {
+        TextFieldState(
+            initialText = value,
+            onTextChanged = { updated ->
+                if (!syncingFromExternal[0]) {
+                    latestOnValueChange(updated.toString())
+                }
+            }
+        )
+    }
+    val lastHistoryKey = remember { arrayOf<Any?>(historyKey) }
+    val resetHistory = historyKey != lastHistoryKey[0]
+    if (state.text.toString() != value || resetHistory) {
+        SideEffect {
+            val textChanged = state.text.toString() != value
+            if (textChanged) {
+                syncingFromExternal[0] = true
+                try {
+                    state.setTextAndPlaceCursorAtEnd(value)
+                } finally {
+                    syncingFromExternal[0] = false
+                }
+            }
+            if (textChanged || resetHistory) {
+                lastHistoryKey[0] = historyKey
+                state.undoState.clearHistory()
+            }
+        }
+    }
+    return state
 }
 
 /** Displays one switch label and control without assigning its input semantics. */

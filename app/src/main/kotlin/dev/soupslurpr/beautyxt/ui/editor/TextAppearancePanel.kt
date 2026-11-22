@@ -27,8 +27,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
@@ -89,7 +91,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
@@ -115,17 +116,18 @@ internal class TextAppearancePanelState {
 
 internal class AppearanceNumberDraft(val group: AppearanceGroup, val option: AppearanceOption,
     value: Float, val isCustom: Boolean) {
-    var text by mutableStateOf(appearanceNumber(value, exact = isCustom).let {
-        TextFieldValue(it, TextRange(0, it.length))
-    })
-        private set
+    private val initialText = appearanceNumber(value, exact = isCustom)
     var edited by mutableStateOf(false)
         private set
-    val parsed: Float? get() = parseAppearanceNumber(text.text)?.takeIf(option::valid)
+    val textFieldState = TextFieldState(
+        initialText = initialText,
+        initialSelection = TextRange(0, initialText.length),
+        onTextChanged = { edited = true }
+    )
+    val parsed: Float? get() = parseAppearanceNumber(textFieldState.text.toString())?.takeIf(option::valid)
 
-    fun updateText(value: TextFieldValue) {
-        if (value.text != text.text) edited = true
-        text = value
+    fun updateText(value: String) {
+        textFieldState.setTextAndPlaceCursorAtEnd(value)
     }
 
     fun apply(onChange: (Float) -> Unit): Boolean {
@@ -613,7 +615,6 @@ private fun AppearanceNumberDialog(draft: AppearanceNumberDraft,
         opened
     }
     val option = draft.option
-    val text = draft.text
     val parsed = draft.parsed
     val wholeNumber = option == AppearanceOption.Weight || option == AppearanceOption.TabWidth
     val unit = when (option) {
@@ -644,8 +645,8 @@ private fun AppearanceNumberDialog(draft: AppearanceNumberDraft,
         window.width.toDp() >= 600.dp && usableHeight.toDp() < 480.dp * fontScale.coerceAtLeast(1f)
     }
     val field: @Composable (Modifier, Boolean) -> Unit = { modifier, showRange ->
-        OutlinedTextField(value = text, onValueChange = draft::updateText,
-            singleLine = true, isError = errorText != null,
+        OutlinedTextField(state = draft.textFieldState,
+            lineLimits = TextFieldLineLimits.SingleLine, isError = errorText != null,
             label = { Text(stringResource(option.title)) },
             suffix = if (suffix != null) {{ Text(suffix) }} else null,
             trailingIcon = if (errorText != null) {{ Icon(painterResource(R.drawable.ic_error), null) }} else null,
@@ -653,7 +654,7 @@ private fun AppearanceNumberDialog(draft: AppearanceNumberDraft,
                 Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }} else null,
             keyboardOptions = KeyboardOptions(keyboardType = if (wholeNumber) KeyboardType.Number else KeyboardType.Decimal,
                 imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { submit() }),
+            onKeyboardAction = { submit() },
             modifier = modifier.focusRequester(focus).semantics {
                 if (errorText != null) error(errorText)
             })

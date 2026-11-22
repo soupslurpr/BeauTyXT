@@ -19,8 +19,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
@@ -38,11 +41,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.retain.retain
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,7 +62,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -110,9 +110,9 @@ internal fun NfcTagLabelDialog(
     onConfirm: (Long, String?) -> Boolean,
     onDismiss: () -> Unit
 ) {
-    var input by retain(status.generation) { mutableStateOf("") }
+    val inputState = retain(status.generation) { TextFieldState() }
     val confirm = {
-        onConfirm(status.generation, canonicalNfcTagLabelOrNull(input))
+        onConfirm(status.generation, canonicalNfcTagLabelOrNull(inputState.text.toString()))
         Unit
     }
     BasicAlertDialog(
@@ -140,27 +140,35 @@ internal fun NfcTagLabelDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
-                    value = input,
-                    onValueChange = { candidate ->
-                        if (isValidNfcTagLabelInput(candidate)) {
-                            input = candidate.uppercase(Locale.ROOT)
-                        }
-                    },
+                    state = inputState,
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.nfc_label_optional)) },
                     placeholder = { Text(stringResource(R.string.nfc_label_example)) },
                     supportingText = { Text(stringResource(R.string.nfc_label_help)) },
+                    inputTransformation = InputTransformation {
+                        val candidate = asCharSequence().toString()
+                        if (!isValidNfcTagLabelInput(candidate)) {
+                            revertAllChanges()
+                        } else {
+                            val upper = candidate.uppercase(Locale.ROOT)
+                            if (upper != candidate) {
+                                val currentSelection = selection
+                                replace(0, length, upper)
+                                selection = currentSelection
+                            }
+                        }
+                    },
                     keyboardOptions =
                         KeyboardOptions(
                             capitalization = KeyboardCapitalization.Characters,
                             keyboardType = KeyboardType.Ascii,
                             imeAction = ImeAction.Done
                         ),
-                    keyboardActions = KeyboardActions(onDone = { confirm() }),
-                    singleLine = true
+                    onKeyboardAction = { confirm() },
+                    lineLimits = TextFieldLineLimits.SingleLine
                 )
                 TextButton(
-                    onClick = { input = suggestNfcTagLabel() },
+                    onClick = { inputState.setTextAndPlaceCursorAtEnd(suggestNfcTagLabel()) },
                     modifier = Modifier.align(Alignment.End)
                 ) {
                     Text(stringResource(R.string.nfc_label_suggest))
@@ -392,25 +400,32 @@ internal fun GoToLineDialog(session: EditorSession) {
             windowWidthPixels = windowSize.width,
             windowHeightPixels = windowSize.height
         )
-    var fieldValue by
+    val syncingFromSession = remember(session) { BooleanArray(1) }
+    val fieldState =
         remember(session) {
             val input = session.goToLineInput
-            mutableStateOf(
-                TextFieldValue(
-                    text = input,
-                    selection = TextRange(start = 0, end = input.length)
-                )
+            TextFieldState(
+                initialText = input,
+                initialSelection = TextRange(start = 0, end = input.length),
+                onTextChanged = { updated ->
+                    if (!syncingFromSession[0]) {
+                        session.updateGoToLineInput(updated.toString())
+                    }
+                }
             )
         }
     val errorMessage = session.goToLineErrorMessage
-    LaunchedEffect(session.goToLineInput) {
-        val retainedInput = session.goToLineInput
-        if (fieldValue.text != retainedInput) {
-            fieldValue =
-                TextFieldValue(
-                    text = retainedInput,
-                    selection = TextRange(retainedInput.length)
-                )
+    val retainedInput = session.goToLineInput
+    if (fieldState.text.toString() != retainedInput) {
+        SideEffect {
+            if (fieldState.text.toString() != retainedInput) {
+                syncingFromSession[0] = true
+                try {
+                    fieldState.setTextAndPlaceCursorAtEnd(retainedInput)
+                } finally {
+                    syncingFromSession[0] = false
+                }
+            }
         }
     }
     LaunchedEffect(session) {
@@ -460,13 +475,7 @@ internal fun GoToLineDialog(session: EditorSession) {
                     Text(stringResource(R.string.line_number_help, lineCount))
                 }
                 TextField(
-                    value = fieldValue,
-                    onValueChange = { candidate ->
-                        session.updateGoToLineInput(candidate.text)
-                        if (session.goToLineInput == candidate.text) {
-                            fieldValue = candidate
-                        }
-                    },
+                    state = fieldState,
                     modifier =
                         Modifier
                             .fillMaxWidth()
@@ -493,16 +502,23 @@ internal fun GoToLineDialog(session: EditorSession) {
                             }
                         },
                     isError = errorMessage != null,
+                    inputTransformation = InputTransformation {
+                        val candidate = asCharSequence().toString()
+                        if (
+                            !session.isGoToLineDialogVisible ||
+                            candidate.length > MAX_GO_TO_LINE_INPUT_CHARACTERS ||
+                            candidate.any { character -> character !in '0'..'9' }
+                        ) {
+                            revertAllChanges()
+                        }
+                    },
                     keyboardOptions =
                         KeyboardOptions(
                             keyboardType = KeyboardType.Number,
                             imeAction = ImeAction.Go
                         ),
-                    keyboardActions =
-                        KeyboardActions(
-                            onGo = { session.confirmGoToLine() }
-                        ),
-                    singleLine = true
+                    onKeyboardAction = { session.confirmGoToLine() },
+                    lineLimits = TextFieldLineLimits.SingleLine
                 )
             }
         },
