@@ -4,9 +4,17 @@ package dev.soupslurpr.beautyxt.markdown
 import java.text.Normalizer
 import java.util.Locale
 
+/** Identifies a heading's owning lazy item and exact render block. */
+internal data class MarkdownHeadingTarget(
+    val itemIndex: Int,
+    val blockIndex: Int
+)
+
 /** Indexes one immutable preview's headings while preserving duplicate-name collisions. */
 internal class MarkdownHeadingIndex(items: Iterable<MarkdownPreviewHeadingItem>) {
     private val itemIndices: Map<String, Int>
+    private val targetsByAnchor: Map<String, MarkdownHeadingTarget>
+    private val firstTarget: MarkdownHeadingTarget?
     private val hasItems: Boolean
 
     /** Exposes immutable heading identities to excerpt and PDF destination generation. */
@@ -14,10 +22,16 @@ internal class MarkdownHeadingIndex(items: Iterable<MarkdownPreviewHeadingItem>)
 
     init {
         val indices = HashMap<String, Int>()
+        val targets = HashMap<String, MarkdownHeadingTarget>()
         val nextSuffixes = HashMap<String, Int>()
         var containsItems = false
+        var initialTarget: MarkdownHeadingTarget? = null
         items.forEach { item ->
             require(item.itemIndex >= 0) { "Markdown heading item index must be nonnegative" }
+            require(item.blockIndex >= 0) { "Markdown heading block index must be nonnegative" }
+            if (!containsItems) {
+                initialTarget = MarkdownHeadingTarget(item.itemIndex, item.blockIndex)
+            }
             containsItems = true
             if (!item.isHeading) return@forEach
             val baseAnchor = markdownHeadingAnchor(item.text)
@@ -28,9 +42,12 @@ internal class MarkdownHeadingIndex(items: Iterable<MarkdownPreviewHeadingItem>)
                 suffix = Math.incrementExact(suffix)
                 anchor = "$baseAnchor-$suffix"
             }
+            targets[anchor] = MarkdownHeadingTarget(item.itemIndex, item.blockIndex)
             nextSuffixes[baseAnchor] = Math.incrementExact(suffix)
         }
         itemIndices = indices
+        targetsByAnchor = targets
+        firstTarget = initialTarget
         hasItems = containsItems
     }
 
@@ -40,13 +57,21 @@ internal class MarkdownHeadingIndex(items: Iterable<MarkdownPreviewHeadingItem>)
     } else {
         itemIndices[markdownHeadingAnchor(fragment)]
     }
+
+    /** Returns both lazy item and exact render block for a heading fragment. */
+    fun target(fragment: String): MarkdownHeadingTarget? = if (fragment.isEmpty()) {
+        firstTarget
+    } else {
+        targetsByAnchor[markdownHeadingAnchor(fragment)]
+    }
 }
 
 /** Contains the heading-relevant fields of one lazy Markdown preview item. */
 internal data class MarkdownPreviewHeadingItem(
     val itemIndex: Int,
     val isHeading: Boolean,
-    val text: String
+    val text: String,
+    val blockIndex: Int = itemIndex
 )
 
 /** Returns one stable, Unicode-preserving heading anchor. */

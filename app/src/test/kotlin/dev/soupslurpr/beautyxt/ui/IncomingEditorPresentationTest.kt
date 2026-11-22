@@ -62,7 +62,16 @@ class IncomingEditorPresentationTest {
         )
     }
 
-    /** Keeps explicit editing and Home's file picker in source mode. */
+    /** Previews Markdown opened from Home while keeping write access available. */
+    @Test
+    fun previewsMarkdownOpenedFromHome() {
+        assertEquals(
+            EditorPresentation.MarkdownPreview,
+            incomingEditorPresentation(DocumentFormat.Markdown, IncomingSourcePurpose.Open)
+        )
+    }
+
+    /** Keeps explicit external editing requests in source mode. */
     @Test
     fun editsMarkdownWhenRequested() {
         assertEquals(

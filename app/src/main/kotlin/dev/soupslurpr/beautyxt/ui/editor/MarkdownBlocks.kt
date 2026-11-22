@@ -2,6 +2,7 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -37,12 +38,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -56,9 +60,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CollectionInfo
+import androidx.compose.ui.semantics.CollectionItemInfo
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.collectionInfo
+import androidx.compose.ui.semantics.collectionItemInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -109,7 +117,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
-private const val MAX_MARKDOWN_TABLE_COLUMNS = 16
+internal const val MAX_MARKDOWN_TABLE_COLUMNS = 16
 
 private val EmptyMarkdownTableCell = AnnotatedString("")
 
@@ -917,31 +925,53 @@ internal fun MarkdownTable(
     firstBlockIndex: Int,
     showWrappedPreview: Boolean,
     onInlineInteraction: (MarkdownInlineInteraction) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    tableColumnCount: Int? = null,
+    useWideLayout: Boolean? = null,
+    totalLogicalRows: Int? = null,
+    firstLogicalRowIndex: Int = 0,
+    sharedScrollState: ScrollState? = null,
+    sharedWideScrollOffset: MutableIntState? = null
 ) {
     require(blocks.isNotEmpty()) { "Markdown table must contain at least one row" }
     require(firstBlockIndex >= 0) { "Markdown table block index must be nonnegative" }
     require(blocks.all { block -> block.kind == MarkdownBlockKind.TableRow }) {
         "Markdown table contains a non-table block"
     }
-    val columnCount = remember(blocks) { blocks.maxOf(::markdownTableColumnCount) }
-    if (columnCount > MAX_MARKDOWN_TABLE_COLUMNS || showWrappedPreview) {
+    val chunkColumnCount = remember(blocks) { blocks.maxOf(::markdownTableColumnCount) }
+    val columnCount = maxOf(chunkColumnCount, tableColumnCount ?: chunkColumnCount)
+    val wide = useWideLayout ?: (columnCount > MAX_MARKDOWN_TABLE_COLUMNS || showWrappedPreview)
+    if (wide) {
         MarkdownWideTable(
             blocks = blocks,
             firstBlockIndex = firstBlockIndex,
             showWrappedPreview = showWrappedPreview,
             onInlineInteraction = onInlineInteraction,
-            modifier = modifier
+            modifier = modifier,
+            sharedWideScrollOffset = sharedWideScrollOffset
         )
         return
     }
     val rows = remember(blocks) { blocks.map(::splitMarkdownTableRow) }
-    check(rows.maxOf(List<MarkdownTableCell>::size) == columnCount) {
+    val logicalRowIndices = remember(blocks, firstLogicalRowIndex) {
+        var row = firstLogicalRowIndex
+        IntArray(blocks.size) { index ->
+            if (index > 0 && !blocks[index].continuesPrevious) row += 1
+            row
+        }
+    }
+    val collectionRowCount = totalLogicalRows ?: ((logicalRowIndices.lastOrNull() ?: 0) + 1)
+    check(rows.maxOf(List<MarkdownTableCell>::size) <= columnCount) {
         "Markdown table column count changed while splitting rows"
     }
-    val horizontalScrollState = rememberScrollState()
+    val horizontalScrollState = sharedScrollState ?: rememberScrollState()
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().semantics {
+            collectionInfo = CollectionInfo(
+                rowCount = collectionRowCount,
+                columnCount = columnCount
+            )
+        },
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = MaterialTheme.shapes.medium
     ) {
@@ -993,6 +1023,17 @@ internal fun MarkdownTable(
                                         modifier =
                                             Modifier
                                                 .width(cellWidth)
+                                                .semantics {
+                                                    collectionItemInfo = CollectionItemInfo(
+                                                        rowIndex = logicalRowIndices[rowIndex],
+                                                        rowSpan = 1,
+                                                        columnIndex = columnIndex,
+                                                        columnSpan = 1
+                                                    )
+                                                    if (blocks[rowIndex].isTableHeader) {
+                                                        heading()
+                                                    }
+                                                }
                                                 .padding(
                                                     horizontal = EditorHorizontalPadding,
                                                     vertical = EditorCompactSpacing
@@ -1046,9 +1087,29 @@ private fun MarkdownWideTable(
     firstBlockIndex: Int,
     showWrappedPreview: Boolean,
     onInlineInteraction: (MarkdownInlineInteraction) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    sharedWideScrollOffset: MutableIntState? = null
 ) {
     val horizontalScrollState = rememberScrollState()
+    if (sharedWideScrollOffset != null) {
+        LaunchedEffect(horizontalScrollState, sharedWideScrollOffset) {
+            snapshotFlow { sharedWideScrollOffset.intValue to horizontalScrollState.maxValue }
+                .collect { (target, maxScroll) ->
+                    val clamped = target.coerceIn(0, maxScroll)
+                    if (!horizontalScrollState.isScrollInProgress && horizontalScrollState.value != clamped) {
+                        horizontalScrollState.scrollTo(clamped)
+                    }
+                }
+        }
+        LaunchedEffect(horizontalScrollState, sharedWideScrollOffset) {
+            snapshotFlow { horizontalScrollState.isScrollInProgress to horizontalScrollState.value }
+                .collect { (scrolling, value) ->
+                    if (scrolling && sharedWideScrollOffset.intValue != value) {
+                        sharedWideScrollOffset.intValue = value
+                    }
+                }
+        }
+    }
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1321,6 +1382,8 @@ private fun MarkdownPresentationText(
     val linkColor = MaterialTheme.colorScheme.primary
     val codeBackground = MaterialTheme.colorScheme.surfaceContainerHighest
     val footnoteNumbers = LocalMarkdownFootnoteNumbers.current
+    val previewBlockIndex = LocalMarkdownPreviewBlockIndex.current
+    val currentOnInlineInteraction by rememberUpdatedState(onInlineInteraction)
     val linkInteractionListener = rememberMarkdownLinkInteractionListener(onInlineInteraction)
     val footnotePresentation =
         remember(sourceText, sourceSpans, footnoteNumbers) {
@@ -1334,6 +1397,8 @@ private fun MarkdownPresentationText(
             linkColor,
             codeBackground,
             linkInteractionListener,
+            previewBlockIndex,
+            renderedOffsetBase,
             appearance,
             effectiveStyle,
             bodyEmphasis,
@@ -1349,7 +1414,15 @@ private fun MarkdownPresentationText(
                 appearance = appearance,
                 bodyEmphasis = bodyEmphasis,
                 codeEmphasis = codeEmphasis,
-                baseSize = if (isCode) null else effectiveStyle.fontSize.value
+                baseSize = if (isCode) null else effectiveStyle.fontSize.value,
+                sourceSpans = sourceSpans,
+                blockIndex = previewBlockIndex,
+                renderedOffsetBase = renderedOffsetBase,
+                onFootnoteReference = { label, blockIdx, offset ->
+                    currentOnInlineInteraction(
+                        MarkdownInlineInteraction.FootnoteReference(label, blockIdx, offset)
+                    )
+                }
             ), appearance, AppearanceGroup.Markdown)
         }
     val inlineFormulas = markdownIllustrationContent(
@@ -1614,10 +1687,14 @@ internal fun markdownAnnotatedStringForPresentation(
     appearance: TextAppearance = TextAppearance(),
     baseSize: Float? = null,
     bodyEmphasis: MarkdownEmphasis = MarkdownEmphasis(),
-    codeEmphasis: MarkdownEmphasis = MarkdownEmphasis()
+    codeEmphasis: MarkdownEmphasis = MarkdownEmphasis(),
+    sourceSpans: List<MarkdownInlineSpan> = spans,
+    blockIndex: Int? = null,
+    renderedOffsetBase: Int = 0,
+    onFootnoteReference: ((String, Int?, Int) -> Unit)? = null
 ): AnnotatedString = buildAnnotatedString {
     appendMarkdownIllustrationText(text, spans)
-    spans.forEach { span ->
+    spans.forEachIndexed { spanIndex, span ->
         val literalMath = span.styles and MARKDOWN_SPAN_STYLE_MATH != 0 &&
             span.illustration !is IllustrationResult.Rendered
         val code = span.styles and MARKDOWN_SPAN_STYLE_CODE != 0 || literalMath
@@ -1701,16 +1778,25 @@ internal fun markdownAnnotatedStringForPresentation(
                         end = span.end
                     )
 
-                MarkdownInlineDestinationKind.FootnoteReference ->
+                MarkdownInlineDestinationKind.FootnoteReference -> {
+                    val listener = if (onFootnoteReference != null) {
+                        val renderedOffset = renderedOffsetBase + (sourceSpans.getOrNull(spanIndex)?.start ?: span.start)
+                        LinkInteractionListener {
+                            onFootnoteReference(destination, blockIndex, renderedOffset)
+                        }
+                    } else {
+                        linkInteractionListener
+                    }
                     addLink(
                         clickable =
                             LinkAnnotation.Clickable(
                                 tag = destination,
-                                linkInteractionListener = linkInteractionListener
+                                linkInteractionListener = listener
                             ),
                         start = span.start,
                         end = span.end
                     )
+                }
 
                 null -> error("Markdown destination lacks its validated kind")
             }

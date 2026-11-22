@@ -1,4 +1,8 @@
-@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@file:OptIn(
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class
+)
 
 package dev.soupslurpr.beautyxt.ui.editor
 
@@ -33,6 +37,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import dev.soupslurpr.beautyxt.document.DocumentFormat
+import dev.soupslurpr.beautyxt.ui.designsystem.ActionMenuItem
 import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceButtons
 import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceOption
 import androidx.compose.ui.res.stringResource
@@ -143,11 +148,30 @@ internal fun ExcerptExportSheet(
                         IconButton({ moreVisible = true }, enabled = controller.canConfigure) {
                             Icon(painterResource(R.drawable.ic_more_vert), stringResource(R.string.export_more))
                         }
-                        DropdownMenu(moreVisible, { moreVisible = false }) {
-                            listOf(ExcerptDestination.Copy, ExcerptDestination.Qr, ExcerptDestination.Nfc, ExcerptDestination.Print).forEach { choice ->
-                                DropdownMenuItem(text = { Text(stringResource(choice.label())) },
-                                    enabled = controller.canConfigure && (choice != ExcerptDestination.Nfc || nfcEnabled),
-                                    onClick = { moreVisible = false; controller.selectDestination(choice) })
+                        DropdownMenuPopup(moreVisible, { moreVisible = false }) {
+                            val destinations = listOf(
+                                ExcerptDestination.Copy,
+                                ExcerptDestination.Qr,
+                                ExcerptDestination.Nfc,
+                                ExcerptDestination.Print
+                            )
+                            DropdownMenuGroup(
+                                shapes = MenuDefaults.groupShape(index = 0, count = 1),
+                                containerColor = MenuDefaults.groupStandardContainerColor
+                            ) {
+                                destinations.forEachIndexed { index, choice ->
+                                    val shape = when (index) {
+                                        0 -> MenuDefaults.leadingItemShape
+                                        destinations.lastIndex -> MenuDefaults.trailingItemShape
+                                        else -> MenuDefaults.middleItemShape
+                                    }
+                                    ActionMenuItem(
+                                        shape = shape,
+                                        label = stringResource(choice.label()),
+                                        enabled = controller.canConfigure && (choice != ExcerptDestination.Nfc || nfcEnabled),
+                                        onClick = { moreVisible = false; controller.selectDestination(choice) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -247,19 +271,29 @@ internal fun ExcerptExportSheet(
                 items(links) { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
         }
-        HorizontalDivider()
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
             BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)) {
                 val shareLabel = stringResource(if (controller.format == ExcerptFormat.Pdf) R.string.export_share_pdf
                     else if (controller.shareAsFile) R.string.share_file else R.string.share_text)
                 val saveLabel = stringResource(R.string.export_save_copy)
                 @Composable fun saveButton(modifier: Modifier = Modifier) {
-                    OutlinedButton(::saveOutput, modifier.heightIn(min = 48.dp), enabled = canChoose && controller.fitsDestination(ExcerptDestination.Save)) {
+                    OutlinedButton(
+                        onClick = ::saveOutput,
+                        modifier = modifier.heightIn(min = 48.dp),
+                        enabled = canChoose && controller.fitsDestination(ExcerptDestination.Save),
+                        shapes = ButtonDefaults.shapes()
+                    ) {
                         Text(saveLabel)
                     }
                 }
                 @Composable fun shareButton(modifier: Modifier = Modifier) {
-                    Button(::shareOutput, modifier.heightIn(min = 48.dp), enabled = canChoose && controller.fitsDestination(ExcerptDestination.Share)) {
+                    Button(
+                        onClick = ::shareOutput,
+                        modifier = modifier.heightIn(min = 48.dp),
+                        enabled = canChoose && controller.fitsDestination(ExcerptDestination.Share),
+                        shapes = ButtonDefaults.shapes()
+                    ) {
                         Icon(painterResource(R.drawable.ic_share), null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(shareLabel)
@@ -273,8 +307,12 @@ internal fun ExcerptExportSheet(
                     } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         saveButton(Modifier.weight(1f)); shareButton(Modifier.weight(1f))
                     }
-                } else Button(::applyOutput, Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    enabled = controller.canApply && (controller.destination != ExcerptDestination.Nfc || nfcEnabled)) {
+                } else Button(
+                    onClick = ::applyOutput,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    enabled = controller.canApply && (controller.destination != ExcerptDestination.Nfc || nfcEnabled),
+                    shapes = ButtonDefaults.shapes()
+                ) {
                     if (controller.destination == ExcerptDestination.Print) {
                         Icon(painterResource(R.drawable.ic_print), null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))

@@ -1,7 +1,10 @@
 /* Builds and displays a transient outline of one rendered document revision. */
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 package dev.soupslurpr.beautyxt.ui.editor
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,15 +15,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -43,12 +49,15 @@ internal data class DocumentOutlineEntry(
     val itemIndex: Int,
     val level: Int,
     val title: String,
-    val sourceOffset: Long = 0L
+    val sourceOffset: Long = 0L,
+    val blockIndex: Int = itemIndex,
+    val itemPositionFraction: Float = 0f
 ) {
     init {
         require(itemIndex >= 0) { "outline item index must be nonnegative" }
         require(level in 1..6) { "outline heading level must be between one and six" }
         require(sourceOffset >= 0L) { "outline source offset must be nonnegative" }
+        require(itemPositionFraction in 0f..1f) { "outline position fraction must be in 0..1" }
     }
 }
 
@@ -56,7 +65,17 @@ internal data class DocumentOutlineEntry(
 internal fun documentOutline(items: List<MarkdownPreviewItem>): List<DocumentOutlineEntry> =
     buildList {
         items.forEachIndexed { itemIndex, item ->
-            item.blocks.forEach { block ->
+            // Estimate visual line weight per block (respecting hard line breaks) so a long heading
+            // or multi-line prose block does not skew section thresholds inside grouped items.
+            fun blockVisualWeight(block: dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock): Int {
+                val wrappedLines = block.text.split('\n')
+                    .sumOf { line -> ((line.length + 39) / 40).coerceAtLeast(1) }
+                return if (block.kind == MarkdownBlockKind.Heading) wrappedLines + 2 else wrappedLines + 1
+            }
+            val totalWeight = item.blocks.sumOf(::blockVisualWeight).coerceAtLeast(1)
+            var weightBefore = 0
+            item.blocks.forEachIndexed { localIndex, block ->
+                val fraction = (weightBefore.toFloat() / totalWeight.toFloat()).coerceIn(0f, 1f)
                 if (block.kind == MarkdownBlockKind.Heading && !block.continuesPrevious) {
                     val titleEnd = block.text.offsetByCodePoints(
                         0,
@@ -68,19 +87,27 @@ internal fun documentOutline(items: List<MarkdownPreviewItem>): List<DocumentOut
                     val title = block.text.substring(0, titleEnd).trim()
                     add(
                         DocumentOutlineEntry(
-                            itemIndex,
-                            block.headingLevel,
-                            title,
-                            block.source.start
+                            itemIndex = itemIndex,
+                            level = block.headingLevel,
+                            title = title,
+                            sourceOffset = block.source.start,
+                            blockIndex = item.firstBlockIndex + localIndex,
+                            itemPositionFraction = fraction
                         )
                     )
                 }
+                weightBefore += blockVisualWeight(block)
             }
         }
     }
 
-/** Finds the last heading at or before the visible item using logarithmic lookup. */
-internal fun activeOutlineEntry(entries: List<DocumentOutlineEntry>, itemIndex: Int): Int? {
+/** Finds the active heading at or before the visible item, disambiguating multiple headings in one item. */
+internal fun activeOutlineEntry(
+    entries: List<DocumentOutlineEntry>,
+    itemIndex: Int,
+    itemScrollOffset: Int = 0,
+    itemSize: Int = 0
+): Int? {
     require(itemIndex >= 0) { "visible item index must be nonnegative" }
     var start = 0
     var end = entries.size
@@ -92,7 +119,36 @@ internal fun activeOutlineEntry(entries: List<DocumentOutlineEntry>, itemIndex: 
             end = middle
         }
     }
-    return (start - 1).takeIf { index -> index >= 0 }
+    val lastAtOrBefore = start - 1
+    if (lastAtOrBefore < 0) return null
+    if (entries[lastAtOrBefore].itemIndex < itemIndex) return lastAtOrBefore
+    var firstAtItem = lastAtOrBefore
+    while (firstAtItem > 0 && entries[firstAtItem - 1].itemIndex == itemIndex) {
+        firstAtItem -= 1
+    }
+    val countAtItem = lastAtOrBefore - firstAtItem + 1
+    val scrollFraction = if (itemScrollOffset > 0 && itemSize > 0) {
+        (itemScrollOffset.toFloat() / itemSize.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    if (scrollFraction < entries[firstAtItem].itemPositionFraction && firstAtItem > 0) {
+        return firstAtItem - 1
+    }
+    if (countAtItem <= 1 || itemScrollOffset <= 0 || itemSize <= 0) {
+        return firstAtItem
+    }
+    var active = firstAtItem
+    for (idx in (firstAtItem + 1)..lastAtOrBefore) {
+        val entryFraction = entries[idx].itemPositionFraction
+        val threshold = if (entryFraction > 0f) entryFraction else (idx - firstAtItem).toFloat() / countAtItem.toFloat()
+        if (scrollFraction >= threshold) {
+            active = idx
+        } else {
+            break
+        }
+    }
+    return active
 }
 
 /** Presents a virtualized table of contents with the current section identified. */
@@ -117,13 +173,67 @@ internal fun DocumentOutlineContent(
     entries: List<DocumentOutlineEntry>,
     documentListState: LazyListState,
     onSelect: (DocumentOutlineEntry) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isWidePane: Boolean = false,
+    showTitleHeading: Boolean = true
 ) {
     val activeEntry by remember(entries, documentListState) {
-        derivedStateOf { activeOutlineEntry(entries, documentListState.firstVisibleItemIndex) }
+        derivedStateOf {
+            val firstIndex = documentListState.firstVisibleItemIndex
+            val firstSize = documentListState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.index == firstIndex }
+                ?.size ?: 0
+            activeOutlineEntry(
+                entries = entries,
+                itemIndex = firstIndex,
+                itemScrollOffset = documentListState.firstVisibleItemScrollOffset,
+                itemSize = firstSize
+            )
+        }
+    }
+    val outlineListState = rememberLazyListState(initialFirstVisibleItemIndex = activeEntry ?: 0)
+    val headerDividerAlpha by animateFloatAsState(
+        targetValue = if (outlineListState.canScrollBackward) 1f else 0f,
+        animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+        label = "outlineHeaderDividerAlpha"
+    )
+    if (isWidePane) {
+        LaunchedEffect(activeEntry, documentListState.isScrollInProgress) {
+            val target = activeEntry ?: return@LaunchedEffect
+            if (!documentListState.isScrollInProgress || outlineListState.isScrollInProgress) {
+                return@LaunchedEffect
+            }
+            val layoutInfo = outlineListState.layoutInfo
+            val visible = layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
+            val fullyVisible = visible != null &&
+                visible.offset >= layoutInfo.viewportStartOffset &&
+                visible.offset + visible.size <= layoutInfo.viewportEndOffset
+            if (!fullyVisible) {
+                outlineListState.animateScrollToItem(target)
+            }
+        }
     }
     Column(modifier) {
-        DocumentSheetHeading(title = stringResource(R.string.outline_title), subtitle = title)
+        Box(Modifier.fillMaxWidth()) {
+            if (showTitleHeading) {
+                DocumentSheetHeading(title = stringResource(R.string.outline_title), subtitle = title)
+            } else {
+                Text(
+                    text = title,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            HorizontalDivider(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = headerDividerAlpha)
+            )
+        }
         if (entries.isEmpty()) {
             Text(
                 text = stringResource(R.string.outline_empty),
@@ -134,7 +244,7 @@ internal fun DocumentOutlineContent(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth(),
-                state = rememberLazyListState(initialFirstVisibleItemIndex = activeEntry ?: 0),
+                state = outlineListState,
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -152,7 +262,7 @@ internal fun DocumentOutlineContent(
                         color = if (isCurrent) {
                             MaterialTheme.colorScheme.secondaryContainer
                         } else {
-                            MaterialTheme.colorScheme.surfaceContainerLow
+                            Color.Transparent
                         },
                         contentColor = if (isCurrent) {
                             MaterialTheme.colorScheme.onSecondaryContainer

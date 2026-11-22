@@ -173,11 +173,16 @@ internal class DocumentSelectionLayout(val session: EditorSession) {
         }
         else -> false
     }
-    fun handle(point: SelectionPoint, root: Rect, size: Float): SelectionHandle? = texts.values.firstNotNullOfOrNull { text ->
+    fun handle(
+        point: SelectionPoint,
+        root: Rect,
+        size: Float,
+        obstructions: List<Rect> = emptyList()
+    ): SelectionHandle? = texts.values.firstNotNullOfOrNull { text ->
         val offset = text.offset(point)?.takeIf { it in 0..text.layout.layoutInput.text.length }
             ?: return@firstNotNullOfOrNull null
         val caret = text.position + text.layout.getCursorRect(offset).bottomLeft
-        selectionHandle(caret, text.clipIn(root), root, size)
+        selectionHandle(caret, text.clipIn(root), root, size, obstructions)
     }
 
     fun moveEndpoint(first: Boolean, forward: Boolean): Boolean {
@@ -207,13 +212,28 @@ internal class DocumentSelectionLayout(val session: EditorSession) {
 
 internal data class SelectionHandle(val caret: Offset, val bounds: Rect)
 
-internal fun selectionHandle(caret: Offset, clip: Rect, root: Rect, size: Float): SelectionHandle? {
+internal fun selectionHandle(
+    caret: Offset,
+    clip: Rect,
+    root: Rect,
+    size: Float,
+    obstructions: List<Rect> = emptyList()
+): SelectionHandle? {
     if (clip.isEmpty || caret.x !in clip.left..clip.right || caret.y !in clip.top..clip.bottom) return null
+    if (obstructions.any { it.contains(caret) }) return null
     val width = minOf(size, clip.width)
     val height = minOf(size, root.height)
     val left = (caret.x - width / 2).coerceIn(clip.left, maxOf(clip.left, clip.right - width))
-    val top = caret.y.coerceIn(root.top, maxOf(root.top, root.bottom - height))
-    return SelectionHandle(caret, Rect(left, top, left + width, top + height))
+    val effectiveBottom = obstructions
+        .filter { left < it.right && left + width > it.left && it.top >= caret.y }
+        .minOfOrNull { it.top }
+        ?.let { minOf(root.bottom, it) }
+        ?: root.bottom
+    if (effectiveBottom - root.top < height) return null
+    val top = caret.y.coerceIn(root.top, maxOf(root.top, effectiveBottom - height))
+    val bounds = Rect(left, top, left + width, top + height)
+    if (obstructions.any { it.overlaps(bounds) }) return null
+    return SelectionHandle(caret, bounds)
 }
 
 internal data class SourceFindMarker(val offset: Int, val cursor: Rect, val clip: Rect)
@@ -364,6 +384,7 @@ internal fun DocumentSelectionHost(session: EditorSession, modifier: Modifier = 
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
+    val bottomOverlay = LocalEditorBottomOverlayState.current
     val edge = with(density) { 48.dp.toPx() }
     val color = MaterialTheme.colorScheme.primary
     fun extend(position: Offset) {
@@ -377,9 +398,11 @@ internal fun DocumentSelectionHost(session: EditorSession, modifier: Modifier = 
         while (dragAnchor != null) {
             withFrameNanos { }
             val position = dragPosition ?: continue
+            val overlayHeight = bottomOverlay?.heightPx?.toFloat() ?: 0f
+            val scrollBottomEdge = (root.bottom - overlayHeight - edge).coerceAtLeast(root.top + edge)
             val distance = when {
                 position.y < root.top + edge -> -(root.top + edge - position.y).coerceAtMost(edge)
-                position.y > root.bottom - edge -> (position.y - root.bottom + edge).coerceAtMost(edge)
+                position.y > scrollBottomEdge -> (position.y - scrollBottomEdge).coerceAtMost(edge)
                 else -> 0f
             }
             if (distance != 0f) {
@@ -417,8 +440,10 @@ internal fun DocumentSelectionHost(session: EditorSession, modifier: Modifier = 
                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                 val position = down.position + root.topLeft
                 val endpoints = selectionEndpoints(session.documentSelection)
+                val obstructions = bottomOverlay?.obstructions?.values?.toList().orEmpty()
+                if (obstructions.any { it.contains(position) }) return@awaitEachGesture
                 if (endpoints != null && listOf(endpoints.first, endpoints.second).any { point ->
-                    registry.handle(point, root, edge)?.bounds?.contains(position) == true
+                    registry.handle(point, root, edge, obstructions)?.bounds?.contains(position) == true
                 }) return@awaitEachGesture
                 val measurement = registry.hit(position, exact = true)
                 val selected = measurement?.selected(session.documentSelection)
@@ -492,10 +517,24 @@ internal fun DocumentSelectionHost(session: EditorSession, modifier: Modifier = 
             }
         }
         val endpoints = selectionEndpoints(session.documentSelection)
+        val obstructions = bottomOverlay?.obstructions?.values?.toList().orEmpty()
+        var draggingHandleFirst by remember { mutableStateOf<Boolean?>(null) }
+        var lastStartHandle by remember { mutableStateOf<SelectionHandle?>(null) }
+        var lastEndHandle by remember { mutableStateOf<SelectionHandle?>(null) }
         if (endpoints != null) listOf(true, false).forEach { first ->
             val point = if (first) endpoints.first else endpoints.second
-            val handle = registry.handle(point, root, edge)
+            val liveHandle = registry.handle(point, root, edge, obstructions)
+            if (liveHandle != null) {
+                if (first) lastStartHandle = liveHandle else lastEndHandle = liveHandle
+            }
+            val isDraggingThisHandle = draggingHandleFirst == first
+            val handle = liveHandle ?: if (isDraggingThisHandle) {
+                if (first) lastStartHandle else lastEndHandle
+            } else {
+                null
+            }
             if (handle != null) {
+                val handleVisible = liveHandle != null
                 val handlePosition = handle.caret
                 val bounds = handle.bounds
                 val currentEndpoints by rememberUpdatedState(endpoints)
@@ -516,19 +555,22 @@ internal fun DocumentSelectionHost(session: EditorSession, modifier: Modifier = 
                     .pointerInput(first, registry) {
                         var position = handlePosition
                         detectDragGestures(onDragStart = {
+                            draggingHandleFirst = first
                             dragAnchor = if (first) currentEndpoints.second else currentEndpoints.first
                             position = currentHandlePosition
                             dragPosition = position
-                        }, onDragEnd = { dragAnchor = null; dragPosition = null },
-                            onDragCancel = { dragAnchor = null; dragPosition = null }) { change, amount ->
+                        }, onDragEnd = { draggingHandleFirst = null; dragAnchor = null; dragPosition = null },
+                            onDragCancel = { draggingHandleFirst = null; dragAnchor = null; dragPosition = null }) { change, amount ->
                             position += amount; extend(position); change.consume()
                         }
                     }) {
-                    val dot = minOf(edge / 3, bounds.width, bounds.height)
-                    Box(Modifier.align(androidx.compose.ui.AbsoluteAlignment.TopLeft).absoluteOffset {
-                        IntOffset((handlePosition.x - bounds.left - dot / 2).coerceIn(0f, (bounds.width - dot).coerceAtLeast(0f)).roundToInt(),
-                            (handlePosition.y - bounds.top).coerceIn(0f, (bounds.height - dot).coerceAtLeast(0f)).roundToInt())
-                    }.size(with(density) { dot.toDp() }).background(color, CircleShape))
+                    if (handleVisible) {
+                        val dot = minOf(edge / 3, bounds.width, bounds.height)
+                        Box(Modifier.align(androidx.compose.ui.AbsoluteAlignment.TopLeft).absoluteOffset {
+                            IntOffset((handlePosition.x - bounds.left - dot / 2).coerceIn(0f, (bounds.width - dot).coerceAtLeast(0f)).roundToInt(),
+                                (handlePosition.y - bounds.top).coerceIn(0f, (bounds.height - dot).coerceAtLeast(0f)).roundToInt())
+                        }.size(with(density) { dot.toDp() }).background(color, CircleShape))
+                    }
                 }
             }
         }
@@ -588,6 +630,7 @@ internal fun DocumentSelectionActions(
                 contentAlignment = Alignment.Center
             ) {
                 Surface(
+                    modifier = Modifier.registerBottomOverlayObstruction("selection-message-card"),
                     shape = MaterialTheme.shapes.large,
                     color = MaterialTheme.colorScheme.surfaceContainer,
                     contentColor = MaterialTheme.colorScheme.onSurface
@@ -661,25 +704,41 @@ internal fun DocumentSelectionActions(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (showInlineLabelField) {
-            OutlinedTextField(
-                value = TextFieldValue(activeLabelSelection.text, activeLabelSelection.range),
-                onValueChange = { session.updateLabelSelection(it.selection) },
-                readOnly = true,
-                maxLines = 4,
-                label = { Text(stringResource(R.string.selection_label)) },
-                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
-            )
-        }
-        session.selectionMessage?.let { message ->
-            Text(
-                text = message.asString(),
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                    .semantics { liveRegion = LiveRegionMode.Polite },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                    .padding(bottom = 4.dp)
+                    .registerBottomOverlayObstruction("selection-label-field"),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceContainerLow
+            ) {
+                OutlinedTextField(
+                    value = TextFieldValue(activeLabelSelection.text, activeLabelSelection.range),
+                    onValueChange = { session.updateLabelSelection(it.selection) },
+                    readOnly = true,
+                    maxLines = 4,
+                    label = { Text(stringResource(R.string.selection_label)) },
+                    modifier = Modifier.fillMaxWidth().padding(8.dp)
+                )
+            }
+        }
+        session.selectionMessage?.let { message ->
+            Surface(
+                modifier = Modifier
+                    .padding(bottom = 4.dp)
+                    .registerBottomOverlayObstruction("selection-inline-message"),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            ) {
+                Text(
+                    text = message.asString(),
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
         BoxWithConstraints(
             modifier = Modifier.fillMaxWidth(),

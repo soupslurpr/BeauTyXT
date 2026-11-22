@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 package dev.soupslurpr.beautyxt.ui
 
 import androidx.compose.foundation.layout.Arrangement
@@ -74,7 +75,7 @@ internal fun IncomingShareDialog(
                 )
             },
             confirmButton = {
-                Button(onClick = onDismiss) {
+                Button(onClick = onDismiss, shapes = ButtonDefaults.shapes()) {
                     Text(stringResource(R.string.incoming_keep_current))
                 }
             },
@@ -93,7 +94,7 @@ internal fun IncomingShareDialog(
                 title = { Text(stringResource(R.string.incoming_rejected_title)) },
                 text = { Text(share.message.asString()) },
                 confirmButton = {
-                    Button(onClick = onDismiss) {
+                    Button(onClick = onDismiss, shapes = ButtonDefaults.shapes()) {
                         Text(stringResource(R.string.action_dismiss))
                     }
                 }
@@ -109,7 +110,8 @@ internal fun IncomingShareDialog(
                                 R.string.incoming_shared_file_title
                             )
 
-                            IncomingSourcePurpose.View -> stringResource(
+                            IncomingSourcePurpose.View,
+                            IncomingSourcePurpose.Open -> stringResource(
                                 R.string.incoming_view_file_title
                             )
 
@@ -128,7 +130,8 @@ internal fun IncomingShareDialog(
                                     share.format.displayName
                                 )
 
-                            IncomingSourcePurpose.View ->
+                            IncomingSourcePurpose.View,
+                            IncomingSourcePurpose.Open ->
                                 stringResource(
                                     R.string.incoming_view_file_description,
                                     share.format.displayName
@@ -143,7 +146,7 @@ internal fun IncomingShareDialog(
                     )
                 },
                 confirmButton = {
-                    Button(onClick = onOpenSource, enabled = canOpen) {
+                    Button(onClick = onOpenSource, enabled = canOpen, shapes = ButtonDefaults.shapes()) {
                         Text(
                             if (share.purpose == IncomingSourcePurpose.Edit) {
                                 stringResource(R.string.editor_edit)

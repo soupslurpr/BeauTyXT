@@ -110,7 +110,63 @@ internal fun DocumentSelection.Reading.rangeFor(block: Int, length: Int): TextRa
     return if (from < to) TextRange(from, to) else null
 }
 
-internal fun DocumentSelection.exactSource(document: MarkdownPreviewDocument?): Utf16Range? { return when (this) {
+/** Indexes every non-continuation block's source intervals for O(log N) overlap queries. */
+internal class ReadingSourceRangeIndex(document: MarkdownPreviewDocument) {
+    private val starts: LongArray
+    private val ends: LongArray
+    private val blocks: IntArray
+    private val prefixMaxEnds: LongArray
+
+    init {
+        data class Entry(val start: Long, val end: Long, val block: Int)
+        val entries = ArrayList<Entry>()
+        document.blocks.forEachIndexed { index, block ->
+            if (block.illustrationContinuation) return@forEachIndexed
+            block.sourceMaps.forEach { map ->
+                if (map.source.start < map.source.end) {
+                    entries.add(Entry(map.source.start, map.source.end, index))
+                }
+            }
+        }
+        entries.sortWith(compareBy<Entry> { it.start }.thenBy { it.end }.thenBy { it.block })
+        val count = entries.size
+        starts = LongArray(count)
+        ends = LongArray(count)
+        blocks = IntArray(count)
+        prefixMaxEnds = LongArray(count)
+        var runningMax = Long.MIN_VALUE
+        for (index in 0 until count) {
+            val entry = entries[index]
+            starts[index] = entry.start
+            ends[index] = entry.end
+            blocks[index] = entry.block
+            if (entry.end > runningMax) runningMax = entry.end
+            prefixMaxEnds[index] = runningMax
+        }
+    }
+
+    /** Returns whether any interval outside [startBlock..endBlock] overlaps (rangeStart, rangeEnd). */
+    fun hasOverlapOutside(startBlock: Int, endBlock: Int, rangeStart: Long, rangeEnd: Long): Boolean {
+        if (starts.isEmpty() || rangeStart >= rangeEnd) return false
+        var low = 0
+        var high = starts.size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (starts[middle] < rangeEnd) low = middle + 1 else high = middle
+        }
+        var index = low - 1
+        while (index >= 0 && prefixMaxEnds[index] > rangeStart) {
+            if (ends[index] > rangeStart && blocks[index] !in startBlock..endBlock) return true
+            index--
+        }
+        return false
+    }
+}
+
+internal fun DocumentSelection.exactSource(
+    document: MarkdownPreviewDocument?,
+    sourceIndex: ReadingSourceRangeIndex? = null
+): Utf16Range? { return when (this) {
     is DocumentSelection.Source -> range
     is DocumentSelection.Label -> null
     is DocumentSelection.Reading -> document?.let { model ->
@@ -129,12 +185,16 @@ internal fun DocumentSelection.exactSource(document: MarkdownPreviewDocument?): 
             ending = range.end
         }
         val range = Utf16Range(beginning ?: return null, ending ?: return null)
-        if (range.start < range.end && model.blocks.indices.any { index ->
-            index !in start.block..end.block && !model.blocks[index].illustrationContinuation &&
-                model.blocks[index].sourceMaps.any { map ->
-                map.source.start < range.end && map.source.end > range.start
-            }
-        }) return null
+        if (range.start < range.end) {
+            val overlapsOutside = sourceIndex?.hasOverlapOutside(start.block, end.block, range.start, range.end)
+                ?: model.blocks.indices.any { index ->
+                    index !in start.block..end.block && !model.blocks[index].illustrationContinuation &&
+                        model.blocks[index].sourceMaps.any { map ->
+                        map.source.start < range.end && map.source.end > range.start
+                    }
+                }
+            if (overlapsOutside) return null
+        }
         range
     }
 } }

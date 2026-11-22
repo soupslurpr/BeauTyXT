@@ -30,4 +30,39 @@
     <string name="feedback_stale_view">This view is out of date. Reload the document to continue.</string>
     <string name="feedback_reload_confirmation">Discard your open edits and replace them with the file’s latest contents? This can’t be undone.</string>
     <string name="feedback_overwrite_confirmation">Replace the file’s current contents with your open edits? Changes made in another app will be lost.</string>
+    <string name="feedback_compare_changes">Compare changes</string>
+    <string name="feedback_compare_loading">Reading the file to compare changes…</string>
+    <string name="feedback_compare_failed">Couldn’t compare changes right now.</string>
+    <plurals name="feedback_compare_local_lines">
+        <item quantity="one">+%1$d local line</item>
+        <item quantity="other">+%1$d local lines</item>
+    </plurals>
+    <plurals name="feedback_compare_file_lines">
+        <item quantity="one">−%1$d file line</item>
+        <item quantity="other">−%1$d file lines</item>
+    </plurals>
+    <string name="feedback_compare_summary">%1$s · %2$s</string>
+    <string name="feedback_compare_partial">Showing a bounded portion of the differences. You can still save as a new file.</string>
+    <string name="feedback_compare_text_identical">Text is identical. Only file encoding or line endings differ.</string>
+    <string name="feedback_compare_no_differences">Your open text matches the current file.</string>
+    <plurals name="feedback_compare_differences_beyond_preview">
+        <item quantity="one">No line differences found in the first %1$d compared line. The rest of the file was not compared.</item>
+        <item quantity="other">No line differences found in the first %1$d compared lines. The rest of the file was not compared.</item>
+    </plurals>
+    <string name="feedback_compare_format_bom_added">Local copy has a UTF-8 BOM; file on disk does not.</string>
+    <string name="feedback_compare_format_bom_removed">File on disk has a UTF-8 BOM; local copy does not.</string>
+    <string name="feedback_compare_format_line_endings">Line endings differ: %1$s in file vs %2$s locally.</string>
+    <string name="feedback_compare_format_line_ending_positions">Line-ending positions differ between the file on disk and your local copy.</string>
+    <string name="feedback_compare_line_endings_lf">LF</string>
+    <string name="feedback_compare_line_endings_crlf">CRLF</string>
+    <string name="feedback_compare_line_endings_cr">CR</string>
+    <string name="feedback_compare_line_endings_none">None</string>
+    <string name="feedback_compare_hunk_header">File line %1$d · Local line %2$d</string>
+    <string name="feedback_compare_line_removed">File: %1$s</string>
+    <string name="feedback_compare_line_added">Local: %1$s</string>
+    <string name="feedback_compare_line_context">Unchanged: %1$s</string>
+    <string name="feedback_compare_local_edited">Your open text changed since this comparison. Refresh to review the latest changes before overwriting.</string>
+    <string name="feedback_compare_refresh">Refresh comparison</string>
+    <string name="feedback_compare_overwrite_reviewed">Overwrite file with reviewed edits</string>
+    <string name="feedback_compare_overwrite_partial">Overwrite file anyway (partial preview)</string>
 </resources>

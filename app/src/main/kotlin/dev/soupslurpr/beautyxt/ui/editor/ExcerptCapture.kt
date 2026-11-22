@@ -68,6 +68,8 @@ internal fun readingSelectionForSource(document: MarkdownPreviewDocument, select
     val start = point(selection.range.start, false) ?: return null
     val end = point(selection.range.end, true) ?: return null
     if (start >= end || atomicReadingPoint(document, start, false) != start || atomicReadingPoint(document, end, true) != end) return null
-    return if (selection.anchor <= selection.focus) DocumentSelection.Reading(selection.revision, start, end)
+    val candidate = if (selection.anchor <= selection.focus) DocumentSelection.Reading(selection.revision, start, end)
         else DocumentSelection.Reading(selection.revision, end, start)
+    if (candidate.exactSource(document) != selection.range) return null
+    return candidate
 }

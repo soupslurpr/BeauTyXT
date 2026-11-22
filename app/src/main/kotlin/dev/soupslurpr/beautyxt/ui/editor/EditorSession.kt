@@ -14,7 +14,9 @@ import androidx.compose.ui.text.input.TextFieldValue
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.document.DocumentFormat
 import dev.soupslurpr.beautyxt.document.DocumentChange
+import dev.soupslurpr.beautyxt.document.DocumentDiff
 import dev.soupslurpr.beautyxt.document.DocumentInsertion
+import dev.soupslurpr.beautyxt.document.SourceVersion
 import dev.soupslurpr.beautyxt.document.inverseChanges
 import dev.soupslurpr.beautyxt.document.DocumentPatch
 import dev.soupslurpr.beautyxt.document.DocumentSearch
@@ -41,6 +43,7 @@ import dev.soupslurpr.beautyxt.importing.client.SelectedDocumentMetadata
 import dev.soupslurpr.beautyxt.importing.client.sanitizeSelectedDocumentDisplayName
 import dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument
 import dev.soupslurpr.beautyxt.markdown.MarkdownProtocol
+import dev.soupslurpr.beautyxt.markdown.sourceUtf16OffsetForRendered
 import dev.soupslurpr.beautyxt.markdown.client.MarkdownRenderException
 import dev.soupslurpr.beautyxt.markdown.client.MarkdownRenderer
 import dev.soupslurpr.beautyxt.printing.PrintContentMode
@@ -158,7 +161,9 @@ internal enum class RestorationReason { Navigation, Appearance }
 internal class ViewportRestoration(
     val anchor: SemanticViewportAnchor,
     val reason: RestorationReason = RestorationReason.Navigation,
-    val findRange: Utf16Range? = null
+    val findRange: Utf16Range? = null,
+    val targetBlockIndex: Int? = null,
+    val targetRenderedOffset: Int = 0
 )
 
 /** Describes the newest retained Markdown preview attempt. */
@@ -583,6 +588,28 @@ internal enum class SourceConflictResolution {
     Overwrite
 }
 
+/** Represents the read-only diff state shown in Compare changes for a source conflict. */
+internal sealed interface SourceConflictComparisonState {
+    /** Reading external bytes and computing a bounded diff off the UI thread. */
+    data object Loading : SourceConflictComparisonState
+
+    /** Holds one bounded diff frozen against an exact local revision and external version. */
+    data class Ready(
+        val localRevision: Long,
+        val externalVersion: SourceVersion,
+        val diff: DocumentDiff
+    ) : SourceConflictComparisonState
+
+    /** Reports one sanitized failure reading or diffing the external source. */
+    data class Failed(val message: UiText) : SourceConflictComparisonState
+}
+
+/** Binds one confirmed overwrite from Compare changes to its exact reviewed snapshots. */
+internal data class ReviewedSourceOverwrite(
+    val localRevision: Long,
+    val externalVersion: SourceVersion
+)
+
 /** Owns one live document, bounded draft, and configuration-stable operations. */
 @Stable
 internal class EditorSession
@@ -608,7 +635,13 @@ internal constructor(
         ::readSharedTextSnapshot,
     private val qrTransferProcessor: QrTransferProcessor? = null,
     private val nfcTransferProcessor: NfcTransferProcessor? = null,
-    private val findNanoTime: () -> Long = System::nanoTime
+    private val findNanoTime: () -> Long = System::nanoTime,
+    private val backgroundDispatcher: CoroutineDispatcher =
+        if (operationDispatcher == Dispatchers.Main || operationDispatcher == Dispatchers.Main.immediate) {
+            Dispatchers.Default
+        } else {
+            operationDispatcher
+        }
 ) : AutoCloseable {
     init {
         require(
@@ -683,6 +716,9 @@ internal constructor(
     private var sourceSaveJob: Job? = null
     private var documentRemovalJob: Job? = null
     private var overwriteSourceOnNextSave = false
+    private var reviewedSourceOverwrite: ReviewedSourceOverwrite? = null
+    private var sourceConflictComparisonJob: Job? = null
+    private var sourceConflictComparisonGeneration = 0L
     private var unlockEditingAfterSourceSave = false
     private var queuedSourceReplacementEditTarget: SourceReplacementEditTarget? = null
     private var pendingSourceReplacementEditTarget: PendingSourceReplacementEditTarget? = null
@@ -769,7 +805,16 @@ internal constructor(
     private var findReadingProjection: ReadingSelectionProjection? = null
     private var validatedReadingProjectionVersion: Pair<MarkdownPreviewDocument, Long>? = null
 
+    private data class ReadingSearchCacheEntry(
+        val rawDocument: dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument,
+        val illustrationVersion: Long,
+        val includeIllustrationSource: Boolean,
+        val units: ReadingSearchUnits,
+        val sourceIndex: ReadingSourceRangeIndex
+    )
+
     private var selectionReadingCache: Triple<dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument, Long, dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument>? = null
+    private var readingSearchCache: ReadingSearchCacheEntry? = null
 
     fun readingDocumentForSelection(): dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument? {
         val ready = (markdownPreviewStatus as? MarkdownPreviewStatus.Ready)
@@ -1203,6 +1248,26 @@ internal constructor(
 
     var sourceConflictResolution by mutableStateOf<SourceConflictResolution?>(null)
         private set
+
+    var sourceConflictComparison by mutableStateOf<SourceConflictComparisonState?>(null)
+        private set
+
+    /** Reports whether read-only conflict comparison can inspect the retained source file. */
+    val canCompareSourceConflict: Boolean
+        get() =
+            hasAvailableSourceConflict() &&
+                (ownedDocumentSource as? ConflictRecoverableEditorDocumentSource)
+                    ?.canCompareExternalSource == true &&
+                sourceConflictResolution == null
+
+    /** Reports whether local edits moved past the frozen revision shown in Compare changes. */
+    val hasNewerLocalEditsSinceComparison: Boolean
+        get() = (sourceConflictComparison as? SourceConflictComparisonState.Ready)?.let { ready ->
+            state.metrics?.revision != ready.localRevision ||
+                state.hasActiveDraftChanges ||
+                state.status == EditorDocumentStatus.ApplyingEdit ||
+                activeDraft?.hasChanges == true
+        } == true
 
     var shareStatus by mutableStateOf<ShareStatus>(ShareStatus.Idle)
         private set
@@ -1888,22 +1953,41 @@ internal constructor(
         locations.record(currentDocumentLocation(), DocumentLocation(revision, presentation, entry.sourceOffset))
         locationVersion++
         markdownPreviewStatus = ready.copy(
-            scrollRestoration = ViewportRestoration(SemanticViewportAnchor(revision, entry.sourceOffset, 0))
+            scrollRestoration = ViewportRestoration(
+                anchor = SemanticViewportAnchor(revision, entry.sourceOffset, 0),
+                targetBlockIndex = entry.blockIndex.takeIf { it in ready.document.blocks.indices }
+            )
         )
         observeMarkdownPreviewViewportAnchor(revision, entry.sourceOffset)
         return true
     }
 
     /** References and footnotes create independent return locations. */
-    fun navigateToReadingBlock(revision: Long, blockIndex: Int): Boolean {
+    fun navigateToReadingBlock(revision: Long, blockIndex: Int): Boolean =
+        navigateToReadingLocation(revision, blockIndex, 0)
+
+    /** Navigates to an exact rendered block and character offset within the current revision. */
+    fun navigateToReadingLocation(revision: Long, blockIndex: Int, renderedOffset: Int = 0): Boolean {
         val ready = markdownPreviewStatus as? MarkdownPreviewStatus.Ready ?: return false
         val block = ready.document.blocks.getOrNull(blockIndex) ?: return false
         if (ready.revision != revision || state.metrics?.revision != revision ||
             presentation != EditorPresentation.MarkdownPreview) return false
-        locations.record(currentDocumentLocation(), DocumentLocation(revision, presentation, block.source.start))
+        val clampedOffset = renderedOffset.coerceIn(0, block.text.length)
+        val sourceOffset = if (clampedOffset > 0) {
+            block.sourceUtf16OffsetForRendered(clampedOffset)
+        } else {
+            block.source.start
+        }
+        locations.record(currentDocumentLocation(), DocumentLocation(revision, presentation, sourceOffset))
         locationVersion++
-        markdownPreviewStatus = ready.copy(scrollRestoration = ViewportRestoration(SemanticViewportAnchor(revision, block.source.start, 0)))
-        observeMarkdownPreviewViewportAnchor(revision, block.source.start)
+        markdownPreviewStatus = ready.copy(
+            scrollRestoration = ViewportRestoration(
+                anchor = SemanticViewportAnchor(revision, sourceOffset, 0),
+                targetBlockIndex = blockIndex,
+                targetRenderedOffset = clampedOffset
+            )
+        )
+        observeMarkdownPreviewViewportAnchor(revision, sourceOffset)
         return true
     }
 
@@ -3435,6 +3519,21 @@ internal constructor(
         ) {
             return
         }
+        val reviewed = reviewedSourceOverwrite
+        if (
+            reviewed != null &&
+            (
+                state.metrics?.revision != reviewed.localRevision ||
+                    state.hasActiveDraftChanges ||
+                    state.status == EditorDocumentStatus.ApplyingEdit ||
+                    activeDraft?.hasChanges == true
+                )
+        ) {
+            overwriteSourceOnNextSave = false
+            reviewedSourceOverwrite = null
+            publishSourceSaveConflict(DocumentExportFailure.SOURCE_CONFLICT.userMessage)
+            return
+        }
         sourceSaveStatus = SourceSaveStatus.Pending
         ensureSourceSave()
     }
@@ -3462,6 +3561,141 @@ internal constructor(
         sourceConflictResolution = null
     }
 
+    /** Opens a read-only bounded diff between the external file and the settled local revision. */
+    fun requestSourceConflictComparison(): Boolean {
+        val recoverable = ownedDocumentSource as? ConflictRecoverableEditorDocumentSource
+            ?: return false
+        if (!hasAvailableSourceConflict() || !recoverable.canCompareExternalSource) {
+            return false
+        }
+        sourceConflictResolution = null
+        val generation = Math.incrementExact(sourceConflictComparisonGeneration)
+        sourceConflictComparisonGeneration = generation
+        sourceConflictComparisonJob?.cancel()
+        sourceConflictComparison = SourceConflictComparisonState.Loading
+        checkpointPendingEdit()
+        sourceConflictComparisonJob = operationScope.launch {
+            try {
+                editSynchronizationDelayJob?.cancel()
+                while (!closeStarted.get() && generation == sourceConflictComparisonGeneration) {
+                    val syncJob = editSynchronizationJob ?: break
+                    syncJob.join()
+                }
+                if (closeStarted.get() || generation != sourceConflictComparisonGeneration || !hasAvailableSourceConflict()) {
+                    return@launch
+                }
+                if (
+                    activeDraft?.hasChanges == true ||
+                    state.hasActiveDraftChanges ||
+                    state.status != EditorDocumentStatus.Ready
+                ) {
+                    if (generation == sourceConflictComparisonGeneration) {
+                        sourceConflictComparison = SourceConflictComparisonState.Failed(
+                            UiText.Resource(R.string.feedback_compare_failed)
+                        )
+                    }
+                    return@launch
+                }
+                val localCapture = state.captureDocumentRevision()
+                if (localCapture == null) {
+                    if (generation == sourceConflictComparisonGeneration) {
+                        sourceConflictComparison = SourceConflictComparisonState.Failed(
+                            UiText.Resource(R.string.feedback_compare_failed)
+                        )
+                    }
+                    return@launch
+                }
+                localCapture.use { local ->
+                    val externalInput = recoverable.openExternalForComparison()
+                    if (externalInput == null) {
+                        if (generation == sourceConflictComparisonGeneration) {
+                            sourceConflictComparison = SourceConflictComparisonState.Failed(
+                                UiText.Resource(R.string.feedback_compare_failed)
+                            )
+                        }
+                        return@launch
+                    }
+                    externalInput.use { external ->
+                        val diff = withContext(backgroundDispatcher) {
+                            external.snapshot.diffWith(local.snapshot)
+                        }
+                        if (
+                            !closeStarted.get() &&
+                            generation == sourceConflictComparisonGeneration &&
+                            hasAvailableSourceConflict()
+                        ) {
+                            sourceConflictComparison = SourceConflictComparisonState.Ready(
+                                localRevision = local.metrics.revision,
+                                externalVersion = external.sourceVersion,
+                                diff = diff
+                            )
+                        }
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                if (!closeStarted.get() && generation == sourceConflictComparisonGeneration) {
+                    sourceConflictComparison = SourceConflictComparisonState.Failed(
+                        UiText.Resource(R.string.feedback_compare_failed)
+                    )
+                }
+            } catch (_: LinkageError) {
+                if (!closeStarted.get() && generation == sourceConflictComparisonGeneration) {
+                    sourceConflictComparison = SourceConflictComparisonState.Failed(
+                        UiText.Resource(R.string.feedback_compare_failed)
+                    )
+                }
+            }
+        }
+        return true
+    }
+
+    /** Closes Compare changes without modifying the live source baseline or writing any bytes. */
+    fun dismissSourceConflictComparison() {
+        sourceConflictComparisonGeneration = Math.incrementExact(sourceConflictComparisonGeneration)
+        sourceConflictComparisonJob?.cancel()
+        sourceConflictComparisonJob = null
+        sourceConflictComparison = null
+    }
+
+    /** Transitions from Compare changes to the reload confirmation dialog. */
+    fun requestReloadFromComparison(): Boolean {
+        dismissSourceConflictComparison()
+        return requestSourceReloadConfirmation()
+    }
+
+    /** Queues one overwrite bound strictly to the exact local revision and external version reviewed. */
+    fun confirmReviewedSourceOverwrite(): Boolean {
+        val ready = sourceConflictComparison as? SourceConflictComparisonState.Ready ?: return false
+        if (
+            !hasAvailableSourceConflict() ||
+            ownedDocumentSource !is ConflictRecoverableEditorDocumentSource ||
+            state.metrics?.revision != ready.localRevision ||
+            state.hasActiveDraftChanges ||
+            state.status == EditorDocumentStatus.ApplyingEdit ||
+            activeDraft?.hasChanges == true
+        ) {
+            return false
+        }
+        dismissSourceConflictComparison()
+        sourceConflictResolution = null
+        reviewedSourceOverwrite = ReviewedSourceOverwrite(
+            localRevision = ready.localRevision,
+            externalVersion = ready.externalVersion
+        )
+        overwriteSourceOnNextSave = true
+        sourceSaveRequestVersion = Math.incrementExact(sourceSaveRequestVersion)
+        sourceMetadata
+            ?.takeIf { metadata -> metadata.lastModifiedEpochMillis != null }
+            ?.let { metadata ->
+                sourceMetadata = metadata.copy(lastModifiedEpochMillis = null)
+            }
+        sourceSaveStatus = SourceSaveStatus.Pending
+        ensureSourceSave()
+        return true
+    }
+
     /** Claims the current source URI and locks editing for one confirmed reload. */
     fun beginSourceReload(): String? {
         if (
@@ -3474,6 +3708,8 @@ internal constructor(
             ?.takeUnless(String::isBlank)
             ?: return null
         sourceConflictResolution = null
+        reviewedSourceOverwrite = null
+        dismissSourceConflictComparison()
         sourceSaveStatus = SourceSaveStatus.Reloading
         return encodedUri
     }
@@ -3496,6 +3732,8 @@ internal constructor(
             return false
         }
         sourceConflictResolution = null
+        reviewedSourceOverwrite = null
+        dismissSourceConflictComparison()
         overwriteSourceOnNextSave = true
         sourceSaveRequestVersion = Math.incrementExact(sourceSaveRequestVersion)
         sourceMetadata
@@ -4275,7 +4513,9 @@ internal constructor(
         pendingSourceReplacementEditTarget = null
         ownedDocumentSource = documentSource
         overwriteSourceOnNextSave = false
+        reviewedSourceOverwrite = null
         sourceConflictResolution = null
+        dismissSourceConflictComparison()
         unlockEditingAfterSourceSave = isViewOnly
         val selectedMetadata =
             sourceMetadata ?: SelectedDocumentMetadata(displayName = sourceDisplayName)
@@ -4365,6 +4605,7 @@ internal constructor(
         cancelNfcWrite()
         cancelPendingEditWindowAction()
         dismissSourceConflictConfirmation()
+        dismissSourceConflictComparison()
         checkpointPendingEdit()
         if (!canCloseSafely) {
             isClosePending = true
@@ -4478,7 +4719,9 @@ internal constructor(
         val preparedPrintRequest = (printStatus as? PrintStatus.Ready)?.request
         unlockEditingAfterSourceSave = false
         overwriteSourceOnNextSave = false
+        reviewedSourceOverwrite = null
         sourceConflictResolution = null
+        dismissSourceConflictComparison()
         queuedSourceReplacementEditTarget = null
         pendingSourceReplacementEditTarget = null
         sourceSaveEditTarget = null
@@ -4737,6 +4980,7 @@ internal constructor(
         markdownPreviewJob = null
         markdownPreviewStatus = MarkdownPreviewStatus.Idle
         selectionReadingCache = null
+        readingSearchCache = null
         validatedReadingProjectionVersion = null
     }
 
@@ -5018,7 +5262,28 @@ internal constructor(
                     validateReadingSelectionProjections()
                     if (!owned() || isFindScopePaused) return@launch
                     val searchDocument = readingDocumentForSelection() ?: return@launch
-                    val units = readingSearchUnits(searchDocument, includeIllustrationSource)
+                    val illustrationVersion = reading.layout.illustrationCache.version
+                    val cachedSearch = readingSearchCache?.takeIf {
+                        it.rawDocument === reading.document &&
+                            it.illustrationVersion == illustrationVersion &&
+                            it.includeIllustrationSource == includeIllustrationSource
+                    } ?: withContext(backgroundDispatcher) {
+                        val builtUnits = readingSearchUnits(searchDocument, includeIllustrationSource)
+                        val builtIndex = ReadingSourceRangeIndex(searchDocument)
+                        ReadingSearchCacheEntry(
+                            rawDocument = reading.document,
+                            illustrationVersion = illustrationVersion,
+                            includeIllustrationSource = includeIllustrationSource,
+                            units = builtUnits,
+                            sourceIndex = builtIndex
+                        )
+                    }.also { built ->
+                        if (owned()) readingSearchCache = built
+                    }
+                    validateReadingSelectionProjections()
+                    if (!owned() || isFindScopePaused) return@launch
+                    val units = cachedSearch.units
+                    val sourceIndex = cachedSearch.sourceIndex
                     val selection = capturedReadingFindScope ?: capturedFindScope?.let {
                         readingSelectionForSource(searchDocument, DocumentSelection.Source(revision, it.start, it.end))
                     }
@@ -5043,11 +5308,36 @@ internal constructor(
                             break
                         }
                         while (owned()) {
-                            val page = state.searchText(search, unit.text, unitScope, cursor)
+                            val page = if (!options.regex && unit.text.length > MAX_READING_LITERAL_CANDIDATE_UTF16) {
+                                val window = readingLiteralSearchWindow(
+                                    text = unit.text,
+                                    scope = unitScope,
+                                    cursor = cursor,
+                                    wholeWord = options.wholeWord
+                                )
+                                if (window == null) {
+                                    dev.soupslurpr.beautyxt.document.SearchPage(
+                                        revision = revision,
+                                        hits = emptyList(),
+                                        completion = SearchCompletion.ContextLimit,
+                                        next = cursor
+                                    )
+                                } else {
+                                    val rawPage = state.searchText(
+                                        search,
+                                        unit.text.substring(window.windowStart, window.windowEnd),
+                                        window.localScope,
+                                        window.localCursor
+                                    )
+                                    rebaseReadingLiteralSearchPage(window, unitScope.end, rawPage)
+                                }
+                            } else {
+                                state.searchText(search, unit.text, unitScope, cursor)
+                            }
                             searchedUnit = true
                             validateReadingSelectionProjections()
                             if (!owned()) return@launch
-                            if (!accept(page.hits.map { readingSearchResult(searchDocument, unit, it) }, unitIndex)) {
+                            if (!accept(page.hits.map { readingSearchResult(searchDocument, unit, it, sourceIndex) }, unitIndex)) {
                                 complete = false
                                 break@outer
                             }
@@ -5690,6 +5980,7 @@ internal constructor(
             } == true
         ) {
             overwriteSourceOnNextSave = false
+            reviewedSourceOverwrite = null
             publishSourceSaveFailure(SOURCE_SAVE_TOO_LARGE_MESSAGE)
             return
         }
@@ -5698,12 +5989,15 @@ internal constructor(
         }
         val requestedVersion = sourceSaveRequestVersion
         val overwriteSource = overwriteSourceOnNextSave
+        val reviewedOverwrite = reviewedSourceOverwrite
         if (overwriteSource && documentSource !is ConflictRecoverableEditorDocumentSource) {
             overwriteSourceOnNextSave = false
+            reviewedSourceOverwrite = null
             publishSourceSaveConflict(DocumentExportFailure.SOURCE_CONFLICT.userMessage)
             return
         }
         overwriteSourceOnNextSave = false
+        reviewedSourceOverwrite = null
         sourceSaveStatus = SourceSaveStatus.Saving
         lateinit var saveJob: Job
         saveJob =
@@ -5711,7 +6005,8 @@ internal constructor(
                 saveSourceRevision(
                     documentSource = documentSource,
                     requestedVersion = requestedVersion,
-                    overwriteSource = overwriteSource
+                    overwriteSource = overwriteSource,
+                    reviewedOverwrite = reviewedOverwrite
                 )
             }
         sourceSaveJob = saveJob
@@ -5725,11 +6020,23 @@ internal constructor(
     private suspend fun saveSourceRevision(
         documentSource: WritableEditorDocumentSource,
         requestedVersion: Long,
-        overwriteSource: Boolean
+        overwriteSource: Boolean,
+        reviewedOverwrite: ReviewedSourceOverwrite?
     ) {
         try {
-            val saveRevision =
-                if (overwriteSource) {
+            val saveRevision: suspend (EditorDocumentSnapshot, Long) -> Unit =
+                if (reviewedOverwrite != null) {
+                    val recoverableSource =
+                        documentSource as? ConflictRecoverableEditorDocumentSource
+                            ?: error("source overwrite capability changed")
+                    suspend { snapshot: EditorDocumentSnapshot, expectedBytes: Long ->
+                        recoverableSource.overwriteReviewedRevision(
+                            snapshot = snapshot,
+                            expectedBytes = expectedBytes,
+                            reviewedExternalVersion = reviewedOverwrite.externalVersion
+                        )
+                    }
+                } else if (overwriteSource) {
                     val recoverableSource =
                         documentSource as? ConflictRecoverableEditorDocumentSource
                             ?: error("source overwrite capability changed")
@@ -5740,12 +6047,18 @@ internal constructor(
             val savedRevision =
                 state.saveDocument(
                     purpose = DocumentSavePurpose.Source,
+                    requiredRevision = reviewedOverwrite?.localRevision,
                     saveRevision = saveRevision
                 )
             if (savedRevision == null) {
                 if (canPublishSourceSave(documentSource)) {
-                    overwriteSourceOnNextSave = overwriteSource
-                    sourceSaveStatus = SourceSaveStatus.Pending
+                    if (reviewedOverwrite != null && state.metrics?.revision != reviewedOverwrite.localRevision) {
+                        publishSourceSaveConflict(DocumentExportFailure.SOURCE_CONFLICT.userMessage)
+                    } else {
+                        overwriteSourceOnNextSave = overwriteSource
+                        reviewedSourceOverwrite = reviewedOverwrite
+                        sourceSaveStatus = SourceSaveStatus.Pending
+                    }
                 }
                 return
             }
@@ -5795,27 +6108,31 @@ internal constructor(
                             } else {
                                 SOURCE_SAVE_TOO_LARGE_MESSAGE
                             },
-                        retryOverwrite = overwriteSource
+                        retryOverwrite = overwriteSource,
+                        retryReviewedOverwrite = reviewedOverwrite
                     )
 
                 else ->
                     publishSourceSaveFailure(
                         message = SOURCE_SAVE_FAILURE_MESSAGE,
-                        retryOverwrite = overwriteSource
+                        retryOverwrite = overwriteSource,
+                        retryReviewedOverwrite = reviewedOverwrite
                     )
             }
         } catch (_: Exception) {
             if (canPublishSourceSave(documentSource)) {
                 publishSourceSaveFailure(
                     message = SOURCE_SAVE_FAILURE_MESSAGE,
-                    retryOverwrite = overwriteSource
+                    retryOverwrite = overwriteSource,
+                    retryReviewedOverwrite = reviewedOverwrite
                 )
             }
         } catch (_: LinkageError) {
             if (canPublishSourceSave(documentSource)) {
                 publishSourceSaveFailure(
                     message = SOURCE_SAVE_FAILURE_MESSAGE,
-                    retryOverwrite = overwriteSource
+                    retryOverwrite = overwriteSource,
+                    retryReviewedOverwrite = reviewedOverwrite
                 )
             }
         }
@@ -5884,9 +6201,15 @@ internal constructor(
     }
 
     /** Latches one sanitized source failure until the user explicitly retries. */
-    private fun publishSourceSaveFailure(message: UiText, retryOverwrite: Boolean = false) {
+    private fun publishSourceSaveFailure(
+        message: UiText,
+        retryOverwrite: Boolean = false,
+        retryReviewedOverwrite: ReviewedSourceOverwrite? = null
+    ) {
         overwriteSourceOnNextSave = retryOverwrite
+        reviewedSourceOverwrite = retryReviewedOverwrite
         sourceConflictResolution = null
+        dismissSourceConflictComparison()
         sourceSaveStatus = SourceSaveStatus.Failed(message)
         cancelSaveBeforeClose()
     }
@@ -5894,7 +6217,9 @@ internal constructor(
     /** Latches one external source conflict without offering a destructive retry. */
     private fun publishSourceSaveConflict(message: UiText) {
         overwriteSourceOnNextSave = false
+        reviewedSourceOverwrite = null
         sourceConflictResolution = null
+        dismissSourceConflictComparison()
         sourceSaveStatus = SourceSaveStatus.Conflict(message)
         cancelSaveBeforeClose()
     }
@@ -5902,7 +6227,9 @@ internal constructor(
     /** Latches one unverifiable write without offering an unconditional retry. */
     private fun publishSourceSaveUncertainty(message: UiText) {
         overwriteSourceOnNextSave = false
+        reviewedSourceOverwrite = null
         sourceConflictResolution = null
+        dismissSourceConflictComparison()
         sourceSaveStatus = SourceSaveStatus.Uncertain(message)
         cancelSaveBeforeClose()
     }

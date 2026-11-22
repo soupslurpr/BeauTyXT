@@ -128,6 +128,12 @@ internal fun Instrumentation.verifyPackagedDocumentExperience(
             localActivity = startActivitySync(Intent(targetContext, HomeActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
             selectHomeSource(source, "text/markdown")
+            // Home opens recognized Markdown in Reading while preserving write access.
+            val expectedReadingText = if (largePaste) "seed" else "Staging review"
+            waitForAccessibilityNode("rendered Home Markdown heading") {
+                !it.isEditable && it.text?.toString()?.contains(expectedReadingText) == true
+            }
+            requireActionableContentDescription("Show source text").performRequiredClick()
         } else {
             val intent = Intent(Intent.ACTION_EDIT)
                 .setClassName(app, "dev.soupslurpr.beautyxt.MainActivity")

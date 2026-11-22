@@ -199,6 +199,7 @@ internal fun BeauTyXTApp(
                         saveSelectedDestination(
                             session = session,
                             applicationContext = applicationContext,
+                            importer = importer,
                             exporter = exporter,
                             request = request,
                             uri = uri
@@ -221,6 +222,7 @@ internal fun BeauTyXTApp(
                         saveSelectedDestination(
                             session = session,
                             applicationContext = applicationContext,
+                            importer = importer,
                             exporter = exporter,
                             request = request,
                             uri = uri
@@ -660,25 +662,32 @@ private suspend fun createIncomingSourceEditor(
     markdownRenderer: IsolatedMarkdownRenderer,
     transferProcessor: IsolatedTransferProcessor,
     nfcTransferProcessor: NfcTransferProcessor?
-): EditorSession = createImportedEditorSession(
-    importedDocument =
-        importer.open(
-            uri = share.encodedUri.toUri(),
-            allowSourceWriteAccess = share.purpose == IncomingSourcePurpose.Edit
-        ),
-    exporter = exporter,
-    markdownRenderer = markdownRenderer,
-    qrTransferProcessor = transferProcessor,
-    nfcTransferProcessor = nfcTransferProcessor,
-    sourcePurpose = share.purpose,
-    sourceFormat = share.format,
-    sourcePolicy =
-        if (share.purpose == IncomingSourcePurpose.Edit) {
-            ImportedSourcePolicy.PreferWritable
-        } else {
-            ImportedSourcePolicy.ReadOnly
+): EditorSession {
+    val prefersWritable = share.purpose == IncomingSourcePurpose.Edit ||
+        share.purpose == IncomingSourcePurpose.Open
+    return createImportedEditorSession(
+        importedDocument =
+            importer.open(
+                uri = share.encodedUri.toUri(),
+                allowSourceWriteAccess = prefersWritable
+            ),
+        exporter = exporter,
+        markdownRenderer = markdownRenderer,
+        qrTransferProcessor = transferProcessor,
+        nfcTransferProcessor = nfcTransferProcessor,
+        sourcePurpose = share.purpose,
+        sourceFormat = share.format,
+        sourcePolicy =
+            if (prefersWritable) {
+                ImportedSourcePolicy.PreferWritable
+            } else {
+                ImportedSourcePolicy.ReadOnly
+            },
+        readOnlyImporter = { uri ->
+            importer.open(uri = uri, allowSourceWriteAccess = false)
         }
-)
+    )
+}
 
 /** Returns discovery hints for provider-reported plain text and Markdown files. */
 internal fun openDocumentMimeTypes(): Array<String> = arrayOf(
@@ -692,6 +701,7 @@ internal fun openDocumentMimeTypes(): Array<String> = arrayOf(
 private suspend fun saveSelectedDestination(
     session: BeauTyXTSession,
     applicationContext: Context,
+    importer: IsolatedDocumentImporter,
     exporter: IsolatedDocumentExporter,
     request: SaveDestinationRequest,
     uri: Uri
@@ -704,6 +714,7 @@ private suspend fun saveSelectedDestination(
         saveSelectedSource(
             session = session,
             applicationContext = applicationContext,
+            importer = importer,
             exporter = exporter,
             format = request.format,
             uri = uri
@@ -754,6 +765,7 @@ private suspend fun saveSelectedDestination(
 private suspend fun saveSelectedSource(
     session: BeauTyXTSession,
     applicationContext: Context,
+    importer: IsolatedDocumentImporter,
     exporter: IsolatedDocumentExporter,
     format: DocumentFormat,
     uri: Uri
@@ -778,7 +790,10 @@ private suspend fun saveSelectedSource(
         try {
             SelectedEditorDocumentSource.takeCreatedOwnership(
                 selectedSource = checkNotNull(unclaimedSource),
-                exporter = exporter
+                exporter = exporter,
+                readOnlyImporter = { sourceUri ->
+                    importer.open(uri = sourceUri, allowSourceWriteAccess = false)
+                }
             ).also { unclaimedSource = null }
         } finally {
             unclaimedSource?.close()

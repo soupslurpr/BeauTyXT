@@ -22,6 +22,9 @@ internal enum class IncomingSourcePurpose {
     /** Indicates that another app requested read-only viewing. */
     View,
 
+    /** Indicates that the user opened a file from Home, preferring write access while reading Markdown first. */
+    Open,
+
     /** Indicates that another app requested editing when write access is available. */
     Edit
 }
@@ -66,6 +69,7 @@ internal fun parseIncomingDocumentShare(intent: Intent): IncomingDocumentShare? 
             IncomingSourcePurpose.Share -> parseIncomingSend(intent)
 
             IncomingSourcePurpose.View,
+            IncomingSourcePurpose.Open,
             IncomingSourcePurpose.Edit -> parseIncomingSource(intent, purpose)
         }
     } catch (_: Exception) {

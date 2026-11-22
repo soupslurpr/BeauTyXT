@@ -1,4 +1,5 @@
 /* Displays editor recovery, operation feedback, and source-save failures. */
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 package dev.soupslurpr.beautyxt.ui.editor
 
 import androidx.compose.foundation.layout.Arrangement
@@ -85,9 +86,11 @@ internal fun EditorBody(
                         status = sourceSaveStatus,
                         isViewOnly = session.isViewOnly,
                         actionEnabled = session.canStartSaveAs,
+                        compareEnabled = session.canCompareSourceConflict,
                         reloadEnabled = session.canRequestSourceReload,
                         overwriteEnabled = session.canRequestSourceOverwrite,
                         onRetry = session::retrySourceSave,
+                        onCompare = session::requestSourceConflictComparison,
                         onReload = session::requestSourceReloadConfirmation,
                         onOverwrite = session::requestSourceOverwriteConfirmation,
                         onSaveAsNewFile = onSaveAsNewFile
@@ -179,9 +182,11 @@ private fun SourceSaveFailureBanner(
     status: SourceSaveStatus,
     isViewOnly: Boolean,
     actionEnabled: Boolean,
+    compareEnabled: Boolean,
     reloadEnabled: Boolean,
     overwriteEnabled: Boolean,
     onRetry: () -> Unit,
+    onCompare: () -> Unit,
     onReload: () -> Unit,
     onOverwrite: () -> Unit,
     onSaveAsNewFile: () -> Unit
@@ -241,16 +246,30 @@ private fun SourceSaveFailureBanner(
                 Button(
                     onClick = onRetry,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = actionEnabled
+                    enabled = actionEnabled,
+                    shapes = ButtonDefaults.shapes()
                 ) {
                     Text(stringResource(R.string.feedback_retry_save))
                 }
             }
             if (status is SourceSaveStatus.Conflict) {
+                if (compareEnabled) {
+                    FilledTonalButton(
+                        onClick = onCompare,
+                        modifier = Modifier.fillMaxWidth(),
+                        shapes = ButtonDefaults.shapes()
+                    ) {
+                        Text(
+                            text = stringResource(R.string.feedback_compare_changes),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
                 Button(
                     onClick = onSaveAsNewFile,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = actionEnabled
+                    enabled = actionEnabled,
+                    shapes = ButtonDefaults.shapes()
                 ) {
                     Text(
                         if (isViewOnly) {
@@ -265,7 +284,8 @@ private fun SourceSaveFailureBanner(
                 OutlinedButton(
                     onClick = onReload,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = reloadEnabled
+                    enabled = reloadEnabled,
+                    shapes = ButtonDefaults.shapes()
                 ) {
                     Text(
                         text = stringResource(R.string.feedback_reload_source),
@@ -290,7 +310,8 @@ private fun SourceSaveFailureBanner(
                 OutlinedButton(
                     onClick = onSaveAsNewFile,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = actionEnabled
+                    enabled = actionEnabled,
+                    shapes = ButtonDefaults.shapes()
                 ) {
                     Text(
                         if (isViewOnly) {
@@ -341,6 +362,7 @@ internal fun SourceConflictConfirmationDialog(
         confirmButton = {
             Button(
                 onClick = onConfirm,
+                shapes = ButtonDefaults.shapes(),
                 colors =
                     if (reloadsSource) {
                         ButtonDefaults.buttonColors()
@@ -625,13 +647,15 @@ private fun EditorFailureBanner(
             Button(
                 onClick = onAction,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = actionEnabled
+                enabled = actionEnabled,
+                shapes = ButtonDefaults.shapes()
             ) {
                 Text(actionLabel)
             }
             OutlinedButton(
                 onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                shapes = ButtonDefaults.shapes()
             ) {
                 Text(stringResource(R.string.feedback_dismiss))
             }
@@ -746,7 +770,7 @@ internal fun CenteredActionMessage(
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center
             )
-            FilledTonalButton(onClick = onAction) {
+            FilledTonalButton(onClick = onAction, shapes = ButtonDefaults.shapes()) {
                 Text(actionLabel)
             }
         }

@@ -6,6 +6,8 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -42,12 +44,19 @@ import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -360,18 +369,51 @@ internal fun EditorActionBar(
     }
 }
 
+/** Tracks the floating bottom overlay's trailing scroll space and exact interactive bounds. */
+internal class EditorBottomOverlayState {
+    var heightPx by mutableIntStateOf(0)
+    val obstructions = mutableStateMapOf<Any, Rect>()
+
+    fun clear() {
+        heightPx = 0
+        obstructions.clear()
+    }
+}
+
+internal val LocalEditorBottomOverlayState =
+    staticCompositionLocalOf<EditorBottomOverlayState?> { null }
+
+/** Registers the exact window bounds of a visible floating capsule, message, or field. */
+@Composable
+internal fun Modifier.registerBottomOverlayObstruction(key: Any): Modifier {
+    val state = LocalEditorBottomOverlayState.current ?: return this
+    DisposableEffect(state, key) {
+        onDispose { state.obstructions.remove(key) }
+    }
+    return this.onGloballyPositioned { coordinates ->
+        if (coordinates.isAttached) {
+            state.obstructions[key] = coordinates.boundsInWindow()
+        }
+    }
+}
+
 /** Shares the three-tier floating capsule chrome between document and selection toolbars. */
 @Composable
 internal fun EditorFloatingCapsule(
     heightMode: EditorToolbarHeightMode,
     content: @Composable RowScope.() -> Unit
 ) {
-    val colors = FloatingToolbarDefaults.standardFloatingToolbarColors()
+    val colors = FloatingToolbarDefaults.standardFloatingToolbarColors(
+        toolbarContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    )
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
     if (heightMode == EditorToolbarHeightMode.Compact) {
         Surface(
+            modifier = Modifier.registerBottomOverlayObstruction("floating-capsule"),
             shape = CircleShape,
             color = colors.toolbarContainerColor,
-            contentColor = colors.toolbarContentColor
+            contentColor = colors.toolbarContentColor,
+            border = BorderStroke(1.dp, borderColor)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = EditorActionBarPadding),
@@ -387,7 +429,10 @@ internal fun EditorFloatingCapsule(
         }
         HorizontalFloatingToolbar(
             expanded = true,
-            modifier = Modifier.padding(vertical = verticalPadding),
+            modifier = Modifier
+                .padding(vertical = verticalPadding)
+                .registerBottomOverlayObstruction("floating-capsule")
+                .border(1.dp, borderColor, FloatingToolbarDefaults.ContainerShape),
             contentPadding = FloatingToolbarDefaults.ContentPadding,
             colors = colors,
             content = content
