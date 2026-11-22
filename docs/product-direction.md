@@ -24,9 +24,10 @@ the app.
 
 ## What this means for the experience
 
-- Make opened or received content useful quickly. Recognized incoming Markdown
-  begins in rendered reading; received plain text does not summon the keyboard.
-  New documents still start ready for writing.
+- Make opened or received content useful quickly. Recognized Markdown opened
+  from Home or received from another app begins in rendered reading; received
+  plain text does not summon the keyboard. New documents still start ready for
+  writing.
 - Make long documents comfortable to read and navigate. Contents, links,
   footnotes, source search, and code copying serve the document rather than
   surrounding it with another conversation interface.
