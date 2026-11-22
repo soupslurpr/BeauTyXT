@@ -31,11 +31,11 @@ checksum = "166760d656f6bfc29dfc76a7f763e529bde0ed22dde2b20cf6b6c4b14a138a9a"
 
 # Published RaTeX packages omit LICENSE. Fetch its verified release revision
 # for notice generation only; application code is resolved through crates.io.
-# https://github.com/erweixin/RaTeX/blob/08cae05377938391117913ca4f278e6a3ffb6a8a/LICENSE
+# https://github.com/erweixin/RaTeX/blob/9085bdd60c67d5fa1efeb1f46e9b3dcebebf7e54/LICENSE
 
 [ratex-font.clarify]
 license = "MIT"
-override-git-commit = "08cae05377938391117913ca4f278e6a3ffb6a8a"
+override-git-commit = "9085bdd60c67d5fa1efeb1f46e9b3dcebebf7e54"
 
 [[ratex-font.clarify.git]]
 path = "LICENSE"
@@ -43,7 +43,7 @@ checksum = "f65e10eaa978c50a58c5e792110b4be5014b865edcb2ade49076bfcc98fa92b0"
 
 [ratex-katex-fonts.clarify]
 license = "MIT"
-override-git-commit = "08cae05377938391117913ca4f278e6a3ffb6a8a"
+override-git-commit = "9085bdd60c67d5fa1efeb1f46e9b3dcebebf7e54"
 
 [[ratex-katex-fonts.clarify.git]]
 path = "LICENSE"
@@ -51,7 +51,7 @@ checksum = "f65e10eaa978c50a58c5e792110b4be5014b865edcb2ade49076bfcc98fa92b0"
 
 [ratex-layout.clarify]
 license = "MIT"
-override-git-commit = "08cae05377938391117913ca4f278e6a3ffb6a8a"
+override-git-commit = "9085bdd60c67d5fa1efeb1f46e9b3dcebebf7e54"
 
 [[ratex-layout.clarify.git]]
 path = "LICENSE"
@@ -59,7 +59,7 @@ checksum = "f65e10eaa978c50a58c5e792110b4be5014b865edcb2ade49076bfcc98fa92b0"
 
 [ratex-lexer.clarify]
 license = "MIT"
-override-git-commit = "08cae05377938391117913ca4f278e6a3ffb6a8a"
+override-git-commit = "9085bdd60c67d5fa1efeb1f46e9b3dcebebf7e54"
 
 [[ratex-lexer.clarify.git]]
 path = "LICENSE"
@@ -67,7 +67,7 @@ checksum = "f65e10eaa978c50a58c5e792110b4be5014b865edcb2ade49076bfcc98fa92b0"
 
 [ratex-parser.clarify]
 license = "MIT"
-override-git-commit = "08cae05377938391117913ca4f278e6a3ffb6a8a"
+override-git-commit = "9085bdd60c67d5fa1efeb1f46e9b3dcebebf7e54"
 
 [[ratex-parser.clarify.git]]
 path = "LICENSE"
@@ -75,7 +75,7 @@ checksum = "f65e10eaa978c50a58c5e792110b4be5014b865edcb2ade49076bfcc98fa92b0"
 
 [ratex-types.clarify]
 license = "MIT"
-override-git-commit = "08cae05377938391117913ca4f278e6a3ffb6a8a"
+override-git-commit = "9085bdd60c67d5fa1efeb1f46e9b3dcebebf7e54"
 
 [[ratex-types.clarify.git]]
 path = "LICENSE"

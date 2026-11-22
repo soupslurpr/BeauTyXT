@@ -8,11 +8,12 @@ fonts.
 ## Supported subset and fallback
 
 - **Math:** inline `$...$` / `\(...\)`, display `$$...$$` / `\[...\]`, and
-  `math` fences via RaTeX (0.1.14) and bundled KaTeX fonts. Custom macros,
+  `math` fences via RaTeX (0.1.16) and bundled KaTeX fonts. Custom macros,
   unbounded expansion, `alignat`, multiline inline expressions, and unsupported
   environments/assets stay source.
 - **Diagrams:** `mermaid` fences for `flowchart`/`graph`, `sequenceDiagram`,
-  `stateDiagram`, `classDiagram`, and `erDiagram` via Merman (0.8.0-alpha.6)
+  `stateDiagram`, `classDiagram`, and `erDiagram` via Merman (0.11.0, enabling
+  only those five diagram features)
   with a host-owned theme and platform fonts selected by Android's NDK
   `AFontMatcher`. Frontmatter/config, CSS/styling commands, click/link actions,
   asset shapes, HTML labels, unsupported families, and labels with missing
@@ -54,20 +55,20 @@ exact source with an explicit reason and never block neighboring illustrations.
   Mermaid source). Formatted PDFs draw the same paths with exact source in the
   selectable Unicode layer.
 
-## Known parser limitation
+## Parser containment regression
 
-Merman 0.8.0-alpha.6's sequence parser can stall on an empty `%%` comment
-without advancing past the newline, preventing cooperative cancellation. The
-isolated worker's independent 3-second watchdog terminates the process; the app
-preserves exact source with a timeout notice and uses a fresh worker for
-subsequent diagrams. This is an accepted, contained limitation (not a private
-parser fork); provenance for the adapted regression fixture is recorded in
-`CREDITS`.
+Earlier Merman releases (`0.8.0-alpha.6`) could stall in the sequence parser on
+an empty `%%` comment without advancing past the newline. Merman `0.11.0` fixes
+that lexer stall, while BeauTyXT retains the adapted fuzz regression fixture
+(provenance recorded in `CREDITS`) and the isolated worker's independent
+3-second watchdog so parser errors or future stalls preserve exact source and
+never poison subsequent diagrams.
 
 ## Dependencies and verification
 
-Direct versions (`ratex` 0.1.14, `merman` 0.8.0-alpha.6 with default features
-disabled) are pinned in `Cargo.lock` and covered by bundled notices (see
+Direct versions (`ratex` 0.1.16, `merman` 0.11.0 with default features disabled
+and only the five admitted diagram families enabled) are pinned in `Cargo.lock`
+and covered by bundled notices (see
 [third-party notices](../CONTRIBUTING.md#third-party-notices)). Host unit tests
 and debug-only worker-probe instrumentation phases verify packet validation,
 bounds, source mapping, timeouts, crashes, and parser containment.
