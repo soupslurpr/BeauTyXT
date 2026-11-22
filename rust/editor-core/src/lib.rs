@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod diff;
 mod find_highlights;
 mod history;
 mod insertion;

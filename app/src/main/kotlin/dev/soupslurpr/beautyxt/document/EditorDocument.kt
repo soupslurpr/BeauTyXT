@@ -50,6 +50,10 @@ internal interface EditorDocumentSnapshot : AutoCloseable {
     fun viewport(cursor: ViewportCursor, limits: ViewportLimits): ViewportSnapshot =
         error("snapshot viewport is unsupported")
 
+    /** Computes a bounded read-only line diff from this snapshot (external) to [local]. */
+    fun diffWith(local: EditorDocumentSnapshot): DocumentDiff =
+        diffDocumentSnapshotsFallback(external = this, local = local)
+
     /** Prepares this revision for compact piece-backed source saving. */
     fun prepareSourceSavePackage(): SourceSavePackageMetrics =
         error("source-save package preparation is unsupported")

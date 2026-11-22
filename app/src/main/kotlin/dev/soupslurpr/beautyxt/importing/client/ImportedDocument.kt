@@ -19,7 +19,9 @@ internal class ImportedDocument private constructor(
     /** Describes the provider access verified during import. */
     val sourceAccess: ImportedSourceAccess,
     /** Contains sanitized provider metadata only for this in-memory document lifetime. */
-    val metadata: SelectedDocumentMetadata
+    val metadata: SelectedDocumentMetadata,
+    /** Retains the exact byte length and SHA-256 digest observed during this import. */
+    val sourceVersion: dev.soupslurpr.beautyxt.document.SourceVersion
 ) : EditorDocument by document {
     private val ownershipLock = Any()
     private var selectedSource: SelectedDocumentSource? = selectedSource
@@ -72,10 +74,10 @@ internal class ImportedDocument private constructor(
             sourceAccess: ImportedSourceAccess,
             metadata: SelectedDocumentMetadata = SelectedDocumentMetadata()
         ): ImportedDocument {
-            checkNotNull(selectedSource.sourceVersion) {
+            val sourceVersion = checkNotNull(selectedSource.sourceVersion) {
                 "imported document source has no exact version"
             }
-            return ImportedDocument(document, selectedSource, sourceAccess, metadata)
+            return ImportedDocument(document, selectedSource, sourceAccess, metadata, sourceVersion)
         }
     }
 }

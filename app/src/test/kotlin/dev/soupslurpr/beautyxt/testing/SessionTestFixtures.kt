@@ -95,6 +95,52 @@ internal class TestEditorDocumentSnapshot(val revision: Long, val text: String) 
         timeoutMillis = TEST_SNAPSHOT_TIMEOUT_MILLIS
     )
 
+    override fun metrics(): DocumentMetrics {
+        val lines = if (text.isEmpty()) 1L else text.count { it == '\n' } + 1L
+        return DocumentMetrics(
+            revision = revision,
+            byteLength = byteLength,
+            serializedByteLength = byteLength,
+            characterLength = text.codePointCount(0, text.length).toLong(),
+            utf16Length = text.length.toLong(),
+            lineCount = lines,
+            wordCount = text.split(Regex("\\s+")).count { it.isNotEmpty() }.toLong(),
+            hasUtf8Bom = false,
+            hasLfLineEndings = text.contains('\n'),
+            hasCrlfLineEndings = false,
+            hasCrLineEndings = false,
+            insertedLineEnding = DocumentLineEnding.Lf,
+            isEditable = true
+        )
+    }
+
+    override fun viewport(cursor: ViewportCursor, limits: ViewportLimits): ViewportSnapshot {
+        val parts = text.split('\n')
+        val blocks = ArrayList<RenderBlock>(parts.size)
+        var offset = 0L
+        for (i in parts.indices) {
+            val part = parts[i]
+            val end = offset + part.length
+            val hasNewline = i < parts.lastIndex
+            blocks += RenderBlock(
+                logicalLine = i.toLong(),
+                globalUtf16Start = offset,
+                globalUtf16End = end,
+                lineTerminatorUtf16Units = if (hasNewline) 1 else 0,
+                text = part,
+                continuesAtStart = false,
+                continuesAtEnd = false
+            )
+            offset = end + (if (hasNewline) 1L else 0L)
+        }
+        return ViewportSnapshot(
+            metrics = metrics(),
+            blocks = blocks,
+            previous = null,
+            next = null
+        )
+    }
+
     /** Streams this revision once and consumes the snapshot capability. */
     override fun writeSnapshot(
         outputRawFileDescriptor: Int,

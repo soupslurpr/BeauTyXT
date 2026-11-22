@@ -4,13 +4,14 @@ use std::sync::Arc;
 
 use beautyxt_editor_core::{
     DocumentEdit, MAX_BATCH_EDITS,
+    diff::{DocumentDiff, diff_snapshots},
     search::{SearchCompletion, SearchCursor, SearchOptions, SearchPage, SearchPattern},
 };
 
 use crate::{
     BTreeMap, BridgeError, DocumentError, EnvUnowned, JByteArray, JClass, JLongArray, JString,
     LazyLock, Mutex, ThrowRuntimeExAndDefault, Utf16Range, encode_document_metrics, jboolean,
-    jlong, lock_registry, nonnegative_u64, nonnegative_usize,
+    jlong, lock_registry, lock_snapshot_registry, nonnegative_u64, nonnegative_usize,
 };
 
 const MAX_PACKET_BYTES: usize = 2 * 1024 * 1024;
@@ -335,6 +336,83 @@ fn take_text(packet: &mut &[u8]) -> Result<String, BridgeError> {
         .to_owned();
     *packet = &packet[length..];
     Ok(text)
+}
+
+/// Computes a bounded read-only line diff packet between two immutable snapshot handles.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_diffSnapshots<
+    'caller,
+>(
+    mut env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    external_snapshot: jlong,
+    local_snapshot: jlong,
+) -> JByteArray<'caller> {
+    env.with_env(|env| -> Result<JByteArray<'caller>, BridgeError> {
+        let (external, local) = {
+            let registry = lock_snapshot_registry()?;
+            let external = registry.get_captured(external_snapshot)?.clone();
+            let local = registry.get_captured(local_snapshot)?.clone();
+            (external, local)
+        };
+        let diff = diff_snapshots(&external, &local)?;
+        let packet = encode_diff(&diff)?;
+        env.byte_array_from_slice(&packet).map_err(BridgeError::Jni)
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+fn encode_diff(diff: &DocumentDiff) -> Result<Vec<u8>, BridgeError> {
+    let mut packet = Vec::with_capacity(256);
+    packet.extend_from_slice(b"BEDF\x01\x00\x00\x00");
+    let flags = u8::from(diff.external_has_bom)
+        | (u8::from(diff.local_has_bom) << 1)
+        | (u8::from(diff.text_identical) << 2)
+        | (u8::from(diff.is_partial) << 3)
+        | (u8::from(diff.format_differs) << 4);
+    packet.push(flags);
+    packet.push(diff.external_line_endings);
+    packet.push(diff.local_line_endings);
+    packet.push(0);
+    for value in [
+        diff.external_bytes,
+        diff.local_bytes,
+        diff.external_lines,
+        diff.local_lines,
+        diff.compared_lines,
+        diff.added_lines,
+        diff.removed_lines,
+    ] {
+        let encoded =
+            u64::try_from(value).map_err(|_| BridgeError::InvalidArgument("diff count"))?;
+        packet.extend_from_slice(&encoded.to_le_bytes());
+    }
+    let hunk_count =
+        u32::try_from(diff.hunks.len()).map_err(|_| BridgeError::InvalidArgument("diff hunks"))?;
+    packet.extend_from_slice(&hunk_count.to_le_bytes());
+    for hunk in &diff.hunks {
+        let ext_start = u64::try_from(hunk.external_start_line)
+            .map_err(|_| BridgeError::InvalidArgument("diff hunk start"))?;
+        let loc_start = u64::try_from(hunk.local_start_line)
+            .map_err(|_| BridgeError::InvalidArgument("diff hunk start"))?;
+        let line_count = u32::try_from(hunk.lines.len())
+            .map_err(|_| BridgeError::InvalidArgument("diff lines"))?;
+        packet.extend_from_slice(&ext_start.to_le_bytes());
+        packet.extend_from_slice(&loc_start.to_le_bytes());
+        packet.extend_from_slice(&line_count.to_le_bytes());
+        for line in &hunk.lines {
+            let text_bytes = line.text.as_bytes();
+            let text_len = u32::try_from(text_bytes.len())
+                .map_err(|_| BridgeError::InvalidArgument("diff line length"))?;
+            if packet.len().saturating_add(5 + text_bytes.len()) > MAX_PACKET_BYTES {
+                return Err(BridgeError::InvalidArgument("diff packet too large"));
+            }
+            packet.push(line.kind as u8);
+            packet.extend_from_slice(&text_len.to_le_bytes());
+            packet.extend_from_slice(text_bytes);
+        }
+    }
+    Ok(packet)
 }
 
 #[cfg(test)]
