@@ -19,6 +19,12 @@ pub(super) struct DiagramFonts {
 
 impl DiagramFonts {
     pub fn new(fonts: &[&[u8]]) -> Result<Self, DrawingError> {
+        let lengths: Vec<usize> = fonts.iter().map(|font| font.len()).collect();
+        super::validate_font_lengths(&lengths)?;
+        Self::from_owned(fonts.iter().map(|font| font.to_vec()).collect())
+    }
+
+    pub fn from_owned(fonts: Vec<Vec<u8>>) -> Result<Self, DrawingError> {
         if fonts.is_empty() || fonts.len() > super::MAX_FONTS {
             return Err(DrawingError::Limit);
         }
@@ -30,7 +36,7 @@ impl DiagramFonts {
             }
             bytes += font.len();
             let before = database.faces().count();
-            database.load_font_data(font.to_vec());
+            database.load_font_data(font);
             let after = database.faces().count();
             if before == after {
                 return Err(DrawingError::Unsupported);

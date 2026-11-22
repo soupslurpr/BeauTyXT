@@ -39,6 +39,27 @@ pub fn render_diagram(source: &str, font: &[u8]) -> Result<Vec<u8>, DrawingError
 pub fn render_diagram_with_fonts(source: &str, fonts: &[&[u8]]) -> Result<Vec<u8>, DrawingError> {
     let family = admit_source(source)?;
     let fonts = fonts::DiagramFonts::new(fonts)?;
+    render_diagram_with_loaded_fonts(source, family, &fonts)
+}
+
+/// Renders by taking ownership of Android-selected platform font buffers without copying them.
+///
+/// # Errors
+/// Rejects unsupported content, missing glyphs, invalid font buffers, and exceeded budgets.
+pub fn render_diagram_with_owned_fonts(
+    source: &str,
+    fonts: Vec<Vec<u8>>,
+) -> Result<Vec<u8>, DrawingError> {
+    let family = admit_source(source)?;
+    let fonts = fonts::DiagramFonts::from_owned(fonts)?;
+    render_diagram_with_loaded_fonts(source, family, &fonts)
+}
+
+fn render_diagram_with_loaded_fonts(
+    source: &str,
+    family: &str,
+    fonts: &fonts::DiagramFonts,
+) -> Result<Vec<u8>, DrawingError> {
     let profile = TextMeasurementProfile::new(
         TextMeasurementProfileIdentity::new(
             MeasurementProfileId::new("beautyxt-platform-font")
@@ -105,7 +126,7 @@ pub fn render_diagram_with_fonts(source: &str, fonts: &[&[u8]]) -> Result<Vec<u8
         return Err(DrawingError::Unsupported);
     };
     fonts.validate_measurements()?;
-    svg::drawing(output.svg(), &fonts)
+    svg::drawing(output.svg(), fonts)
 }
 
 fn host_css(family: &str) -> String {
@@ -303,6 +324,22 @@ mod tests {
             assert_eq!(admit_source(source), Err(DrawingError::Unsupported));
         }
         assert!(admit_source("%% comment\nflowchart LR\nA-->B").is_ok());
+    }
+
+    #[test]
+    fn owned_font_entrypoint_validates_empty_and_oversized_collections() {
+        assert_eq!(
+            render_diagram_with_owned_fonts("flowchart LR\nA-->B", vec![]),
+            Err(DrawingError::Limit)
+        );
+        assert_eq!(
+            render_diagram_with_owned_fonts("flowchart LR\nA-->B", vec![vec![]]),
+            Err(DrawingError::Limit)
+        );
+        assert_eq!(
+            render_diagram_with_owned_fonts("flowchart LR\nA-->B", vec![b"not a font".to_vec()]),
+            Err(DrawingError::Unsupported)
+        );
     }
 
     #[test]

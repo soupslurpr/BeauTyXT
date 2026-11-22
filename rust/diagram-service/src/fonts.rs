@@ -1,6 +1,6 @@
 //! Selects bounded platform fonts through the NDK without starting ART.
 use beautyxt_diagram_core::{
-    MAX_FONT_BYTES, MAX_FONTS, render_diagram_with_fonts, validate_font_lengths,
+    MAX_FONT_BYTES, MAX_FONTS, render_diagram_with_owned_fonts, validate_font_lengths,
 };
 use beautyxt_illustration_core::DrawingError;
 use std::collections::BTreeSet;
@@ -99,6 +99,5 @@ pub(super) fn render(source: &str, _: bool) -> Result<Vec<u8>, DrawingError> {
         }
     }
     validate_font_lengths(&fonts.iter().map(Vec::len).collect::<Vec<_>>())?;
-    let references: Vec<&[u8]> = fonts.iter().map(Vec::as_slice).collect();
-    render_diagram_with_fonts(source, &references)
+    render_diagram_with_owned_fonts(source, fonts)
 }

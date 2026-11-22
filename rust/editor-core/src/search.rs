@@ -3,6 +3,7 @@
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use memchr::memmem;
 use regex_automata::{
     Input, PatternID,
     meta::Regex,
@@ -85,9 +86,43 @@ pub struct SearchPage {
     pub next: SearchCursor,
 }
 
+enum CompiledMatcher {
+    ExactLiteral {
+        finder: Box<memmem::Finder<'static>>,
+        len: usize,
+    },
+    Regex(Regex),
+}
+
+impl CompiledMatcher {
+    fn find_next(
+        &self,
+        text: &str,
+        span: Range<usize>,
+        caps: Option<&mut Captures>,
+    ) -> Option<Range<usize>> {
+        match self {
+            Self::ExactLiteral { finder, len } => {
+                let offset = finder.find(&text.as_bytes()[span.start..span.end])?;
+                let hit_start = span.start + offset;
+                Some(hit_start..hit_start + *len)
+            }
+            Self::Regex(regex) => {
+                let input = Input::new(text).span(span);
+                if let Some(captures) = caps {
+                    regex.captures(input, captures);
+                    captures.get_match().map(|found| found.range())
+                } else {
+                    regex.find(input).map(|found| found.range())
+                }
+            }
+        }
+    }
+}
+
 /// Owns one bounded compiled pattern and cooperative cancellation flag.
 pub struct SearchPattern {
-    regex: Regex,
+    matcher: CompiledMatcher,
     options: SearchOptions,
     weight: usize,
     cancelled: AtomicBool,
@@ -108,21 +143,35 @@ impl SearchPattern {
                 "query is empty or exceeds its limit",
             ));
         }
-        let pattern = if options.regex {
-            query.to_owned()
+        let matcher = if !options.regex && options.match_case {
+            CompiledMatcher::ExactLiteral {
+                finder: Box::new(memmem::Finder::new(query.as_bytes()).into_owned()),
+                len: query.len(),
+            }
         } else {
-            regex::escape(query)
+            let pattern = if options.regex {
+                query.to_owned()
+            } else {
+                regex::escape(query)
+            };
+            let regex = Regex::builder()
+                .configure(
+                    Regex::config()
+                        .nfa_size_limit(Some(MAX_COMPILED_BYTES))
+                        .dfa_size_limit(Some(MAX_COMPILED_BYTES))
+                        .hybrid_cache_capacity(MAX_COMPILED_BYTES),
+                )
+                .syntax(syntax::Config::new().case_insensitive(!options.match_case))
+                .build(&pattern)
+                .map_err(|_| {
+                    DocumentError::InvalidFindRequest(
+                        "invalid or oversized Rust regex; look-around and pattern backreferences are unsupported",
+                    )
+                })?;
+            CompiledMatcher::Regex(regex)
         };
-        let regex = Regex::builder()
-            .configure(Regex::config().nfa_size_limit(Some(MAX_COMPILED_BYTES))
-                .dfa_size_limit(Some(MAX_COMPILED_BYTES)).hybrid_cache_capacity(MAX_COMPILED_BYTES))
-            .syntax(syntax::Config::new().case_insensitive(!options.match_case))
-            .build(&pattern)
-            .map_err(|_| DocumentError::InvalidFindRequest(
-                "invalid or oversized Rust regex; look-around and pattern backreferences are unsupported",
-            ))?;
         Ok(Self {
-            regex,
+            matcher,
             options,
             weight: if options.regex { query.len().max(1) } else { 1 },
             cancelled: AtomicBool::new(false),
@@ -132,6 +181,32 @@ impl SearchPattern {
     /// Stops subsequent pages and iteration between bounded matching operations.
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Relaxed);
+    }
+
+    fn is_word_match(
+        &self,
+        text: &str,
+        range: &Range<usize>,
+        boundaries: &mut Option<Vec<u8>>,
+    ) -> bool {
+        if !self.options.whole_word || self.options.regex {
+            return true;
+        }
+        let bits = boundaries.get_or_insert_with(|| word_boundaries(text));
+        bits[range.start / 8] & (1 << (range.start % 8)) != 0
+            && bits[range.end / 8] & (1 << (range.end % 8)) != 0
+    }
+
+    fn create_captures(&self, template: Option<&[ReplacementPart]>) -> Option<Captures> {
+        let needs_captures = template.is_some_and(|parts| {
+            parts
+                .iter()
+                .any(|part| matches!(part, ReplacementPart::Capture(_)))
+        });
+        match &self.matcher {
+            CompiledMatcher::Regex(regex) if needs_captures => Some(regex.create_captures()),
+            _ => None,
+        }
     }
 
     /// Searches a logical string while preserving context outside the scope.
@@ -165,11 +240,10 @@ impl SearchPattern {
             ));
         }
         let template = replacement.map(|value| self.template(value)).transpose()?;
-        let boundaries =
-            (self.options.whole_word && !self.options.regex).then(|| word_boundaries(text));
+        let mut boundaries: Option<Vec<u8>> = None;
         let mut start = byte_offset(text, cursor.start)?;
         let mut previous_end = if cursor.skip_empty { Some(start) } else { None };
-        let mut caps = self.regex.create_captures();
+        let mut caps = self.create_captures(template.as_deref());
         let mut units = 0;
         let mut work = 0_usize;
         // Byte-to-UTF-16 conversion advances with the iterator rather than repeatedly
@@ -188,31 +262,27 @@ impl SearchPattern {
                 page.completion = SearchCompletion::WorkLimit;
                 break;
             }
-            self.regex
-                .captures(Input::new(text).span(start..span.end), &mut caps);
-            let Some(found) = caps.get_match() else {
+            let Some(range) = self.matcher.find_next(text, start..span.end, caps.as_mut()) else {
                 break;
             };
-            let range = found.range();
             if range.is_empty() && previous_end == Some(range.start) {
                 let Some(next) = next_scalar(text, range.start) else {
                     break;
                 };
                 start = next;
+                measured_units += text[measured_byte..start].encode_utf16().count();
+                measured_byte = start;
                 page.next = SearchCursor {
-                    start: text[..start].encode_utf16().count(),
+                    start: measured_units,
                     skip_empty: false,
                 };
                 continue;
             }
-            let is_word = boundaries.as_ref().is_none_or(|bits| {
-                bits[range.start / 8] & (1 << (range.start % 8)) != 0
-                    && bits[range.end / 8] & (1 << (range.end % 8)) != 0
-            });
+            let is_word = self.is_word_match(text, &range, &mut boundaries);
             if is_word {
                 let expanded = template
                     .as_ref()
-                    .map(|parts| expand(parts, &caps, text))
+                    .map(|parts| expand(parts, caps.as_ref(), text))
                     .transpose()?;
                 measured_units += text[measured_byte..range.start].encode_utf16().count();
                 measured_byte = range.start;
@@ -257,6 +327,9 @@ impl SearchPattern {
                 "replacement is not normalized or exceeds its limit",
             ));
         }
+        let CompiledMatcher::Regex(regex) = &self.matcher else {
+            return Ok(vec![ReplacementPart::Text(value.into())]);
+        };
         if !self.options.regex {
             return Ok(vec![ReplacementPart::Text(value.into())]);
         }
@@ -305,9 +378,9 @@ impl SearchPattern {
                     let group = if name.chars().all(|c| c.is_ascii_digit()) && !name.is_empty() {
                         name.parse::<usize>()
                             .ok()
-                            .filter(|index| *index < self.regex.captures_len())
+                            .filter(|index| *index < regex.captures_len())
                     } else {
-                        self.regex.group_info().to_index(PatternID::ZERO, &name)
+                        regex.group_info().to_index(PatternID::ZERO, &name)
                     };
                     let group = group.ok_or(DocumentError::InvalidFindRequest(
                         "unknown replacement capture; use $0, $1, ${name}, or $$",
@@ -456,19 +529,22 @@ impl SearchPage {
             };
             return false;
         }
+        let before_start = text[..range.start]
+            .char_indices()
+            .rev()
+            .take(40)
+            .last()
+            .map_or(range.start, |(index, _)| index);
+        let after_end = text[range.end..]
+            .char_indices()
+            .nth(40)
+            .map_or(text.len(), |(index, _)| range.end + index);
         self.hits.push(SearchHit {
             range: Utf16Range::new(start, start + matched_units),
             text: matched.to_owned(),
             replacement,
-            before: text[..range.start]
-                .chars()
-                .rev()
-                .take(40)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect(),
-            after: text[range.end..].chars().take(40).collect(),
+            before: text[before_start..range.start].to_owned(),
+            after: text[range.end..after_end].to_owned(),
         });
         *units += cost;
         true
@@ -494,7 +570,7 @@ enum ReplacementPart {
 
 fn expand(
     parts: &[ReplacementPart],
-    captures: &Captures,
+    captures: Option<&Captures>,
     text: &str,
 ) -> Result<String, DocumentError> {
     let mut output = String::new();
@@ -502,7 +578,7 @@ fn expand(
         let value = match part {
             ReplacementPart::Text(value) => value,
             ReplacementPart::Capture(index) => captures
-                .get_group(*index)
+                .and_then(|caps| caps.get_group(*index))
                 .map_or("", |range| &text[range.range()]),
         };
         if output.len().saturating_add(value.len()) > MAX_SEARCH_PAGE_TEXT_UTF16 * 3 {
@@ -823,5 +899,105 @@ mod tests {
             .unwrap();
         assert!(result.hits.is_empty());
         assert_eq!(result.completion, SearchCompletion::ContextLimit);
+    }
+
+    #[test]
+    fn exact_literal_and_capture_free_regex_match_and_slice_multibyte_snippets() {
+        let before = "😀".repeat(45);
+        let after = "猫".repeat(45);
+        let text = format!("{before}needle needle{after}");
+        let exact = SearchPattern::new(
+            "needle",
+            SearchOptions {
+                regex: false,
+                match_case: true,
+                whole_word: true,
+            },
+        )
+        .unwrap();
+        let page = exact
+            .search(
+                &text,
+                Utf16Range::new(0, text.encode_utf16().count()),
+                SearchCursor::default(),
+                None,
+            )
+            .unwrap();
+        assert_eq!(page.hits.len(), 2);
+        assert_eq!(page.hits[0].before.chars().count(), 40);
+        assert_eq!(page.hits[0].before, "😀".repeat(40));
+        assert_eq!(page.hits[1].after.chars().count(), 40);
+        assert_eq!(page.hits[1].after, "猫".repeat(40));
+
+        // Exact literal find overlaps, exact literal replacement does not.
+        let exact_ana = SearchPattern::new(
+            "ana",
+            SearchOptions {
+                regex: false,
+                match_case: true,
+                whole_word: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            exact_ana
+                .search(
+                    "banana",
+                    Utf16Range::new(0, 6),
+                    SearchCursor::default(),
+                    None
+                )
+                .unwrap()
+                .hits
+                .len(),
+            2
+        );
+        let replaced = exact_ana
+            .search(
+                "banana",
+                Utf16Range::new(0, 6),
+                SearchCursor::default(),
+                Some("X"),
+            )
+            .unwrap();
+        assert_eq!(replaced.hits.len(), 1);
+        assert_eq!(replaced.hits[0].replacement.as_deref(), Some("X"));
+
+        // Capture-free regex replacement uses regex.find and preserves literal escapes.
+        let regex_lit = all(r"cat", "cat cat", true, false, Some(r"dog\n$$"));
+        assert_eq!(regex_lit.hits.len(), 2);
+        assert_eq!(regex_lit.hits[0].replacement.as_deref(), Some("dog\n$"));
+    }
+
+    #[test]
+    fn suppressed_empty_regex_advances_incrementally_across_astral_scalars_and_pages() {
+        let chunk = "a😀";
+        let repetitions = MAX_SEARCH_PAGE_MATCHES + 16;
+        let text = chunk.repeat(repetitions);
+        let total_utf16 = text.encode_utf16().count();
+        let compiled = pattern("a*", true, false);
+        let scope = Utf16Range::new(0, total_utf16);
+        let first = compiled
+            .search(&text, scope, SearchCursor::default(), None)
+            .unwrap();
+        assert_eq!(first.completion, SearchCompletion::PageLimit);
+        assert_eq!(first.hits.len(), MAX_SEARCH_PAGE_MATCHES);
+        // Pattern "a*" matches "a" at 0..1 (suppresses empty at 1), skips '😀' (2 UTF-16 units)
+        // to match "a" at 3..4, etc.
+        assert_eq!(first.hits[0].range, Utf16Range::new(0, 1));
+        assert_eq!(first.hits[1].range, Utf16Range::new(3, 4));
+        let second = compiled.search(&text, scope, first.next, None).unwrap();
+        assert_eq!(second.completion, SearchCompletion::Complete);
+        let all_ranges: Vec<Utf16Range> = first
+            .hits
+            .iter()
+            .chain(second.hits.iter())
+            .map(|hit| hit.range)
+            .collect();
+        let mut expected_ranges: Vec<Utf16Range> = (0..repetitions)
+            .map(|index| Utf16Range::new(index * 3, index * 3 + 1))
+            .collect();
+        expected_ranges.push(Utf16Range::new(total_utf16, total_utf16));
+        assert_eq!(all_ranges, expected_ranges);
     }
 }

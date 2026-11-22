@@ -95,11 +95,12 @@ impl Document {
             }
             previous = Some(edit.range);
         }
+        let mut cache = reader.into_cache();
         let mut next_tree = self.tree.clone();
         let mut changed = false;
         for edit in edits.iter().rev() {
             if let ReplaceOutcome::Replaced(tree) =
-                next_tree.replace(edit.range, &edit.replacement)?
+                next_tree.replace_with_cache(edit.range, &edit.replacement, &mut cache)?
             {
                 next_tree = tree;
                 changed = true;
