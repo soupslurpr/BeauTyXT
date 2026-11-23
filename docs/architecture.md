@@ -10,10 +10,17 @@ are non-negotiable:
   and no fetching of remote images or resources.
 - **No app-private document retention:** app-private storage never holds
   document bytes, metadata, staging files, recents, recovery data, or
-  autosave copies. Android backup is disabled and URI grants are never
-  persisted.
+  autosave copies. Android backup is disabled. By default, URI grants are
+  never persisted; only when the user explicitly opts into new-document
+  autosave may BeauTyXT persist a single SAF tree grant for that folder
+  (with Android storing the tree URI and app-private storage holding only a
+  content-free marker and format preference, deleted along with the grant
+  when disabled).
 - **User-owned locations:** existing files remain with the user's storage
-  provider. New and received documents stay in memory until explicitly saved.
+  provider. New documents stay in memory until explicitly saved, unless the
+  user opts into a new-document autosave folder (which lazily creates one
+  timestamped file on the first non-empty edit). Received text always stays
+  in memory until explicitly saved.
 - **Least-authority isolation:** untrusted import, export, Markdown, local
   transfer, math, and diagram work runs in private ART-free native
   `isolatedProcess` services. Workers never receive content URIs or
@@ -28,7 +35,7 @@ are non-negotiable:
 
 | Process | Role | Notes |
 | --- | --- | --- |
-| App process | Kotlin/Compose UI, Navigation 3 (`HomeActivity`), separate-task external handlers (`MainActivity`, `ShareActivity`), SAF/NFC/camera/print integration, in-process Rust `editor-core` & `print-core` via JNI | Owns the sole retained in-memory session (`retain` store); never serializes document content or source URIs into Android instance state. Stores only content-free preferences in `noBackupFilesDir/text-appearance.properties` and `noBackupFilesDir/app-theme.properties` via `AtomicFile`. |
+| App process | Kotlin/Compose UI, Navigation 3 (`HomeActivity`), separate-task external handlers (`MainActivity`, `ShareActivity`), SAF/NFC/camera/print integration, in-process Rust `editor-core` & `print-core` via JNI | Owns the sole retained in-memory session (`retain` store); never serializes document content or source URIs into Android instance state. Stores only content-free preferences in `noBackupFilesDir/text-appearance.properties`, `noBackupFilesDir/app-theme.properties`, and (when opted in) `noBackupFilesDir/new-document-autosave.properties` via `AtomicFile`. Exported entry points check caller content-URI permissions via `ComponentCaller` so an opt-in persisted tree grant cannot be abused by external callers. |
 | `import-service` | Streaming UTF-8 validation & byte-preserving copy to an anonymous `memfd` | Private `isolatedProcess`, `nativeService` (no ART), fresh opaque instance per operation. |
 | `export-service` | Exact-byte verified source autosave & reliable-pipe Save a copy | Verifies preflight/post-write SHA-256 on seekable read-write source descriptors. |
 | `markdown-service` | CommonMark, GFM, and narrow structural HTML allowlist → sanitized render model (`BTXTMDR6`) | No WebView or script execution; unsupported HTML/CSS stays inert source. |

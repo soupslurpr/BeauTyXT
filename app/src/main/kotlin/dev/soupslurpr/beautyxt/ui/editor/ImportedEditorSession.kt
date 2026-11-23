@@ -10,6 +10,7 @@ import dev.soupslurpr.beautyxt.markdown.client.MarkdownRenderer
 import dev.soupslurpr.beautyxt.sharing.IncomingSourcePurpose
 import dev.soupslurpr.beautyxt.transfer.client.NfcTransferProcessor
 import dev.soupslurpr.beautyxt.transfer.client.QrTransferProcessor
+import dev.soupslurpr.beautyxt.ui.autosave.LeasedEditorDocumentSource
 import dev.soupslurpr.beautyxt.ui.incomingEditorPresentation
 
 /** Selects whether one imported provider capability may become an autosave source. */
@@ -38,11 +39,13 @@ internal fun createImportedEditorSession(
     sourcePolicy: ImportedSourcePolicy = ImportedSourcePolicy.PreferWritable,
     sourceFormat: DocumentFormat = DocumentFormat.PlainText,
     sourcePurpose: IncomingSourcePurpose = IncomingSourcePurpose.Edit,
-    readOnlyImporter: (suspend (Uri) -> ImportedDocument)? = null
+    readOnlyImporter: (suspend (Uri) -> ImportedDocument)? = null,
+    treeGrantLease: AutoCloseable? = null
 ): EditorSession {
     var documentOwner: ImportedDocument? = importedDocument
     var selectedSource: SelectedDocumentSource? = null
     var editorSource: EditorDocumentSource? = null
+    var unclaimedLease: AutoCloseable? = treeGrantLease
     try {
         selectedSource = importedDocument.takeSelectedSource()
         editorSource =
@@ -52,14 +55,24 @@ internal fun createImportedEditorSession(
                     sourcePolicy = sourcePolicy
                 )
             ) {
-                SelectedEditorDocumentSource.takeImportedOwnership(
+                val ownedSource = SelectedEditorDocumentSource.takeImportedOwnership(
                     selectedSource = checkNotNull(selectedSource),
                     exporter = exporter,
                     readOnlyImporter = readOnlyImporter
                 )
+                val lease = unclaimedLease
+                if (lease != null) {
+                    unclaimedLease = null
+                    LeasedEditorDocumentSource(ownedSource, lease)
+                } else {
+                    ownedSource
+                }
             } else {
+                val lease = unclaimedLease
+                unclaimedLease = null
                 SelectedReadOnlyEditorDocumentSource.takeImportedOwnership(
-                    selectedSource = checkNotNull(selectedSource)
+                    selectedSource = checkNotNull(selectedSource),
+                    lease = lease
                 )
             }
         selectedSource = null
@@ -81,8 +94,11 @@ internal fun createImportedEditorSession(
             )
         documentOwner = null
         editorSource = null
+        unclaimedLease?.close()
+        unclaimedLease = null
         return editor
     } catch (failure: Throwable) {
+        closeAfterFailedImportTransfer(unclaimedLease, failure)
         closeAfterFailedImportTransfer(editorSource, failure)
         closeAfterFailedImportTransfer(selectedSource, failure)
         closeAfterFailedImportTransfer(documentOwner, failure)

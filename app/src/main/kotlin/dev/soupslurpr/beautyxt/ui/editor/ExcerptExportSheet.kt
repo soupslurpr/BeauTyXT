@@ -53,6 +53,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
+import dev.soupslurpr.beautyxt.SelectedDestinationResult
+import dev.soupslurpr.beautyxt.mayHaveAmbientTreeAccessForUri
 import dev.soupslurpr.beautyxt.markdown.markdownFootnoteNumbers
 import dev.soupslurpr.beautyxt.printing.*
 import dev.soupslurpr.beautyxt.transfer.isValidNfcTagLabelInput
@@ -63,11 +65,18 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
 private data class ExcerptDestinationRequest(val name: String, val mimeType: String)
-private class ExcerptDestinationContract : ActivityResultContract<ExcerptDestinationRequest, Uri?>() {
+private class ExcerptDestinationContract : ActivityResultContract<ExcerptDestinationRequest, SelectedDestinationResult?>() {
     override fun createIntent(context: Context, input: ExcerptDestinationRequest) = Intent(Intent.ACTION_CREATE_DOCUMENT)
         .addCategory(Intent.CATEGORY_OPENABLE).setType(input.mimeType).putExtra(Intent.EXTRA_TITLE, input.name)
-    override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
-        intent?.data.takeIf { resultCode == android.app.Activity.RESULT_OK }
+    override fun parseResult(resultCode: Int, intent: Intent?): SelectedDestinationResult? {
+        if (resultCode != android.app.Activity.RESULT_OK || intent == null) return null
+        val uri = intent.data ?: return null
+        return SelectedDestinationResult(
+            uri = uri,
+            offersRead = (intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0,
+            offersWrite = (intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0
+        )
+    }
 }
 
 /** Reviews whole documents and excerpts with one preview and explicit output actions. */
@@ -78,7 +87,14 @@ internal fun ExcerptExportSheet(
     onShareSourceFile: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val destination = rememberLauncherForActivityResult(ExcerptDestinationContract(), controller::destinationReturned)
+    val destination = rememberLauncherForActivityResult(ExcerptDestinationContract()) { selected ->
+        when {
+            selected == null -> controller.destinationReturned(null)
+            mayHaveAmbientTreeAccessForUri(context, selected.uri) && !selected.offersWrite ->
+                controller.destinationRejected()
+            else -> controller.destinationReturned(selected.uri)
+        }
+    }
     // Only the opaque request identity enters saved state; bytes and URIs stay in memory.
     var shareRequestId by rememberSaveable { mutableStateOf<String?>(null) }
     val share = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="autosave_home_action">Autosave</string>
+    <string name="autosave_dialog_title">New document autosave</string>
+    <string name="autosave_dialog_summary">Save new documents automatically to a folder you choose once you start typing. Received text stays in memory until you choose Save.</string>
+    <string name="autosave_disclosure">BeauTyXT keeps access to your chosen folder until you turn this off. Turning it off does not delete files already created. Your storage provider may sync files in that folder.</string>
+    <string name="autosave_status_off">Off</string>
+    <string name="autosave_status_off_summary">New documents stay in memory until you save them.</string>
+    <string name="autosave_status_on_label">Autosave folder</string>
+    <string name="autosave_selected_folder_fallback">Selected folder</string>
+    <string name="autosave_format_label">Default format</string>
+    <string name="autosave_format_plain_text">Plain text (.txt)</string>
+    <string name="autosave_format_markdown">Markdown (.md)</string>
+    <string name="autosave_choose_folder">Choose folder</string>
+    <string name="autosave_change_folder">Change folder</string>
+    <string name="autosave_turn_off">Turn off</string>
+    <string name="autosave_loading">Loading autosave settings…</string>
+    <string name="autosave_working">Updating autosave folder…</string>
+    <string name="autosave_load_failed">Saved autosave settings couldn\'t be loaded. Try again or reset them to turn new-document autosave off.</string>
+    <string name="autosave_retry_load">Try again</string>
+    <string name="autosave_reset_saved_action">Reset settings</string>
+    <string name="autosave_reset_saved_title">Reset autosave settings?</string>
+    <string name="autosave_reset_saved_message">This turns off new-document autosave and clears saved folder access. Existing files in your folder are not deleted.</string>
+    <string name="autosave_reset_saved_confirm">Reset</string>
+    <string name="autosave_save_failed">Couldn\'t save autosave settings.</string>
+    <string name="autosave_folder_unusable">Choose a local folder where BeauTyXT can create and save files.</string>
+    <string name="autosave_folder_unavailable">The chosen folder isn\'t available right now. Try again or choose another folder.</string>
+    <string name="autosave_folder_lost">Access to your autosave folder was removed or the folder is gone. Choose a folder again or turn autosave off.</string>
+    <string name="autosave_folder_interrupted">Your previous folder change didn\'t finish. Choose a folder again or turn autosave off.</string>
+    <string name="autosave_picker_failed">No folder picker is available on this device.</string>
+    <string name="autosave_lease_notice">Close the open document using this folder before changing or turning off autosave.</string>
+    <string name="autosave_create_folder_lost">Your autosave folder isn\'t accessible anymore. Save this document manually, or choose a folder again from Home.</string>
+    <string name="autosave_create_incompatible">This folder\'s storage provider doesn\'t support verified autosave. Choose Save as new file to save elsewhere.</string>
+    <string name="autosave_create_failed">Couldn\'t create a file in your autosave folder. Your text is still here.</string>
+    <string name="autosave_create_uncertain">The folder didn\'t confirm file creation, so BeauTyXT stopped retrying to avoid duplicates. Check your folder or choose Save as new file.</string>
+    <string name="status_new_autosave_ready">Autosaves when you type</string>
+    <string name="status_new_autosave_creating">Creating file</string>
+    <string name="feedback_new_autosave_failed">New document wasn\'t saved to a file</string>
+    <string name="file_info_autosave_ready">Autosaves when you type</string>
+    <string name="file_info_autosave_creating">Creating file</string>
+    <string name="file_info_autosave_failed">Couldn\'t create file</string>
+</resources>

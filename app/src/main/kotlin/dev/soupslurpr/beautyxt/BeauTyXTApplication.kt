@@ -2,6 +2,7 @@ package dev.soupslurpr.beautyxt
 
 import android.app.Application
 import android.os.Process
+import dev.soupslurpr.beautyxt.ui.autosave.NewDocumentAutosaveStore
 import dev.soupslurpr.beautyxt.ui.designsystem.AppThemeStore
 import dev.soupslurpr.beautyxt.ui.editor.TextAppearanceStore
 import java.io.File
@@ -80,6 +81,9 @@ class BeauTyXTApplication : Application() {
     internal lateinit var appTheme: AppThemeStore
         private set
 
+    internal lateinit var newDocumentAutosave: NewDocumentAutosaveStore
+        private set
+
     internal lateinit var legacyCleanup: LegacyCleanup
         private set
 
@@ -89,6 +93,7 @@ class BeauTyXTApplication : Application() {
             return
         }
         appTheme = AppThemeStore(this)
+        newDocumentAutosave = NewDocumentAutosaveStore(this)
         legacyCleanup = LegacyCleanup { removeLegacyPrivateState(File(applicationInfo.dataDir)) }
         legacyCleanup.start()
     }
