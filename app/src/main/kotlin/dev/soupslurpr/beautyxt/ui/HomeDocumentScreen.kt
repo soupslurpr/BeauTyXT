@@ -1,5 +1,6 @@
 package dev.soupslurpr.beautyxt.ui
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.runtime.Composable
@@ -18,6 +19,7 @@ import dev.soupslurpr.beautyxt.DocumentSessionReturnDestination
 import dev.soupslurpr.beautyxt.InitialDocumentAction
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.SelectDocumentContract
+import dev.soupslurpr.beautyxt.mayHaveAmbientTreeAccessForUri
 import dev.soupslurpr.beautyxt.document.resolveDocumentFormat
 import dev.soupslurpr.beautyxt.importing.client.querySelectedDocumentMetadata
 import dev.soupslurpr.beautyxt.importing.client.sanitizeProviderMimeType
@@ -25,7 +27,12 @@ import dev.soupslurpr.beautyxt.sharing.IncomingDocumentShare
 import dev.soupslurpr.beautyxt.sharing.IncomingSourcePurpose
 import kotlin.coroutines.cancellation.CancellationException
 
-private data class SelectedHomeSource(val uri: Uri, val mimeType: String?)
+private data class SelectedHomeSource(
+    val uri: Uri,
+    val mimeType: String?,
+    val offersRead: Boolean,
+    val offersWrite: Boolean
+)
 
 /** Holds provider capabilities only in the live navigation entry's retained memory. */
 private class HomeDocumentEntry(initialAction: InitialDocumentAction) {
@@ -73,7 +80,12 @@ internal fun HomeDocumentScreen(
             } else {
                 sessionStarted = true
                 entry.action = InitialDocumentAction.OpeningSelectedDocument
-                entry.source = SelectedHomeSource(uri, sanitizeProviderMimeType(result.type))
+                entry.source = SelectedHomeSource(
+                    uri = uri,
+                    mimeType = sanitizeProviderMimeType(result.type),
+                    offersRead = (result.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0,
+                    offersWrite = (result.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0
+                )
             }
         }
     }
@@ -103,25 +115,37 @@ internal fun HomeDocumentScreen(
         if (source != null) {
             val share = try {
                 require(source.uri.scheme == "content" && !source.uri.authority.isNullOrBlank())
-                val metadata = querySelectedDocumentMetadata(
-                    applicationContext.contentResolver,
-                    source.uri
-                )
-                val format = resolveDocumentFormat(
-                    sourceName = metadata.displayName,
-                    mimeType = metadata.mimeType ?: source.mimeType,
-                    alternateSourceName = source.uri.lastPathSegment
-                )
-                if (format == null) {
+                val ambientTreePossible = mayHaveAmbientTreeAccessForUri(applicationContext, source.uri)
+                if (ambientTreePossible && !source.offersRead) {
                     IncomingDocumentShare.Rejected(
-                        UiText.Resource(R.string.operation_unsupported_document)
+                        UiText.Resource(R.string.operation_incoming_content_unavailable)
                     )
                 } else {
-                    IncomingDocumentShare.Source(
-                        encodedUri = source.uri.toString(),
-                        format = format,
-                        purpose = IncomingSourcePurpose.Open
+                    val metadata = querySelectedDocumentMetadata(
+                        applicationContext.contentResolver,
+                        source.uri
                     )
+                    val format = resolveDocumentFormat(
+                        sourceName = metadata.displayName,
+                        mimeType = metadata.mimeType ?: source.mimeType,
+                        alternateSourceName = source.uri.lastPathSegment
+                    )
+                    if (format == null) {
+                        IncomingDocumentShare.Rejected(
+                            UiText.Resource(R.string.operation_unsupported_document)
+                        )
+                    } else {
+                        val allowWrite = source.offersWrite || !ambientTreePossible
+                        IncomingDocumentShare.Source(
+                            encodedUri = source.uri.toString(),
+                            format = format,
+                            purpose = if (allowWrite) {
+                                IncomingSourcePurpose.Open
+                            } else {
+                                IncomingSourcePurpose.View
+                            }
+                        )
+                    }
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation

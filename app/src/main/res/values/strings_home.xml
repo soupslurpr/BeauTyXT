@@ -22,9 +22,9 @@
     <string name="about_loading_licenses">Loading licenses…</string>
     <string name="about_source_unavailable">No app could open the source-code link. You can copy it below.</string>
     <string name="about_files_title">Opening and saving files</string>
-    <string name="about_files">Open files stay with the storage provider you choose. Compatible files save automatically after edits. New and received text remains in memory until you choose Save.</string>
+    <string name="about_files">Open files stay with the storage provider you choose. Compatible files save automatically after edits. New documents stay in memory until you choose Save, unless you opt in to an autosave folder from Home. Received text always stays in memory until you choose Save.</string>
     <string name="about_storage_title">Keeping your work</string>
-    <string name="about_storage">BeauTyXT keeps no app-private document copies or recovery files. Undo history is kept only for the current session. Unsaved content is lost if Android ends the app process. Your selected storage provider may still sync its files.</string>
+    <string name="about_storage">BeauTyXT keeps no app-private document copies or recovery files. If you turn on new-document autosave, BeauTyXT keeps access to that one chosen folder until you turn it off. Undo history is kept only for the current session. Unsaved content is lost if Android ends the app process. Your selected storage provider may still sync its files.</string>
     <string name="about_processing_title">On your device</string>
     <string name="about_processing">Text parsing, Markdown preview, and QR and NFC validation run on this device. BeauTyXT has no Internet permission and does not run scripts or fetch document images.</string>
     <string name="about_limits_title">Current limits</string>

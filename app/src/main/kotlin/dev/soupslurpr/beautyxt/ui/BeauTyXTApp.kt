@@ -38,9 +38,13 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import dev.soupslurpr.beautyxt.BeauTyXTApplication
+import dev.soupslurpr.beautyxt.CreateDocumentDestinationContract
 import dev.soupslurpr.beautyxt.DocumentSessionReturnDestination
 import dev.soupslurpr.beautyxt.InitialDocumentAction
 import dev.soupslurpr.beautyxt.R
+import dev.soupslurpr.beautyxt.SelectedDestinationResult
+import dev.soupslurpr.beautyxt.mayHaveAmbientTreeAccessForUri
 import dev.soupslurpr.beautyxt.document.DocumentFormat
 import dev.soupslurpr.beautyxt.exporting.client.DocumentExportException
 import dev.soupslurpr.beautyxt.exporting.client.IsolatedDocumentExporter
@@ -59,6 +63,7 @@ import dev.soupslurpr.beautyxt.sharing.incomingSharedTextTitle
 import dev.soupslurpr.beautyxt.transfer.client.IsolatedTransferProcessor
 import dev.soupslurpr.beautyxt.transfer.client.NfcTransferProcessor
 import dev.soupslurpr.beautyxt.transfer.client.ReceivedTransferText
+import dev.soupslurpr.beautyxt.ui.autosave.NewDocumentFolderClient
 import dev.soupslurpr.beautyxt.ui.editor.CloseRequestResult
 import dev.soupslurpr.beautyxt.ui.editor.DocumentEditor
 import dev.soupslurpr.beautyxt.ui.editor.EditorSession
@@ -131,10 +136,23 @@ internal fun BeauTyXTApp(
         retain {
             BeauTyXTSession(
                 createEmptyEditor = {
+                    val autosaveStore =
+                        (applicationContext as? BeauTyXTApplication)?.newDocumentAutosave
+                    val autosaveGate = autosaveStore?.let { store ->
+                        NewDocumentFolderClient(
+                            context = applicationContext,
+                            store = store,
+                            exporter = exporter,
+                            readOnlyImporter = { sourceUri ->
+                                importer.open(uri = sourceUri, allowSourceWriteAccess = false)
+                            }
+                        )
+                    }
                     EditorSession.createEmpty(
                         markdownRenderer = markdownRenderer,
                         qrTransferProcessor = transferProcessor,
-                        nfcTransferProcessor = nfcTransferProcessor
+                        nfcTransferProcessor = nfcTransferProcessor,
+                        newDocumentAutosave = autosaveGate
                     )
                 },
                 createTransientTextEditor = { share ->
@@ -189,9 +207,9 @@ internal fun BeauTyXTApp(
         }
     val plainTextDestination =
         rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument(PLAIN_TEXT_MIME_TYPE)
-        ) { uri ->
-            if (uri == null) {
+            CreateDocumentDestinationContract(PLAIN_TEXT_MIME_TYPE)
+        ) { selected ->
+            if (selected == null) {
                 session.cancelSaveDestination(DocumentFormat.PlainText)
             } else {
                 val accepted =
@@ -202,7 +220,7 @@ internal fun BeauTyXTApp(
                             importer = importer,
                             exporter = exporter,
                             request = request,
-                            uri = uri
+                            selected = selected
                         )
                     }
                 if (!accepted) {
@@ -212,9 +230,9 @@ internal fun BeauTyXTApp(
         }
     val markdownDestination =
         rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument(MARKDOWN_MIME_TYPE)
-        ) { uri ->
-            if (uri == null) {
+            CreateDocumentDestinationContract(MARKDOWN_MIME_TYPE)
+        ) { selected ->
+            if (selected == null) {
                 session.cancelSaveDestination(DocumentFormat.Markdown)
             } else {
                 val accepted =
@@ -225,7 +243,7 @@ internal fun BeauTyXTApp(
                             importer = importer,
                             exporter = exporter,
                             request = request,
-                            uri = uri
+                            selected = selected
                         )
                     }
                 if (!accepted) {
@@ -378,14 +396,30 @@ internal fun BeauTyXTApp(
     fun reloadCurrentSource() {
         val currentEditor = session.editor ?: return
         session.reloadEditorSource(currentEditor) { encodedUri ->
-            createImportedEditorSession(
-                importedDocument = importer.open(encodedUri.toUri()),
-                sourceFormat = currentEditor.documentFormat,
-                exporter = exporter,
-                markdownRenderer = markdownRenderer,
-                qrTransferProcessor = transferProcessor,
-                nfcTransferProcessor = nfcTransferProcessor
-            )
+            val reloadUri = encodedUri.toUri()
+            val autosaveStore = (applicationContext as? BeauTyXTApplication)?.newDocumentAutosave
+            val treeGrantLease = autosaveStore?.tryAcquireLeaseForDocumentUri(reloadUri)
+            try {
+                createImportedEditorSession(
+                    importedDocument = importer.open(reloadUri),
+                    sourceFormat = currentEditor.documentFormat,
+                    exporter = exporter,
+                    markdownRenderer = markdownRenderer,
+                    qrTransferProcessor = transferProcessor,
+                    nfcTransferProcessor = nfcTransferProcessor,
+                    readOnlyImporter = { sourceUri ->
+                        importer.open(uri = sourceUri, allowSourceWriteAccess = false)
+                    },
+                    treeGrantLease = treeGrantLease
+                )
+            } catch (failure: Throwable) {
+                try {
+                    treeGrantLease?.close()
+                } catch (closeFailure: Throwable) {
+                    failure.addSuppressed(closeFailure)
+                }
+                throw failure
+            }
         }
     }
 
@@ -704,8 +738,22 @@ private suspend fun saveSelectedDestination(
     importer: IsolatedDocumentImporter,
     exporter: IsolatedDocumentExporter,
     request: SaveDestinationRequest,
-    uri: Uri
+    selected: SelectedDestinationResult
 ) {
+    val uri = selected.uri
+    if (mayHaveAmbientTreeAccessForUri(applicationContext, uri)) {
+        val authorized = when (request.purpose) {
+            SaveDestinationPurpose.Copy -> selected.offersWrite
+            SaveDestinationPurpose.SourceReplacement -> selected.offersRead && selected.offersWrite
+        }
+        if (!authorized) {
+            session.failSaveDestination(
+                format = request.format,
+                message = UiText.Resource(R.string.operation_destination_unavailable)
+            )
+            return
+        }
+    }
     if (session.isCurrentSourceDestination(request, uri.toString())) {
         session.failSaveDestination(request.format, CURRENT_SOURCE_DESTINATION_MESSAGE)
         return

@@ -49,6 +49,7 @@ internal fun EditorBody(
     documentFocus: DocumentFocus? = null
 ) {
     val sourceSaveStatus = session.sourceSaveStatus
+    val newDocumentAutosaveState = session.newDocumentAutosaveState
     val saveStatus = session.saveStatus
     val shareStatus = session.shareStatus
     val printStatus = session.printStatus
@@ -56,6 +57,7 @@ internal fun EditorBody(
     val nfcWriteStatus = session.nfcWriteStatus
     val hasRecoveryMessages =
         session.isClosePending ||
+            newDocumentAutosaveState is NewDocumentAutosaveState.Failed ||
             sourceSaveStatus.isTerminalFailure() ||
             shareStatus is ShareStatus.Failed ||
             printStatus is PrintStatus.Failed ||
@@ -82,6 +84,14 @@ internal fun EditorBody(
                         visible = session.isClosePending,
                         onKeepEditing = session::cancelPendingClose
                     )
+                    if (newDocumentAutosaveState is NewDocumentAutosaveState.Failed) {
+                        NewDocumentAutosaveFailureBanner(
+                            failure = newDocumentAutosaveState,
+                            actionEnabled = session.canStartSaveAs,
+                            onRetry = session::retryNewDocumentAutosave,
+                            onSaveAsNewFile = onSaveAsNewFile
+                        )
+                    }
                     SourceSaveFailureBanner(
                         status = sourceSaveStatus,
                         isViewOnly = session.isViewOnly,
@@ -171,6 +181,72 @@ private fun PendingCloseBanner(visible: Boolean, onKeepEditing: () -> Unit) {
                 modifier = Modifier.align(Alignment.End)
             ) {
                 Text(stringResource(R.string.feedback_keep_editing))
+            }
+        }
+    }
+}
+
+/** Displays one accessible new-document autosave failure with safe recovery actions. */
+@Composable
+private fun NewDocumentAutosaveFailureBanner(
+    failure: NewDocumentAutosaveState.Failed,
+    actionEnabled: Boolean,
+    onRetry: () -> Unit,
+    onSaveAsNewFile: () -> Unit
+) {
+    Surface(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = EditorHorizontalPadding,
+                    vertical = EditorCompactSpacing
+                ),
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(
+            modifier = Modifier.padding(EditorSectionSpacing),
+            verticalArrangement = Arrangement.spacedBy(EditorCompactSpacing)
+        ) {
+            Text(
+                text = stringResource(R.string.feedback_new_autosave_failed),
+                modifier = Modifier.semantics { heading() },
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                text = failure.message.asString(),
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (failure.canRetryCreate) {
+                Button(
+                    onClick = onRetry,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = actionEnabled,
+                    shapes = ButtonDefaults.shapes()
+                ) {
+                    Text(stringResource(R.string.feedback_retry_save))
+                }
+                OutlinedButton(
+                    onClick = onSaveAsNewFile,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = actionEnabled,
+                    shapes = ButtonDefaults.shapes()
+                ) {
+                    Text(stringResource(R.string.feedback_save_new))
+                }
+            } else {
+                Button(
+                    onClick = onSaveAsNewFile,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = actionEnabled,
+                    shapes = ButtonDefaults.shapes()
+                ) {
+                    Text(stringResource(R.string.feedback_save_new))
+                }
             }
         }
     }

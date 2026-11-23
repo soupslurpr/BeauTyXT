@@ -37,8 +37,10 @@ the app.
   with clear capability and size limits. Receiving content does not require
   creating a saved file before reading it.
 - Keep existing files in user-selected locations. Source autosave is available
-  when the storage provider supports verified writes. New and received text
-  stays transient until explicitly saved.
+  when the storage provider supports verified writes. New documents stay
+  transient until explicitly saved by default, with an opt-in autosave folder
+  for users who want new documents saved automatically once they start typing.
+  Received text always stays transient until explicitly saved.
 
 ## Boundaries
 

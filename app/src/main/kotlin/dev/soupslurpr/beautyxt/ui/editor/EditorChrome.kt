@@ -2,6 +2,7 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuGroup
@@ -132,7 +134,8 @@ internal fun EditorTopBar(
         session.nfcWriteStatus is NfcWriteStatus.Cancelling ||
         session.saveStatus is SaveStatus.CancellingDestinationPreparation ||
         session.saveStatus is SaveStatus.CancellingExport
-    val showProgress = session.isClosePending || session.sourceSaveStatus.isActive() ||
+    val showProgress = session.isClosePending || session.isNewDocumentAutosaveCreating ||
+        session.sourceSaveStatus.isActive() ||
         session.saveStatus.isActive() || session.shareStatus.isActive() ||
         session.printStatus.isActive() || session.qrShareStatus.isActive() ||
         session.nfcWriteStatus.isActive()
@@ -148,8 +151,19 @@ internal fun EditorTopBar(
             nfcWriteStatus = session.nfcWriteStatus,
             hasUnsavedChanges = session.hasUnsavedChanges,
             saveUnavailableReason = session.saveUnavailableReason,
-            isViewOnly = session.isViewOnly
+            isViewOnly = session.isViewOnly,
+            newDocumentAutosaveState = session.effectiveNewDocumentAutosaveState
         ).asString()
+    }
+    val statusTone = if (session.isClosePending) {
+        EditorStatusTone.Standard
+    } else {
+        saveStateTone(
+            sourceSaveStatus = session.sourceSaveStatus,
+            saveStatus = session.saveStatus,
+            hasUnsavedChanges = session.hasUnsavedChanges,
+            newDocumentAutosaveState = session.effectiveNewDocumentAutosaveState
+        )
     }
     AdaptiveEditorTopAppBar(
         availableHeight = availableHeight,
@@ -177,7 +191,7 @@ internal fun EditorTopBar(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
-                EditorStatusLine(statusDescription, showProgress, expanded)
+                EditorStatusLine(statusDescription, showProgress, expanded, statusTone)
             }
         },
         actions = {
@@ -399,7 +413,22 @@ internal fun EditorChromeSurface(
 
 /** Announces save activity without adding a second status capsule. */
 @Composable
-private fun EditorStatusLine(message: String, showProgress: Boolean, expanded: Boolean) {
+private fun EditorStatusLine(
+    message: String,
+    showProgress: Boolean,
+    expanded: Boolean,
+    tone: EditorStatusTone = EditorStatusTone.Standard
+) {
+    val textColor = when (tone) {
+        EditorStatusTone.Standard -> MaterialTheme.colorScheme.onSurfaceVariant
+        EditorStatusTone.UnsavedAttention -> MaterialTheme.colorScheme.tertiary
+        EditorStatusTone.Error -> MaterialTheme.colorScheme.error
+    }
+    val fontWeight = if (tone == EditorStatusTone.Standard) {
+        FontWeight.Normal
+    } else {
+        FontWeight.SemiBold
+    }
     Row(
         modifier = Modifier.then(if (expanded) Modifier.fillMaxWidth() else Modifier)
             .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
@@ -412,10 +441,18 @@ private fun EditorStatusLine(message: String, showProgress: Boolean, expanded: B
                 color = MaterialTheme.colorScheme.primary,
                 strokeWidth = CompactStrokeWidth
             )
+        } else if (tone == EditorStatusTone.UnsavedAttention) {
+            Box(
+                modifier = Modifier
+                    .size(EditorCompactSpacing)
+                    .background(color = textColor, shape = CircleShape)
+                    .clearAndSetSemantics {}
+            )
         }
         Text(
             text = message,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = textColor,
+            fontWeight = fontWeight,
             maxLines = if (expanded) Int.MAX_VALUE else 1,
             overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
             style = MaterialTheme.typography.labelMedium

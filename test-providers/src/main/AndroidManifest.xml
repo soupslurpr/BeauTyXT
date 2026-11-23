@@ -43,6 +43,23 @@
             android:exported="true"
             android:permission="dev.soupslurpr.beautyxt.testproviders.ACCESS"
             android:grantUriPermissions="true" />
+
+        <provider
+            android:name="dev.soupslurpr.beautyxt.autosave.AutosaveTreeControlProvider"
+            android:authorities="${applicationId}.autosave-tree-control"
+            android:exported="true"
+            android:permission="dev.soupslurpr.beautyxt.testproviders.ACCESS" />
+
+        <provider
+            android:name="dev.soupslurpr.beautyxt.autosave.AutosaveTreeTestProvider"
+            android:authorities="${applicationId}.autosave-tree"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
     </application>
 
 </manifest>

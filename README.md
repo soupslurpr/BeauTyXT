@@ -36,10 +36,13 @@ automatically after edits; files whose providers cannot support verified saving
 open view-only (**Save as editable** creates a compatible copy without
 modifying the original).
 
-New documents and received text stay in memory until you choose **Save**.
-BeauTyXT keeps no app-private document copies, recent-file list, or recovery
-files. Sessions and undo history exist only in memory and are lost when closed
-or if Android ends the process.
+New documents and received text stay in memory until you choose **Save** by
+default. If you want new documents saved automatically once you start typing,
+you can opt in from Home (**Autosave**) and choose a folder; BeauTyXT keeps
+access to that single folder until you turn it off, while received text still
+requires **Save**. BeauTyXT keeps no app-private document copies, recent-file
+list, or recovery files. Sessions and undo history exist only in memory and are
+lost when closed or if Android ends the process.
 
 BeauTyXT verifies the source before and after saving and reports conflicts or
 uncertain writes. Storage providers do not universally guarantee atomic writes,

@@ -4,6 +4,28 @@ package dev.soupslurpr.beautyxt.ui.editor
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.ui.UiText
 
+/** Describes lazy file creation for one new document before a source is adopted. */
+internal sealed interface NewDocumentAutosaveState {
+    /** Automatic new-document creation is off, inapplicable, or already superseded. */
+    data object Inactive : NewDocumentAutosaveState
+
+    /** Waiting for the first stable non-empty edit to create a file in the chosen folder. */
+    data object Ready : NewDocumentAutosaveState
+
+    /** Creating and verifying an empty file in the chosen folder. */
+    data object Creating : NewDocumentAutosaveState
+
+    /** Creation failed and latched until the user explicitly retries or saves manually. */
+    data class Failed(val message: UiText, val canRetryCreate: Boolean) : NewDocumentAutosaveState
+}
+
+/** Selects subtle visual emphasis for the top-bar save status line. */
+internal enum class EditorStatusTone {
+    Standard,
+    UnsavedAttention,
+    Error
+}
+
 /** Returns one explanation of how a selected destination affects future saves. */
 internal fun saveFormatDescription(
     purpose: SaveDestinationPurpose,
@@ -29,7 +51,8 @@ internal fun saveStateDescription(
     shareStatus: ShareStatus = ShareStatus.Idle,
     printStatus: PrintStatus = PrintStatus.Idle,
     qrShareStatus: QrShareStatus = QrShareStatus.Idle,
-    nfcWriteStatus: NfcWriteStatus = NfcWriteStatus.Idle
+    nfcWriteStatus: NfcWriteStatus = NfcWriteStatus.Idle,
+    newDocumentAutosaveState: NewDocumentAutosaveState = NewDocumentAutosaveState.Inactive
 ): UiText = when {
     nfcWriteStatus is NfcWriteStatus.Configuring -> UiText.Resource(R.string.status_nfc_configuring)
 
@@ -137,11 +160,49 @@ internal fun saveStateDescription(
 
     isViewOnly -> UiText.Resource(R.string.status_view_only)
 
+    newDocumentAutosaveState == NewDocumentAutosaveState.Creating ->
+        UiText.Resource(R.string.status_new_autosave_creating)
+
+    newDocumentAutosaveState is NewDocumentAutosaveState.Failed ->
+        UiText.Resource(R.string.status_autosave_failed)
+
+    sourceSaveStatus == SourceSaveStatus.NoSource &&
+        newDocumentAutosaveState == NewDocumentAutosaveState.Ready &&
+        !hasUnsavedChanges ->
+        UiText.Resource(R.string.status_new_autosave_ready)
+
+    sourceSaveStatus == SourceSaveStatus.NoSource &&
+        newDocumentAutosaveState == NewDocumentAutosaveState.Ready &&
+        hasUnsavedChanges ->
+        UiText.Resource(R.string.status_autosave_soon)
+
     sourceSaveStatus == SourceSaveStatus.NoSource -> UiText.Resource(R.string.status_not_saved)
 
     hasUnsavedChanges -> UiText.Resource(R.string.status_autosave_soon)
 
     else -> UiText.Resource(R.string.status_autosave_saved)
+}
+
+/** Returns the top-bar status tone so unsaved memory-only documents and failures stand out. */
+internal fun saveStateTone(
+    sourceSaveStatus: SourceSaveStatus,
+    saveStatus: SaveStatus,
+    hasUnsavedChanges: Boolean,
+    newDocumentAutosaveState: NewDocumentAutosaveState = NewDocumentAutosaveState.Inactive
+): EditorStatusTone = when {
+    saveStatus is SaveStatus.Failed ||
+        sourceSaveStatus is SourceSaveStatus.Failed ||
+        sourceSaveStatus is SourceSaveStatus.Conflict ||
+        sourceSaveStatus is SourceSaveStatus.Uncertain ||
+        newDocumentAutosaveState is NewDocumentAutosaveState.Failed ->
+        EditorStatusTone.Error
+
+    sourceSaveStatus == SourceSaveStatus.NoSource &&
+        hasUnsavedChanges &&
+        newDocumentAutosaveState == NewDocumentAutosaveState.Inactive ->
+        EditorStatusTone.UnsavedAttention
+
+    else -> EditorStatusTone.Standard
 }
 
 /** Returns one purpose-specific title for a failed explicit save. */

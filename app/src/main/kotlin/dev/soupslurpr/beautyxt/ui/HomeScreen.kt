@@ -135,6 +135,7 @@ internal fun HomeScreen(
     onReadNfc: () -> Unit,
     onAbout: () -> Unit,
     modifier: Modifier = Modifier,
+    onAutosaveSettings: () -> Unit = {},
     onAppTheme: () -> Unit = {}
 ) {
     Surface(modifier = modifier.fillMaxSize()) {
@@ -160,6 +161,7 @@ internal fun HomeScreen(
                 isNfcAvailable = isNfcAvailable,
                 isReadNfcEnabled = isReadNfcEnabled,
                 onReadNfc = onReadNfc,
+                onAutosaveSettings = onAutosaveSettings,
                 onAppTheme = onAppTheme,
                 onAbout = onAbout,
                 modifier = Modifier.fillMaxSize()
@@ -182,6 +184,7 @@ private fun HomeContent(
     isNfcAvailable: Boolean,
     isReadNfcEnabled: Boolean,
     onReadNfc: () -> Unit,
+    onAutosaveSettings: () -> Unit,
     onAppTheme: () -> Unit,
     onAbout: () -> Unit,
     modifier: Modifier = Modifier
@@ -213,6 +216,9 @@ private fun HomeContent(
                     horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    TextButton(onClick = onAutosaveSettings) {
+                        Text(stringResource(R.string.autosave_home_action))
+                    }
                     TextButton(onClick = onAppTheme) { Text(stringResource(R.string.app_theme_title)) }
                     TextButton(onClick = onAbout) { Text(stringResource(R.string.home_about)) }
                 }

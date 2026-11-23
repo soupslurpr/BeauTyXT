@@ -1,5 +1,6 @@
 package dev.soupslurpr.beautyxt
 
+import android.app.ComponentCaller
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -51,6 +52,7 @@ abstract class DocumentActivity : ComponentActivity() {
             activityModel.initialized = true
             initializeDocumentIntent(
                 intent = intent,
+                caller = initialCaller,
                 restoredAfterProcessDeath = restoredAfterProcessDeath
             )
         }
@@ -81,12 +83,31 @@ abstract class DocumentActivity : ComponentActivity() {
         setIntent(intent)
         initializeDocumentIntent(
             intent = intent,
+            caller = currentCaller,
             restoredAfterProcessDeath = false
         )
     }
 
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?,
+        caller: ComponentCaller
+    ) {
+        super.onActivityResult(
+            requestCode,
+            resultCode,
+            sanitizePickerResultIntent(this, resultCode, data, caller),
+            caller
+        )
+    }
+
     /** Replaces retained entry state with one validated activity request. */
-    private fun initializeDocumentIntent(intent: Intent, restoredAfterProcessDeath: Boolean) {
+    private fun initializeDocumentIntent(
+        intent: Intent,
+        caller: ComponentCaller,
+        restoredAfterProcessDeath: Boolean
+    ) {
         activityModel.incomingShareState.value = null
 
         if (restoredAfterProcessDeath) {
@@ -104,7 +125,10 @@ abstract class DocumentActivity : ComponentActivity() {
         }
 
         activityModel.initialDocumentActionState.value = InitialDocumentAction.Incoming
-        activityModel.incomingShareState.value = documentSessionShare(intent)
+        activityModel.incomingShareState.value =
+            documentSessionShare(intent)?.let { share ->
+                enforceIncomingCallerUriAccess(this, intent, caller, share)
+            }
     }
 
     /** Clears one offer only after Compose transfers it to retained memory. */

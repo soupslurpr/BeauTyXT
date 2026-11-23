@@ -181,8 +181,9 @@ internal fun FileInfoSheet(session: EditorSession, onDismiss: () -> Unit) {
                 FileInfoEntry(
                     label = stringResource(R.string.file_info_save_state),
                     value = fileInfoSaveState(
-                        session.sourceSaveStatus,
-                        session.isViewOnly
+                        status = session.sourceSaveStatus,
+                        isViewOnly = session.isViewOnly,
+                        newDocumentAutosaveState = session.effectiveNewDocumentAutosaveState
                     ).asString()
                 )
             )
@@ -633,25 +634,43 @@ internal fun fileInfoSourceAccess(hasDocumentSource: Boolean, isViewOnly: Boolea
     )
 
 /** Returns a concise source-save state for File info. */
-internal fun fileInfoSaveState(status: SourceSaveStatus, isViewOnly: Boolean): UiText =
+internal fun fileInfoSaveState(
+    status: SourceSaveStatus,
+    isViewOnly: Boolean,
+    newDocumentAutosaveState: NewDocumentAutosaveState = NewDocumentAutosaveState.Inactive
+): UiText =
     UiText.Resource(
-        when (status) {
-            SourceSaveStatus.NoSource -> R.string.status_not_saved
+        when {
+            status == SourceSaveStatus.NoSource &&
+                newDocumentAutosaveState == NewDocumentAutosaveState.Creating ->
+                R.string.file_info_autosave_creating
 
-            SourceSaveStatus.Saved ->
-                if (isViewOnly) R.string.file_info_opened_version else R.string.file_info_saved
+            status == SourceSaveStatus.NoSource &&
+                newDocumentAutosaveState is NewDocumentAutosaveState.Failed ->
+                R.string.file_info_autosave_failed
 
-            SourceSaveStatus.Pending -> R.string.status_autosave_pending
+            status == SourceSaveStatus.NoSource &&
+                newDocumentAutosaveState == NewDocumentAutosaveState.Ready ->
+                R.string.file_info_autosave_ready
 
-            SourceSaveStatus.Saving -> R.string.file_info_saving
+            else -> when (status) {
+                SourceSaveStatus.NoSource -> R.string.status_not_saved
 
-            SourceSaveStatus.Reloading -> R.string.status_source_reloading
+                SourceSaveStatus.Saved ->
+                    if (isViewOnly) R.string.file_info_opened_version else R.string.file_info_saved
 
-            is SourceSaveStatus.Failed -> R.string.file_info_save_failed
+                SourceSaveStatus.Pending -> R.string.status_autosave_pending
 
-            is SourceSaveStatus.Conflict -> R.string.file_info_source_changed
+                SourceSaveStatus.Saving -> R.string.file_info_saving
 
-            is SourceSaveStatus.Uncertain -> R.string.file_info_save_uncertain
+                SourceSaveStatus.Reloading -> R.string.status_source_reloading
+
+                is SourceSaveStatus.Failed -> R.string.file_info_save_failed
+
+                is SourceSaveStatus.Conflict -> R.string.file_info_source_changed
+
+                is SourceSaveStatus.Uncertain -> R.string.file_info_save_uncertain
+            }
         }
     )
 

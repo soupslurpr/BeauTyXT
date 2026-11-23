@@ -2,17 +2,25 @@
 package dev.soupslurpr.beautyxt
 
 import android.app.Activity
+import android.app.ComponentCaller
 import android.content.ClipData
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Process
+import android.provider.DocumentsContract
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.core.net.toUri
 import dev.soupslurpr.beautyxt.document.DocumentFormat
 import dev.soupslurpr.beautyxt.sharing.IncomingDocumentShare
+import dev.soupslurpr.beautyxt.sharing.IncomingSourcePurpose
 import dev.soupslurpr.beautyxt.sharing.parseIncomingDocumentShare
+import dev.soupslurpr.beautyxt.ui.UiText
 import dev.soupslurpr.beautyxt.ui.openDocumentMimeTypes
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 private const val SESSION_SCHEME = "beautyxt"
 private const val SESSION_AUTHORITY = "session"
@@ -112,6 +120,175 @@ internal class SelectDocumentContract : ActivityResultContract<Unit, Intent?>() 
 
     override fun parseResult(resultCode: Int, intent: Intent?): Intent? =
         intent.takeIf { resultCode == Activity.RESULT_OK }
+}
+
+/** Captures one destination picker URI along with the temporary URI grant flags offered. */
+internal data class SelectedDestinationResult(
+    val uri: Uri,
+    val offersRead: Boolean,
+    val offersWrite: Boolean
+)
+
+/** Creates one openable destination while preserving the picker's offered URI grant flags. */
+internal class CreateDocumentDestinationContract(
+    private val mimeType: String
+) : ActivityResultContract<String, SelectedDestinationResult?>() {
+    override fun createIntent(context: Context, input: String): Intent =
+        Intent(Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType(mimeType)
+            .putExtra(Intent.EXTRA_TITLE, input)
+
+    override fun parseResult(resultCode: Int, intent: Intent?): SelectedDestinationResult? {
+        if (resultCode != Activity.RESULT_OK || intent == null) return null
+        val uri = intent.data ?: return null
+        return SelectedDestinationResult(
+            uri = uri,
+            offersRead = (intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0,
+            offersWrite = (intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0
+        )
+    }
+}
+
+/**
+ * Strips any URI grant flags from an activity result that the returning [caller] does not
+ * actually hold when [data] points into a provider where BeauTyXT may hold ambient tree access.
+ */
+internal fun sanitizePickerResultIntent(
+    context: Context,
+    resultCode: Int,
+    data: Intent?,
+    caller: ComponentCaller
+): Intent? {
+    if (resultCode != Activity.RESULT_OK || data == null) return data
+    val uri = data.data ?: return data
+    if (uri.scheme != ContentResolver.SCHEME_CONTENT) return data
+    if (!mayHaveAmbientTreeAccessForUri(context, uri)) return data
+    if (caller.uid == Process.myUid()) return data
+    val callerHasRead = try {
+        caller.checkContentUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) ==
+            PackageManager.PERMISSION_GRANTED
+    } catch (_: Exception) {
+        false
+    }
+    val callerHasWrite = try {
+        caller.checkContentUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) ==
+            PackageManager.PERMISSION_GRANTED
+    } catch (_: Exception) {
+        false
+    }
+    var allowedFlags = data.flags
+    if (!callerHasRead) {
+        allowedFlags = allowedFlags and Intent.FLAG_GRANT_READ_URI_PERMISSION.inv()
+    }
+    if (!callerHasWrite) {
+        allowedFlags = allowedFlags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION.inv()
+    }
+    if (!callerHasRead || !callerHasWrite) {
+        allowedFlags = allowedFlags and
+            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION.inv() and
+            Intent.FLAG_GRANT_PREFIX_URI_PERMISSION.inv()
+    }
+    return if (allowedFlags == data.flags) data else Intent(data).setFlags(allowedFlags)
+}
+
+private val observedTreeGrantAuthorities: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+/** Normalizes Android user-qualified authorities (`0@authority`) to the provider authority. */
+internal fun normalizedProviderAuthority(uri: Uri): String? =
+    uri.authority?.substringAfter('@')?.takeIf(String::isNotBlank)
+
+/** Records any provider authority for which this process held a tree grant (even after release). */
+internal fun recordObservedTreeGrantAuthority(uri: Uri) {
+    normalizedProviderAuthority(uri)?.let(observedTreeGrantAuthorities::add)
+}
+
+/**
+ * Returns whether BeauTyXT may hold ambient access to [uri] via a persisted or previously held
+ * SAF tree grant in this process (including user-qualified authority aliases and temporary
+ * picker grants that remain active after releasing persistable permission).
+ */
+internal fun mayHaveAmbientTreeAccessForUri(
+    context: Context,
+    uri: Uri
+): Boolean {
+    val targetAuthority = normalizedProviderAuthority(uri) ?: return false
+    if (targetAuthority in observedTreeGrantAuthorities) {
+        return true
+    }
+    val hasPersistedMatch = context.contentResolver.persistedUriPermissions.any { permission ->
+        val authority = normalizedProviderAuthority(permission.uri)
+        if (authority != null) {
+            observedTreeGrantAuthorities.add(authority)
+        }
+        authority == targetAuthority
+    }
+    if (hasPersistedMatch) {
+        return true
+    }
+    return try {
+        DocumentsContract.isTreeUri(uri) || DocumentsContract.isDocumentUri(context, uri)
+    } catch (_: Exception) {
+        false
+    }
+}
+
+private fun intentCoversUriForGrantFlags(intent: Intent, uri: Uri): Boolean {
+    if (intent.data == uri) return true
+    val clip = intent.clipData ?: return false
+    for (index in 0 until clip.itemCount) {
+        if (clip.getItemAt(index).uri == uri) return true
+    }
+    return false
+}
+
+/**
+ * Prevents an external caller from leveraging BeauTyXT's opt-in persisted or residual tree grant
+ * as a confused deputy. Enforces both delegated intent grant flags bound to [share]'s exact URI
+ * and caller URI permission on any DocumentsProvider URI or authority where this process
+ * holds/held a tree grant, while preserving providers like MediaStore that enforce ownership
+ * outside UriGrantsManagerService.
+ */
+internal fun enforceIncomingCallerUriAccess(
+    context: Context,
+    intent: Intent,
+    caller: ComponentCaller,
+    share: IncomingDocumentShare
+): IncomingDocumentShare {
+    if (share !is IncomingDocumentShare.Source) return share
+    if (caller.uid == Process.myUid()) return share
+    val uri = share.encodedUri.toUri()
+    if (!mayHaveAmbientTreeAccessForUri(context, uri)) {
+        return share
+    }
+    val uriCoveredByGrantFlags = intentCoversUriForGrantFlags(intent, uri)
+    val delegatedRead = uriCoveredByGrantFlags &&
+        (intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0
+    val hasRead = delegatedRead && try {
+        caller.checkContentUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) ==
+            PackageManager.PERMISSION_GRANTED
+    } catch (_: Exception) {
+        false
+    }
+    if (!hasRead) {
+        return IncomingDocumentShare.Rejected(
+            UiText.Resource(R.string.operation_incoming_content_unavailable)
+        )
+    }
+    if (share.purpose == IncomingSourcePurpose.Edit) {
+        val delegatedWrite = uriCoveredByGrantFlags &&
+            (intent.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0
+        val hasWrite = delegatedWrite && try {
+            caller.checkContentUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) ==
+                PackageManager.PERMISSION_GRANTED
+        } catch (_: Exception) {
+            false
+        }
+        if (!hasWrite) {
+            return share.copy(purpose = IncomingSourcePurpose.View)
+        }
+    }
+    return share
 }
 
 /** Returns one opaque, content-free task identity. */

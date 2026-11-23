@@ -374,6 +374,13 @@ internal class ExcerptExportController(
         handingOff = true
         return true
     }
+
+    fun destinationRejected() {
+        if (!handingOff || busy) return
+        handingOff = false
+        fail(R.string.operation_destination_unavailable)
+    }
+
     fun destinationReturned(uri: Uri?) {
         if (!handingOff || busy) return
         if (uri == null) { handingOff = false; return }

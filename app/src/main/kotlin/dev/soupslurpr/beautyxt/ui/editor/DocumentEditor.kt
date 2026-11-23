@@ -121,20 +121,30 @@ internal fun DocumentEditor(
     val qrImageExport = session.qrImageExport
     val qrImageDestination =
         rememberLauncherForActivityResult(
-            QrImageDestinationContract()
-        ) { uri ->
+            AuthorizedQrImageDestinationContract()
+        ) { selected ->
             val generation = qrImageExport.state.generation
             val format = qrImageExport.state.format
             val currentQrShare = session.qrShareStatus as? QrShareStatus.Ready
-            if (uri == null) {
+            if (selected == null) {
                 qrImageExport.cancelDestination(generation)
+                return@rememberLauncherForActivityResult
+            }
+            val applicationContext = context.applicationContext
+            if (
+                dev.soupslurpr.beautyxt.mayHaveAmbientTreeAccessForUri(
+                    applicationContext,
+                    selected.uri
+                ) && !selected.offersWrite
+            ) {
+                qrImageExport.failDestination(generation)
                 return@rememberLauncherForActivityResult
             }
             if (currentQrShare?.generation != generation) {
                 qrImageExport.failDestination(generation)
                 return@rememberLauncherForActivityResult
             }
-            val applicationContext = context.applicationContext
+            val uri = selected.uri
             qrImageExport.saveSelectedDestination(generation, uri.toString()) {
                 saveExpressiveQrCodeImage(
                     context = applicationContext,

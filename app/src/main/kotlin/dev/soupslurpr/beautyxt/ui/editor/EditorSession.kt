@@ -64,7 +64,11 @@ import dev.soupslurpr.beautyxt.transfer.client.QrTransferProcessor
 import dev.soupslurpr.beautyxt.transfer.client.TransferException
 import dev.soupslurpr.beautyxt.transfer.isValidNfcTagLabel
 import dev.soupslurpr.beautyxt.ui.UiText
+import dev.soupslurpr.beautyxt.ui.autosave.NewDocumentAutosaveGate
+import dev.soupslurpr.beautyxt.ui.autosave.NewDocumentAutosaveReadiness
+import dev.soupslurpr.beautyxt.ui.autosave.NewDocumentCreationResult
 import dev.soupslurpr.beautyxt.ui.userMessage
+import java.time.Clock
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -636,6 +640,8 @@ internal constructor(
     private val qrTransferProcessor: QrTransferProcessor? = null,
     private val nfcTransferProcessor: NfcTransferProcessor? = null,
     private val findNanoTime: () -> Long = System::nanoTime,
+    private val newDocumentAutosave: NewDocumentAutosaveGate? = null,
+    private val clock: Clock = Clock.systemDefaultZone(),
     private val backgroundDispatcher: CoroutineDispatcher =
         if (operationDispatcher == Dispatchers.Main || operationDispatcher == Dispatchers.Main.immediate) {
             Dispatchers.Default
@@ -712,6 +718,9 @@ internal constructor(
     private var latestObservedDraft: ActiveEditDraft? = null
     private var latestFieldValue: ActiveEditFieldValue? = null
     private var ownedDocumentSource = documentSource
+    private var nextNewDocumentAutosaveGeneration = 1L
+    private var activeNewDocumentAutosaveGeneration: Long? = null
+    private var newDocumentAutosaveJob: Job? = null
     private var sourceSaveRequestVersion = 0L
     private var sourceSaveJob: Job? = null
     private var documentRemovalJob: Job? = null
@@ -1246,6 +1255,19 @@ internal constructor(
     )
         private set
 
+    var newDocumentAutosaveState by mutableStateOf<NewDocumentAutosaveState>(
+        if (
+            documentSource == null &&
+            newDocumentAutosave != null &&
+            newDocumentAutosave.readiness != NewDocumentAutosaveReadiness.Off
+        ) {
+            NewDocumentAutosaveState.Ready
+        } else {
+            NewDocumentAutosaveState.Inactive
+        }
+    )
+        private set
+
     var sourceConflictResolution by mutableStateOf<SourceConflictResolution?>(null)
         private set
 
@@ -1300,10 +1322,32 @@ internal constructor(
         get() =
             state.hasDocumentChanges ||
                 activeDraft?.hasChanges == true ||
-                (!isViewOnly && sourceSaveStatus.isTerminalFailure())
+                (!isViewOnly && sourceSaveStatus.isTerminalFailure()) ||
+                newDocumentAutosaveState is NewDocumentAutosaveState.Failed
 
     val hasDocumentSource: Boolean
         get() = ownedDocumentSource != null
+
+    val isNewDocumentAutosaveCreating: Boolean
+        get() = newDocumentAutosaveState == NewDocumentAutosaveState.Creating
+
+    val isNewDocumentAutosaveArmed: Boolean
+        get() = ownedDocumentSource == null &&
+            newDocumentAutosaveState == NewDocumentAutosaveState.Ready &&
+            newDocumentAutosave?.readiness == NewDocumentAutosaveReadiness.Armed
+
+    /** Exposes only confirmed UI states so startup loading never prematurely promises autosave. */
+    val effectiveNewDocumentAutosaveState: NewDocumentAutosaveState
+        get() = when (val current = newDocumentAutosaveState) {
+            NewDocumentAutosaveState.Ready ->
+                if (isNewDocumentAutosaveArmed) {
+                    NewDocumentAutosaveState.Ready
+                } else {
+                    NewDocumentAutosaveState.Inactive
+                }
+
+            else -> current
+        }
 
     /** Keeps received-content wording separate from save eligibility and close ownership. */
     val isUneditedReceivedContent: Boolean
@@ -1485,6 +1529,8 @@ internal constructor(
                 (activeDraft?.hasChanges != true || state.editorMessage != null) &&
                 !isSaveBusy &&
                 !isSourceSaveBusy &&
+                !isNewDocumentAutosaveCreating &&
+                newDocumentAutosaveJob == null &&
                 !isShareBusy &&
                 !isPrintBusy &&
                 !isQrShareBusy &&
@@ -1532,6 +1578,8 @@ internal constructor(
                 !isQrShareBusy &&
                 !isNfcWriteBusy &&
                 pendingEditWindowAction == null &&
+                !isNewDocumentAutosaveCreating &&
+                newDocumentAutosaveJob == null &&
                 !(isViewOnly && ownedDocumentSource != null && isSourceSaveBusy) &&
                 (
                     saveStatus == SaveStatus.Idle ||
@@ -4302,7 +4350,15 @@ internal constructor(
             SaveDestinationRequest(
                 generation = generation,
                 format = format,
-                suggestedName = suggestSaveDestinationName(title = title, format = format),
+                suggestedName = suggestSaveDestinationName(
+                    title = title,
+                    format = format,
+                    fallbackName = formatTimestampedDocumentName(
+                        format = format,
+                        instant = clock.instant(),
+                        zoneId = clock.zone
+                    )
+                ),
                 purpose = choosing.purpose
             )
         activeSaveGeneration = generation
@@ -4505,28 +4561,66 @@ internal constructor(
             )
             return true
         }
-        val previousDocumentSource = ownedDocumentSource
         sourceSaveEditTarget =
             pendingSourceReplacementEditTarget
                 ?.takeIf { pending -> pending.saveGeneration == request.generation }
                 ?.target
         pendingSourceReplacementEditTarget = null
+        activeNewDocumentAutosaveGeneration = null
+        newDocumentAutosaveState = NewDocumentAutosaveState.Inactive
+        adoptWritableSource(
+            documentSource = documentSource,
+            format = request.format,
+            sourceDisplayName = sourceDisplayName,
+            sourceMetadata = sourceMetadata,
+            fallbackTitle = request.suggestedName,
+            unlockEditingAfterSave = isViewOnly
+        )
+        finishSaveSelection(request.generation, SaveStatus.Idle)
+        return true
+    }
+
+    /** Adopts one created or selected writable source and starts its initial verified save. */
+    private fun adoptWritableSource(
+        documentSource: WritableEditorDocumentSource,
+        format: DocumentFormat,
+        sourceDisplayName: String?,
+        sourceMetadata: SelectedDocumentMetadata?,
+        fallbackTitle: String,
+        unlockEditingAfterSave: Boolean
+    ) {
+        val previousDocumentSource = ownedDocumentSource
         ownedDocumentSource = documentSource
         overwriteSourceOnNextSave = false
         reviewedSourceOverwrite = null
         sourceConflictResolution = null
         dismissSourceConflictComparison()
-        unlockEditingAfterSourceSave = isViewOnly
+        unlockEditingAfterSourceSave = unlockEditingAfterSave
         val selectedMetadata =
             sourceMetadata ?: SelectedDocumentMetadata(displayName = sourceDisplayName)
         this.sourceMetadata = selectedMetadata.copy(lastModifiedEpochMillis = null)
-        title = selectedMetadata.displayName ?: request.suggestedName
-        retainedSourceFormat = request.format
+        title = selectedMetadata.displayName ?: fallbackTitle
+        retainedSourceFormat = format
         sourceSaveStatus = SourceSaveStatus.Pending
         requestSourceSave()
         closeDocumentSource(previousDocumentSource)
-        finishSaveSelection(request.generation, SaveStatus.Idle)
-        return true
+    }
+
+    /** Retries automatic new-document file creation after a safe-to-retry failure. */
+    fun retryNewDocumentAutosave() {
+        val failed = newDocumentAutosaveState as? NewDocumentAutosaveState.Failed ?: return
+        if (
+            closeStarted.get() ||
+            ownedDocumentSource != null ||
+            newDocumentAutosave == null ||
+            newDocumentAutosaveJob != null ||
+            !failed.canRetryCreate
+        ) {
+            return
+        }
+        newDocumentAutosaveState = NewDocumentAutosaveState.Ready
+        flushPendingEdit()
+        ensureSourceSave()
     }
 
     /** Cancels one queued or exporting explicit save without cancelling its edit. */
@@ -4661,13 +4755,24 @@ internal constructor(
             return
         }
         checkpointPendingEdit()
+        var creationAttemptsRemaining = 1
         while (!closeStarted.get()) {
             val editJob = editSynchronizationJob
             if (editJob != null) {
                 editJob.join()
                 continue
             }
-            ensureSourceSave()
+            if (creationAttemptsRemaining > 0) {
+                ensureSourceSave()
+                val creationJob = newDocumentAutosaveJob
+                if (creationJob != null) {
+                    creationAttemptsRemaining -= 1
+                    creationJob.join()
+                    continue
+                }
+            } else if (ownedDocumentSource != null) {
+                ensureSourceSave()
+            }
             val saveJob = sourceSaveJob
             if (saveJob != null) {
                 saveJob.join()
@@ -4700,6 +4805,10 @@ internal constructor(
         printSetupDraft = null
         val activeSourceSaveJob = sourceSaveJob
         sourceSaveJob = null
+        activeNewDocumentAutosaveGeneration = null
+        val activeNewDocumentAutosaveJob = newDocumentAutosaveJob
+        newDocumentAutosaveJob = null
+        newDocumentAutosaveState = NewDocumentAutosaveState.Inactive
         val activeDocumentRemovalJob = documentRemovalJob
         val activeDestructiveRemovalJob =
             activeDocumentRemovalJob.takeIf {
@@ -4761,6 +4870,7 @@ internal constructor(
         goToLineErrorMessage = null
         operationScope.cancel()
         saveJob?.cancel()
+        activeNewDocumentAutosaveJob?.cancel()
         activeSharePreparationJob?.cancel()
         activePrintPreparationJob?.cancel()
         activeQrSharePreparationJob?.cancel()
@@ -5955,9 +6065,12 @@ internal constructor(
     /** Starts one source save when no conflicting document operation owns the slot. */
     private fun ensureSourceSave() {
         val documentSource = ownedDocumentSource as? WritableEditorDocumentSource
+        if (documentSource == null) {
+            ensureNewDocumentAutosave()
+            return
+        }
         if (
             closeStarted.get() ||
-            documentSource == null ||
             sourceSaveStatus.isTerminalFailure() ||
             sourceSaveJob != null
         ) {
@@ -6014,6 +6127,173 @@ internal constructor(
             finishSourceSave(saveJob)
         }
         saveJob.start()
+    }
+
+    /** Lazily creates one file in the opt-in folder after the first stable non-empty edit. */
+    private fun ensureNewDocumentAutosave() {
+        val gate = newDocumentAutosave
+        if (
+            closeStarted.get() ||
+            ownedDocumentSource != null ||
+            gate == null ||
+            newDocumentAutosaveJob != null ||
+            isSaveBusy ||
+            newDocumentAutosaveState != NewDocumentAutosaveState.Ready
+        ) {
+            return
+        }
+        if (gate.readiness == NewDocumentAutosaveReadiness.Off) {
+            newDocumentAutosaveState = NewDocumentAutosaveState.Inactive
+            return
+        }
+        if (!isDocumentStableForSave()) {
+            return
+        }
+        val byteLength = state.metrics?.serializedByteLength ?: return
+        if (byteLength <= 0L || byteLength > ExportProtocol.MAX_BYTE_LIMIT) {
+            return
+        }
+        val generation = nextNewDocumentAutosaveGeneration
+        nextNewDocumentAutosaveGeneration = Math.incrementExact(nextNewDocumentAutosaveGeneration)
+        activeNewDocumentAutosaveGeneration = generation
+        newDocumentAutosaveState = NewDocumentAutosaveState.Creating
+        val createdAt = clock.instant()
+        val zone = clock.zone
+        lateinit var creationJob: Job
+        creationJob =
+            operationScope.launch(start = CoroutineStart.LAZY) {
+                createAndAdoptNewDocumentSource(
+                    gate = gate,
+                    generation = generation,
+                    suggestName = { format ->
+                        formatTimestampedDocumentName(
+                            format = format,
+                            instant = createdAt,
+                            zoneId = zone
+                        )
+                    }
+                )
+            }
+        newDocumentAutosaveJob = creationJob
+        creationJob.invokeOnCompletion {
+            finishNewDocumentAutosave(creationJob, generation)
+        }
+        creationJob.start()
+    }
+
+    /** Executes bounded SAF file creation and adopts the verified-empty child on success. */
+    private suspend fun createAndAdoptNewDocumentSource(
+        gate: NewDocumentAutosaveGate,
+        generation: Long,
+        suggestName: (DocumentFormat) -> String
+    ) {
+        val result =
+            try {
+                gate.createNewDocument(suggestName)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                NewDocumentCreationResult.Failed(
+                    message = UiText.Resource(R.string.autosave_create_failed),
+                    canRetryCreate = false
+                )
+            } catch (_: LinkageError) {
+                NewDocumentCreationResult.Failed(
+                    message = UiText.Resource(R.string.autosave_create_failed),
+                    canRetryCreate = false
+                )
+            }
+        when (result) {
+            is NewDocumentCreationResult.Created -> {
+                if (
+                    !closeStarted.get() &&
+                    ownedDocumentSource == null &&
+                    activeNewDocumentAutosaveGeneration == generation
+                ) {
+                    activeNewDocumentAutosaveGeneration = null
+                    newDocumentAutosaveState = NewDocumentAutosaveState.Inactive
+                    adoptWritableSource(
+                        documentSource = result.source,
+                        format = result.format,
+                        sourceDisplayName = result.displayName,
+                        sourceMetadata = result.metadata,
+                        fallbackTitle = suggestName(result.format),
+                        unlockEditingAfterSave = false
+                    )
+                } else {
+                    closeDocumentSource(result.source)
+                }
+            }
+
+            NewDocumentCreationResult.Disabled -> {
+                if (!closeStarted.get() && activeNewDocumentAutosaveGeneration == generation) {
+                    newDocumentAutosaveState = NewDocumentAutosaveState.Inactive
+                }
+            }
+
+            NewDocumentCreationResult.Deferred -> {
+                if (
+                    !closeStarted.get() &&
+                    ownedDocumentSource == null &&
+                    activeNewDocumentAutosaveGeneration == generation
+                ) {
+                    newDocumentAutosaveState =
+                        NewDocumentAutosaveState.Failed(
+                            message = UiText.Resource(R.string.autosave_folder_unavailable),
+                            canRetryCreate = true
+                        )
+                    cancelSaveBeforeClose()
+                }
+            }
+
+            is NewDocumentCreationResult.Failed -> {
+                if (
+                    !closeStarted.get() &&
+                    ownedDocumentSource == null &&
+                    activeNewDocumentAutosaveGeneration == generation
+                ) {
+                    newDocumentAutosaveState =
+                        NewDocumentAutosaveState.Failed(
+                            message = result.message,
+                            canRetryCreate = result.canRetryCreate
+                        )
+                    cancelSaveBeforeClose()
+                }
+            }
+        }
+    }
+
+    /** Releases one completed creation job and resumes queued saves, shares, and closes. */
+    private fun finishNewDocumentAutosave(completedJob: Job, generation: Long) {
+        if (newDocumentAutosaveJob !== completedJob) {
+            return
+        }
+        newDocumentAutosaveJob = null
+        if (activeNewDocumentAutosaveGeneration == generation) {
+            activeNewDocumentAutosaveGeneration = null
+        }
+        if (newDocumentAutosaveState == NewDocumentAutosaveState.Creating) {
+            newDocumentAutosaveState =
+                if (
+                    !closeStarted.get() &&
+                    ownedDocumentSource == null &&
+                    newDocumentAutosave != null &&
+                    newDocumentAutosave.readiness != NewDocumentAutosaveReadiness.Off
+                ) {
+                    NewDocumentAutosaveState.Ready
+                } else {
+                    NewDocumentAutosaveState.Inactive
+                }
+        }
+        resolveQueuedExplicitSave()
+        resolveQueuedShare()
+        resolveQueuedPrint()
+        resolveQueuedQrShare()
+        resolveQueuedNfcWrite()
+        if (ownedDocumentSource != null) {
+            ensureSourceSave()
+        }
+        signalPendingCloseResolution()
     }
 
     /** Saves one captured source revision and leaves newer requests pending. */
@@ -6352,7 +6632,7 @@ internal constructor(
             cancelQueuedExplicitSave()
             return
         }
-        if (sourceSaveJob != null) {
+        if (sourceSaveJob != null || newDocumentAutosaveJob != null) {
             return
         }
         saveStatus = SaveStatus.ChoosingFormat(queued.purpose)
@@ -6394,6 +6674,9 @@ internal constructor(
             return
         }
 
+        if (newDocumentAutosaveJob != null) {
+            return
+        }
         val documentSource = ownedDocumentSource
         if (documentSource != null) {
             if (sourceSaveStatus.isTerminalFailure()) {
@@ -6754,6 +7037,9 @@ internal constructor(
             publishQrShareFailure(queued.generation, QR_SHARE_FAILURE_MESSAGE)
             return
         }
+        if (newDocumentAutosaveJob != null) {
+            return
+        }
         if (ownedDocumentSource is WritableEditorDocumentSource) {
             if (sourceSaveStatus.isTerminalFailure()) {
                 publishQrShareFailure(queued.generation, SHARE_SOURCE_FAILURE_MESSAGE)
@@ -6910,6 +7196,9 @@ internal constructor(
             }
         } else if (activeDraft != null) {
             publishNfcWriteFailure(queued.generation, NFC_WRITE_FAILURE_MESSAGE)
+            return
+        }
+        if (newDocumentAutosaveJob != null) {
             return
         }
         if (ownedDocumentSource is WritableEditorDocumentSource) {
@@ -7240,14 +7529,23 @@ internal constructor(
         fun createEmpty(
             markdownRenderer: MarkdownRenderer? = null,
             qrTransferProcessor: QrTransferProcessor? = null,
-            nfcTransferProcessor: NfcTransferProcessor? = null
+            nfcTransferProcessor: NfcTransferProcessor? = null,
+            newDocumentAutosave: NewDocumentAutosaveGate? = null,
+            clock: Clock = Clock.systemDefaultZone()
         ): EditorSession = EditorSession(
             title = NEW_DOCUMENT_TITLE,
             state = EditorDocumentState.createEmpty(),
+            sourceFormat = if (newDocumentAutosave?.readiness == NewDocumentAutosaveReadiness.Armed) {
+                newDocumentAutosave.preferredFormat
+            } else {
+                DocumentFormat.PlainText
+            },
             shouldFocusInitialEditor = true,
             markdownRenderer = markdownRenderer,
             qrTransferProcessor = qrTransferProcessor,
-            nfcTransferProcessor = nfcTransferProcessor
+            nfcTransferProcessor = nfcTransferProcessor,
+            newDocumentAutosave = newDocumentAutosave,
+            clock = clock
         )
 
         /** Creates a keyboard-closed session for one bounded, unsaved received text value. */

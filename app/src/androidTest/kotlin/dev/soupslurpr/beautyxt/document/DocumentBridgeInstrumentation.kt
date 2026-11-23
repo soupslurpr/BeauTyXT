@@ -416,6 +416,7 @@ class DocumentBridgeInstrumentation : Instrumentation() {
                 verifyPhase("text appearance") { verifyTextAppearance() }
                 verifyPhase("app theme") { verifyAppTheme() }
                 verifyPhase("app theme storage recovery") { verifyAppThemeStorageRecovery() }
+                verifyPhase("new document autosave") { verifyNewDocumentAutosave() }
                 verifyPhase("source appearance geometry") { verifySourceAppearanceGeometry() }
                 verifyPhase("appearance storage recovery") { verifyAppearanceStorageRecovery() }
                 verifyOptInPhase("appearance adaptation") { verifyTextAppearanceAdaptation() }
@@ -4671,7 +4672,7 @@ private fun requireNoTargetSourceSavePackageDescriptors() {
 }
 
 /** Captures app-owned storage for one stateless operation. */
-private data class StatelessSessionState(
+internal data class StatelessSessionState(
     val storageEntries: Map<String, AppStorageEntry>,
     val additionalForbiddenPatterns: List<ByteArray>,
     val additionalForbiddenNameParts: List<String>
@@ -4719,7 +4720,8 @@ private data class StatelessSessionState(
             context: Context,
             expectedImportBufferDescriptors: Int = 0,
             additionalForbiddenPatterns: List<ByteArray> = emptyList(),
-            additionalForbiddenNameParts: List<String> = emptyList()
+            additionalForbiddenNameParts: List<String> = emptyList(),
+            expectedPersistedTreeUris: Set<String> = emptySet()
         ): StatelessSessionState {
             require(expectedImportBufferDescriptors >= 0) {
                 "expected import buffer descriptor count must be nonnegative"
@@ -4764,8 +4766,10 @@ private data class StatelessSessionState(
                     entries = entries
                 )
             }
-            check(context.contentResolver.persistedUriPermissions.isEmpty()) {
-                "persisted uri grants must remain empty"
+            val actualPersistedUris =
+                context.contentResolver.persistedUriPermissions.map { it.uri.toString() }.toSet()
+            check(actualPersistedUris == expectedPersistedTreeUris) {
+                "persisted uri grants did not match expected set: actual=$actualPersistedUris expected=$expectedPersistedTreeUris"
             }
             return StatelessSessionState(
                 storageEntries = entries,
@@ -4972,7 +4976,7 @@ private fun StructStat.toAppStorageEntry(digest: String?): AppStorageEntry = App
 )
 
 /** Identifies one app-owned entry without retaining its contents. */
-private data class AppStorageEntry(
+internal data class AppStorageEntry(
     val mode: Int,
     val device: Long,
     val inode: Long,

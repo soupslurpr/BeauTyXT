@@ -333,11 +333,16 @@ internal fun EditorActionBar(
                 }
             }
             if (plan.showSave) {
+                val emphasizeSave = !session.hasDocumentSource &&
+                    session.hasUnsavedChanges &&
+                    !session.isNewDocumentAutosaveArmed &&
+                    !session.isNewDocumentAutosaveCreating
                 EditorToolButton(
                     iconRes = R.drawable.ic_save,
                     label = saveLabel,
                     enabled = session.canStartSaveAs,
-                    onClick = onSave
+                    onClick = onSave,
+                    emphasized = emphasizeSave
                 )
             }
             if (plan.showShare) {
