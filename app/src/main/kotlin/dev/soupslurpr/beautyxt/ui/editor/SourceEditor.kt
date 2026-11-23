@@ -1246,19 +1246,19 @@ private fun ActiveEditWindowEditor(
         bottomOverlayPx,
         hasBottomBanners,
         textLayoutResult,
-        draft.scrollState
+        viewportClip,
+        selectionInset
     ) {
         derivedStateOf {
             if (hasBottomBanners || bottomOverlayPx <= 0) {
                 0f
             } else {
-                val viewportPx = draft.scrollState.viewportSize
-                val contentHeightPx = (textLayoutResult?.size?.height ?: 0).toFloat()
-                if (viewportPx <= 0) {
-                    0f
-                } else {
-                    (contentHeightPx - (viewportPx - bottomOverlayPx)).coerceIn(0f, bottomOverlayPx.toFloat())
-                }
+                computeMaxBottomClearancePx(
+                    viewportHeightPx = viewportClip?.height ?: 0f,
+                    topInsetPx = selectionInset,
+                    contentHeightPx = (textLayoutResult?.size?.height ?: 0).toFloat(),
+                    bottomOverlayPx = bottomOverlayPx.toFloat()
+                )
             }
         }
     }
@@ -1326,37 +1326,41 @@ private fun ActiveEditWindowEditor(
         textFieldState.selection,
         textFieldState.text,
         textLayoutResult,
+        viewportClip,
         capsuleObstructionPx,
         hasBottomBanners,
         draft.isEditorFocused
     ) {
         val layout = textLayoutResult ?: return@LaunchedEffect
-        if (hasBottomBanners || capsuleObstructionPx <= 0f || !draft.isEditorFocused) {
+        val viewportPx = viewportClip?.height ?: 0f
+        if (
+            hasBottomBanners ||
+            capsuleObstructionPx <= 0f ||
+            !draft.isEditorFocused ||
+            viewportPx <= 0f
+        ) {
             return@LaunchedEffect
         }
-        val viewportPx = draft.scrollState.viewportSize
-        if (viewportPx <= 0) return@LaunchedEffect
         val textLen = layout.layoutInput.text.length
         val caretOffset = textFieldState.selection.end.coerceIn(0, textLen)
         val caretRect = layout.getCursorRect(caretOffset)
-        val visibleCaretTop = caretRect.top - draft.scrollState.value - bottomClearancePx
-        if (visibleCaretTop < 0f && bottomClearancePx > 0f) {
-            bottomClearancePx = (bottomClearancePx + visibleCaretTop).coerceAtLeast(0f)
-            return@LaunchedEffect
+        val adjustment = computeBottomClearanceCaretAdjustment(
+            viewportHeightPx = viewportPx,
+            topInsetPx = selectionInset,
+            caretTopPx = caretRect.top,
+            caretBottomPx = caretRect.bottom,
+            scrollValuePx = draft.scrollState.value,
+            scrollMaxPx = draft.scrollState.maxValue,
+            currentBottomClearancePx = bottomClearancePx,
+            maxBottomClearancePx = maxBottomClearancePx,
+            capsuleObstructionPx = capsuleObstructionPx,
+            caretRevealMarginPx = caretRevealMarginPx
+        )
+        if (adjustment.scrollAdvancePx > 0) {
+            draft.scrollState.scrollTo(draft.scrollState.value + adjustment.scrollAdvancePx)
         }
-        val visibleCaretBottom = caretRect.bottom - draft.scrollState.value - bottomClearancePx
-        val safeBottom = viewportPx - capsuleObstructionPx - caretRevealMarginPx
-        if (safeBottom > 0f && visibleCaretBottom > safeBottom) {
-            val needed = visibleCaretBottom - safeBottom
-            val scrollRoom = (draft.scrollState.maxValue - draft.scrollState.value).coerceAtLeast(0)
-            val scrollAdvance = minOf(needed.roundToInt(), scrollRoom)
-            if (scrollAdvance > 0) {
-                draft.scrollState.scrollTo(draft.scrollState.value + scrollAdvance)
-            }
-            val remaining = needed - scrollAdvance
-            if (remaining > 0f && maxBottomClearancePx > bottomClearancePx) {
-                bottomClearancePx = (bottomClearancePx + remaining).coerceAtMost(maxBottomClearancePx)
-            }
+        if (adjustment.nextBottomClearancePx != bottomClearancePx) {
+            bottomClearancePx = adjustment.nextBottomClearancePx
         }
     }
 
@@ -1605,6 +1609,73 @@ private fun PendingEditWindowActionMessage(
             }
         }
     }
+}
+
+/** Computes the maximum bottom clearance needed so trailing lines clear the floating toolbar. */
+internal fun computeMaxBottomClearancePx(
+    viewportHeightPx: Float,
+    topInsetPx: Float,
+    contentHeightPx: Float,
+    bottomOverlayPx: Float
+): Float {
+    if (viewportHeightPx <= 0f || bottomOverlayPx <= 0f) return 0f
+    val contentBottomPx = topInsetPx + contentHeightPx
+    return (contentBottomPx - (viewportHeightPx - bottomOverlayPx)).coerceIn(0f, bottomOverlayPx)
+}
+
+/** Describes one bounded scroll and bottom-clearance adjustment to keep the caret visible. */
+internal data class BottomClearanceCaretAdjustment(
+    val scrollAdvancePx: Int,
+    val nextBottomClearancePx: Float
+)
+
+/**
+ * Keeps the focused caret clear of the floating bottom toolbar using the actual container
+ * viewport height rather than BasicTextField's loose content-sized ScrollState viewport.
+ */
+internal fun computeBottomClearanceCaretAdjustment(
+    viewportHeightPx: Float,
+    topInsetPx: Float,
+    caretTopPx: Float,
+    caretBottomPx: Float,
+    scrollValuePx: Int,
+    scrollMaxPx: Int,
+    currentBottomClearancePx: Float,
+    maxBottomClearancePx: Float,
+    capsuleObstructionPx: Float,
+    caretRevealMarginPx: Float
+): BottomClearanceCaretAdjustment {
+    if (viewportHeightPx <= 0f || capsuleObstructionPx <= 0f) {
+        return BottomClearanceCaretAdjustment(0, currentBottomClearancePx)
+    }
+    val visibleCaretTop = topInsetPx + caretTopPx - scrollValuePx - currentBottomClearancePx
+    if (visibleCaretTop < 0f && currentBottomClearancePx > 0f) {
+        return BottomClearanceCaretAdjustment(
+            scrollAdvancePx = 0,
+            nextBottomClearancePx = (currentBottomClearancePx + visibleCaretTop).coerceAtLeast(0f)
+        )
+    }
+    val visibleCaretBottom = topInsetPx + caretBottomPx - scrollValuePx - currentBottomClearancePx
+    val safeBottom = viewportHeightPx - capsuleObstructionPx - caretRevealMarginPx
+    if (safeBottom <= 0f || visibleCaretBottom <= safeBottom) {
+        return BottomClearanceCaretAdjustment(0, currentBottomClearancePx)
+    }
+    val needed = visibleCaretBottom - safeBottom
+    val scrollRoom = (scrollMaxPx - scrollValuePx).coerceAtLeast(0)
+    val scrollAdvance = minOf(needed.roundToInt(), scrollRoom)
+    val remaining = needed - scrollAdvance
+    val topHeadroom = (visibleCaretTop - scrollAdvance).coerceAtLeast(0f)
+    val clearanceAdvance = minOf(remaining, topHeadroom)
+    val nextClearance =
+        if (clearanceAdvance > 0f && maxBottomClearancePx > currentBottomClearancePx) {
+            (currentBottomClearancePx + clearanceAdvance).coerceAtMost(maxBottomClearancePx)
+        } else {
+            currentBottomClearancePx
+        }
+    return BottomClearanceCaretAdjustment(
+        scrollAdvancePx = scrollAdvance,
+        nextBottomClearancePx = nextClearance
+    )
 }
 
 /** Displays one adaptive logical line identity without exposing visual markers. */

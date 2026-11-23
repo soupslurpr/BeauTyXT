@@ -428,4 +428,74 @@ class DocumentEditorLayoutTest {
             )
         }
     }
+
+    /** Verifies short documents (e.g. pressing Enter 3 times) never shift up or oscillate. */
+    @Test
+    fun shortDocumentNeverTriggersFloatingToolbarBottomClearance() {
+        val maxClearance = computeMaxBottomClearancePx(
+            viewportHeightPx = 1_200f,
+            topInsetPx = 44f,
+            contentHeightPx = 260f,
+            bottomOverlayPx = 210f
+        )
+        assertEquals(0f, maxClearance)
+
+        val adjustment = computeBottomClearanceCaretAdjustment(
+            viewportHeightPx = 1_200f,
+            topInsetPx = 44f,
+            caretTopPx = 195f,
+            caretBottomPx = 260f,
+            scrollValuePx = 0,
+            scrollMaxPx = 0,
+            currentBottomClearancePx = 0f,
+            maxBottomClearancePx = maxClearance,
+            capsuleObstructionPx = 210f,
+            caretRevealMarginPx = 33f
+        )
+        assertEquals(0, adjustment.scrollAdvancePx)
+        assertEquals(0f, adjustment.nextBottomClearancePx)
+    }
+
+    /** Verifies trailing lines behind the floating toolbar shift cleanly without top-edge bounce. */
+    @Test
+    fun trailingCaretBehindFloatingToolbarClearsWithoutOscillating() {
+        val maxClearance = computeMaxBottomClearancePx(
+            viewportHeightPx = 1_200f,
+            topInsetPx = 44f,
+            contentHeightPx = 1_050f,
+            bottomOverlayPx = 210f
+        )
+        assertEquals(104f, maxClearance)
+
+        val firstPass = computeBottomClearanceCaretAdjustment(
+            viewportHeightPx = 1_200f,
+            topInsetPx = 44f,
+            caretTopPx = 990f,
+            caretBottomPx = 1_050f,
+            scrollValuePx = 0,
+            scrollMaxPx = 0,
+            currentBottomClearancePx = 0f,
+            maxBottomClearancePx = maxClearance,
+            capsuleObstructionPx = 210f,
+            caretRevealMarginPx = 33f
+        )
+        assertEquals(0, firstPass.scrollAdvancePx)
+        assertEquals(104f, firstPass.nextBottomClearancePx)
+
+        // Repeating on the next keystroke must stay stable (no downward bounce).
+        val secondPass = computeBottomClearanceCaretAdjustment(
+            viewportHeightPx = 1_200f,
+            topInsetPx = 44f,
+            caretTopPx = 990f,
+            caretBottomPx = 1_050f,
+            scrollValuePx = 0,
+            scrollMaxPx = 0,
+            currentBottomClearancePx = firstPass.nextBottomClearancePx,
+            maxBottomClearancePx = maxClearance,
+            capsuleObstructionPx = 210f,
+            caretRevealMarginPx = 33f
+        )
+        assertEquals(0, secondPass.scrollAdvancePx)
+        assertEquals(104f, secondPass.nextBottomClearancePx)
+    }
 }
