@@ -11,13 +11,17 @@ fonts.
   `math` fences via RaTeX (0.1.16) and bundled KaTeX fonts. Custom macros,
   unbounded expansion, `alignat`, multiline inline expressions, and unsupported
   environments/assets stay source.
-- **Diagrams:** `mermaid` fences for `flowchart`/`graph`, `sequenceDiagram`,
-  `stateDiagram`, `classDiagram`, and `erDiagram` via Merman (0.11.0, enabling
-  only those five diagram features)
+- **Diagrams:** `mermaid` fences for 12 deterministic host-palette families
+  (`flowchart`/`graph`, `sequenceDiagram`, `stateDiagram`, `classDiagram`,
+  `erDiagram`, `pie`, `gitGraph`, `requirementDiagram`, `packet`/`packet-beta`,
+  `quadrantChart`, `xychart`/`xychart-beta`, and `block`/`block-beta`) via
+  Merman (0.11.0, enabling only those 12 pure-SVG diagram features)
   with a host-owned theme and platform fonts selected by Android's NDK
-  `AFontMatcher`. Frontmatter/config, CSS/styling commands, click/link actions,
-  asset shapes, HTML labels, unsupported families, and labels with missing
-  glyphs remain source (no silent missing-glyph boxes).
+  `AFontMatcher`. Families relying on SVG filter effects, hardcoded colors, or
+  group opacity (`timeline`, `journey`, `gantt`) as well as frontmatter/config,
+  CSS/styling commands, click/link actions, asset shapes, HTML labels,
+  unsupported families, and labels with missing glyphs remain source (no silent
+  missing-glyph boxes).
 
 Unsupported, oversized, timed-out, or failed illustrations remain readable as
 exact source with an explicit reason and never block neighboring illustrations.
@@ -49,11 +53,14 @@ exact source with an explicit reason and never block neighboring illustrations.
   (**128** entries / **8 MiB** encoded packets) with viewport priority and a
   **12 s** per-viewport work budget; printing uses an eager **128**-attempt /
   **8 MiB** / **12 s** budget.
-- **Interaction & accessibility:** diagrams start fit-width with a text-size
-  pan toggle; Copy always copies exact TeX/Mermaid source. Accessibility
-  exposes original TeX or authored `accTitle`/`accDescr` (falling back to
-  Mermaid source). Formatted PDFs draw the same paths with exact source in the
-  selectable Unicode layer.
+- **Interaction, inspection, export, & accessibility:** diagrams start fit-width
+  with a text-size pan toggle and open a full-screen pinch-to-zoom vector
+  inspector (`IllustrationInspectorDialog`) supporting lossless WebP/PNG
+  **Save image** (SAF via `IsolatedDocumentExporter`) and **Share image**
+  (`ExcerptProvider` session-owned lease, no app-private files). Copy always
+  copies exact TeX/Mermaid source. Accessibility exposes original TeX or
+  authored `accTitle`/`accDescr` (falling back to Mermaid source). Formatted
+  PDFs draw the same paths with exact source in the selectable Unicode layer.
 
 ## Parser containment regression
 
@@ -67,7 +74,7 @@ never poison subsequent diagrams.
 ## Dependencies and verification
 
 Direct versions (`ratex` 0.1.16, `merman` 0.11.0 with default features disabled
-and only the five admitted diagram families enabled) are pinned in `Cargo.lock`
+and only the 12 admitted diagram families enabled) are pinned in `Cargo.lock`
 and covered by bundled notices (see
 [third-party notices](../CONTRIBUTING.md#third-party-notices)). Host unit tests
 and debug-only worker-probe instrumentation phases verify packet validation,

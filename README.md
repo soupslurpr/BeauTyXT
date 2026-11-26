@@ -12,22 +12,36 @@ Requires **Android 17 / API 37**. The interface is currently English-only.
 
 ## Read, edit, and share
 
-- Read Markdown with tables, task lists, alerts, footnotes, and a supported HTML
-  subset. Supported TeX math and Mermaid diagrams render natively, without a
-  browser or JavaScript.
-- Open Markdown directly in Reading mode and switch smoothly to Source editing
-  while keeping your place. Navigate long documents with live Contents,
-  document-wide Find, and Go to line.
-- Customize fonts, text size, spacing, and column layout independently for
-  Source and Reading in **Text appearance**, plus an optional **True black**
-  OLED dark theme in **App theme**.
+- Read Markdown with tables, interactive task lists, alerts, footnotes,
+  collapsible `<details>` sections, YAML frontmatter properties, syntax-highlighted
+  code blocks, and a supported HTML subset. Supported TeX math and 12 Mermaid
+  diagram families render natively, without a browser or JavaScript, with
+  full-screen pinch-to-zoom diagram/formula & 2D table inspectors and lossless
+  WebP/PNG image export.
+- Open Markdown directly in Reading mode, switch smoothly to Source editing
+  while keeping your place, or use live side-by-side **Split view** on wide
+  screens (`≥ 840 dp`). Navigate long documents with filterable live Contents,
+  subtle Reading progress, document-wide Find, and Go to line.
+- Write faster in Source mode with bounded syntax highlighting, optional line
+  numbers, Markdown Enter continuation, selection wrapping, a non-focusable
+  formatting strip, hardware editing shortcuts, live selection/reading-time
+  stats, and atomic Undo-able `LF` / `CRLF` line-ending conversion.
+- Open a new blank document side-by-side with **New window**, one-tap **Paste**
+  from Home, and static launcher shortcuts (**New**, **Open**, **Paste**,
+  **Scan QR**).
+- Customize fonts, text size, spacing, column layout, syntax highlighting, line
+  numbers, and **Keep screen on** independently for Source and Reading in
+  **Text appearance**, plus an optional **True black** OLED dark theme in
+  **App theme**.
 - Search and replace with literal, Whole word, and Regex options, Results with
   context, batch replacement review, and one-step **Undo replacement**.
 - Edit with undo, redo, automatic saving to compatible files, and a read-only
-  **Compare changes** diff view if another app modifies an open file on disk.
-- Share or export whole documents or selections via Android, PDF, QR codes
-  (including lossless WebP/PNG image export), NFC tags, Copy, or Print — with
-  explicit preview and per-format explanations.
+  diff view for **Compare changes** (external conflicts), **Compare with file…**,
+  and **Compare with clipboard**.
+- Share or export whole documents, illustrations, or selections via Android,
+  syntax-highlighted vector PDF, QR codes (including lossless WebP/PNG image
+  export), NFC tags, Copy, or Print — with explicit preview and per-format
+  explanations.
 
 ## Files and privacy
 

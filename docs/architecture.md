@@ -35,10 +35,10 @@ are non-negotiable:
 
 | Process | Role | Notes |
 | --- | --- | --- |
-| App process | Kotlin/Compose UI, Navigation 3 (`HomeActivity`), separate-task external handlers (`MainActivity`, `ShareActivity`), SAF/NFC/camera/print integration, in-process Rust `editor-core` & `print-core` via JNI | Owns the sole retained in-memory session (`retain` store); never serializes document content or source URIs into Android instance state. Stores only content-free preferences in `noBackupFilesDir/text-appearance.properties`, `noBackupFilesDir/app-theme.properties`, and (when opted in) `noBackupFilesDir/new-document-autosave.properties` via `AtomicFile`. Exported entry points check caller content-URI permissions via `ComponentCaller` so an opt-in persisted tree grant cannot be abused by external callers. |
+| App process | Kotlin/Compose UI, Navigation 3 (`HomeActivity`), separate-task external handlers (`MainActivity`, `ShareActivity`), non-exported multi-window & static launcher-shortcut host (`DocumentWindowActivity`), SAF/NFC/camera/print integration, in-process Rust `editor-core`, `syntax-core`, & `print-core` via JNI | Owns the sole retained in-memory session (`retain` store) and in-memory `WritableDocumentRegistry` (degrading a second window opening the same URI to view-only); never serializes document content or source URIs into Android instance state. Stores only content-free preferences in `noBackupFilesDir/text-appearance.properties`, `noBackupFilesDir/app-theme.properties`, and (when opted in) `noBackupFilesDir/new-document-autosave.properties` via `AtomicFile`. Exported entry points check caller content-URI permissions via `ComponentCaller` so an opt-in persisted tree grant cannot be abused by external callers; static launcher shortcuts target non-exported `DocumentWindowActivity`. |
 | `import-service` | Streaming UTF-8 validation & byte-preserving copy to an anonymous `memfd` | Private `isolatedProcess`, `nativeService` (no ART), fresh opaque instance per operation. |
 | `export-service` | Exact-byte verified source autosave & reliable-pipe Save a copy | Verifies preflight/post-write SHA-256 on seekable read-write source descriptors. |
-| `markdown-service` | CommonMark, GFM, and narrow structural HTML allowlist → sanitized render model (`BTXTMDR6`) | No WebView or script execution; unsupported HTML/CSS stays inert source. |
+| `markdown-service` | CommonMark, GFM, YAML frontmatter, `<details>`/`<summary>`, bounded syntax highlighting (`syntax-core`), and narrow structural HTML allowlist → sanitized render model (`BTXTMDR7`) | No WebView or script execution; unsupported HTML/CSS stays inert source. |
 | `transfer-service` | QR encoding/decoding and NDEF parsing/building | Foreground QR scanner reuses one private instance per scan; NFC & QR encoding use fresh instances. |
 | `math-service` / `diagram-service` | Native TeX (RaTeX) and Mermaid subset (Merman) → closed path packet (`BTXTILL4`) | Lazy-bound per document; independent process watchdog. See [native illustrations](native-illustrations.md). |
 
@@ -56,7 +56,18 @@ buffers — never Binder transaction payloads (except bounded 4 KiB math /
   a permanently sealed anonymous `memfd` source. Unchanged spans stay
   source-backed with preserved BOM and mixed LF/CRLF/CR endings; edits live in
   bounded 64 KiB chunks with local compaction. Tree summaries track logical
-  UTF-8, exact serialized bytes, scalars, UTF-16 units, and line counts.
+  UTF-8, exact serialized bytes, scalars, UTF-16 units, and line counts. Supports
+  atomic Undo-able `LF`/`CRLF` line-ending conversion (`line_ending_override`) and
+  non-mutating draft-overlay preview snapshots (`snapshot_with_replacement`) for
+  live Split View.
+- **Unified bounded syntax & Markdown assist (`syntax-core`):** pure-Rust,
+  `#![forbid(unsafe_code)]`, panic-free, linear-time stateful lexer covering 24
+  languages and 11 semantic roles plus the shared leading YAML frontmatter
+  parser and bounded CommonMark container/code-block context detector. Powers
+  Reading fenced code blocks and frontmatter (`BTXTMDR7`), streamed vector PDF
+  printing, bounded Source-mode highlighting (toggleable in Text appearance),
+  and synchronous Source-mode Enter assist without linking `pulldown-cmark`
+  into the app process.
 - **Bounded editing & history:** Compose edits inside a viewport-bounded
   `BasicTextField` window (16 Ki UTF-16 target, 32 Ki ceiling; floating bottom
   toolbars overlay the viewport with nested-scroll trailing clearance and
