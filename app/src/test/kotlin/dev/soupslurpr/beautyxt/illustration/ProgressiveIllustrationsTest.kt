@@ -40,6 +40,89 @@ class ProgressiveIllustrationsTest {
     }
 
     @Test
+    fun rejectedInsertionNeverEvictsEntriesOrStalesSnapshot() {
+        val cache = IllustrationCache(byteLimit = 100, entryLimit = 3)
+        val a = request("a")
+        val b = request("b")
+        val c = request("c")
+        val d = request("d")
+        assertTrue(cache.put(a, rendered(30), emptySet()))
+        assertTrue(cache.put(b, rendered(30), setOf(a)))
+        assertTrue(cache.put(c, rendered(30), setOf(a, b)))
+        val versionBefore = cache.version
+        val snapshotBefore = cache.snapshot()
+        // Inserting d (50 bytes) cannot fit even after evicting unpinned c (30 bytes) because
+        // pinned a + b already occupy 60 bytes; put must reject atomically without evicting c.
+        assertFalse(cache.put(d, rendered(50), setOf(a, b)))
+        assertEquals(90, cache.retainedBytes)
+        assertEquals(versionBefore, cache.version)
+        assertNotNull(cache[a])
+        assertNotNull(cache[b])
+        assertNotNull(cache[c])
+        assertNull(cache[d])
+        assertEquals(snapshotBefore, cache.snapshot())
+
+        // A rejected replacement for LRU entry `a` must NOT promote `a` ahead of `b` in LRU order.
+        val lruCache = IllustrationCache(byteLimit = 100, entryLimit = 2)
+        assertTrue(lruCache.put(a, rendered(40), emptySet()))
+        assertTrue(lruCache.put(b, rendered(40), emptySet()))
+        // Replacing `a` with 80 bytes fails because `b` is pinned (40 + 80 > 100).
+        assertFalse(lruCache.put(a, rendered(80), setOf(b)))
+        // Now inserting `c` (40 bytes) with no pins must still evict oldest entry `a`, keeping `b`.
+        assertTrue(lruCache.put(c, rendered(40), emptySet()))
+        assertNull(lruCache[a])
+        assertNotNull(lruCache[b])
+        assertNotNull(lruCache[c])
+    }
+
+    @Test
+    fun cacheSnapshotsRemainSafeUnderConcurrentMutationAndAccess() {
+        val cache = IllustrationCache(byteLimit = 1024, entryLimit = 16)
+        val requests = (0 until 32).map { request("concurrent_$it") }
+        val failures = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
+        val writerDone = java.util.concurrent.atomic.AtomicBoolean(false)
+        val writer = Thread {
+            try {
+                repeat(2_000) { i ->
+                    val req = requests[i % requests.size]
+                    cache.put(req, rendered(32), emptySet())
+                    cache[requests[(i + 7) % requests.size]]
+                    if (i % 250 == 0) {
+                        cache.clear()
+                    }
+                }
+            } catch (t: Throwable) {
+                failures.add(t)
+            } finally {
+                writerDone.set(true)
+            }
+        }
+        val reader = Thread {
+            try {
+                while (!writerDone.get()) {
+                    val (version, snapshot) = cache.snapshotWithVersion()
+                    assertTrue(version >= 0L)
+                    for ((key, value) in snapshot) {
+                        assertNotNull(key)
+                        assertNotNull(value)
+                    }
+                    for ((key, value) in cache.snapshot()) {
+                        assertNotNull(key)
+                        assertNotNull(value)
+                    }
+                }
+            } catch (t: Throwable) {
+                failures.add(t)
+            }
+        }
+        writer.start()
+        reader.start()
+        writer.join(10_000)
+        reader.join(10_000)
+        assertTrue("Unexpected concurrency failures: $failures", failures.isEmpty())
+    }
+
+    @Test
     fun manyLaterViewportsRenderWithoutLifetimeAttemptExhaustion() = runBlocking {
         var calls = 0
         var released = false

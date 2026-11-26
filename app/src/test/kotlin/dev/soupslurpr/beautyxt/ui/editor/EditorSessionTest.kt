@@ -5632,6 +5632,70 @@ class EditorSessionTest {
         session.close()
     }
 
+    @Test
+    fun convertingLineEndingsInReadingMarksReadingMutationAndEnablesUndoRedo() {
+        val document = TestEditorDocument("line one\nline two")
+        val renderer = MarkdownRenderer { _, _ -> emptyMarkdownDocument(17L) }
+        val session = createSession(document = document, markdownRenderer = renderer)
+        session.openInitialEditor()
+        val draft = requireNotNull(session.activeDraft)
+        draft.textFieldState.edit { selection = TextRange(9) }
+        session.observeActiveEdit(draft, draft.captureFieldValue())
+        assertTrue(session.showMarkdownPreview())
+        assertEquals(EditorPresentation.MarkdownPreview, session.presentation)
+        assertFalse(session.hasReadingMutation)
+
+        assertTrue(session.convertLineEndings(dev.soupslurpr.beautyxt.document.DocumentLineEnding.CrLf))
+        assertTrue(session.hasReadingMutation)
+        assertTrue(session.canUndo)
+        assertEquals(dev.soupslurpr.beautyxt.document.DocumentLineEnding.CrLf, document.lineEnding)
+
+        assertTrue(session.requestUndo())
+        assertTrue(session.hasReadingMutation)
+        assertTrue(session.canRedo)
+        assertEquals(dev.soupslurpr.beautyxt.document.DocumentLineEnding.Lf, document.lineEnding)
+
+        assertTrue(session.requestRedo())
+        assertEquals(dev.soupslurpr.beautyxt.document.DocumentLineEnding.CrLf, document.lineEnding)
+
+        // Switching back to Source without scrolling preserves the rebased return position (9, not 0).
+        session.showTextEditor()
+        assertEquals(EditorPresentation.Text, session.presentation)
+        assertEquals(9L, session.state.activeEdit?.localSelection?.start)
+        session.close()
+    }
+
+    @Test
+    fun readingUndoAcrossSourceInsertionBeforeSurrogatePairReopensSourceCleanly() {
+        val document = TestEditorDocument("a😀b\n")
+        val renderer = MarkdownRenderer { _, _ -> emptyMarkdownDocument(7L) }
+        val session = createSession(document = document, markdownRenderer = renderer)
+        session.openInitialEditor()
+        val draft = requireNotNull(session.activeDraft)
+        // Insert "x" before "😀" -> "xa😀b\n" (emoji sits at UTF-16 2..4); place caret at 2.
+        draft.textFieldState.edit {
+            replace(start = 0, end = 0, text = "x")
+            selection = TextRange(2)
+        }
+        session.observeActiveEdit(draft, draft.captureFieldValue())
+        assertTrue(session.showMarkdownPreview())
+        // Convert line endings so Undo is active in Reading, then Undo both conversion and insertion.
+        assertTrue(session.convertLineEndings(dev.soupslurpr.beautyxt.document.DocumentLineEnding.CrLf))
+        assertTrue(session.requestUndo()) // undoes line-ending conversion
+        assertTrue(session.requestUndo()) // undoes "x" insertion -> "a😀b\n" (emoji now at 1..3; offset 2 would split surrogate!)
+        assertEquals("a😀b\n", document.text)
+
+        // Switching back to Source must succeed with a scalar-aligned selection (never splitting "😀").
+        session.showTextEditor()
+        assertEquals(EditorPresentation.Text, session.presentation)
+        val reopenedEdit = requireNotNull(session.state.activeEdit)
+        assertTrue(
+            "Reopened selection start must be scalar-aligned",
+            reopenedEdit.localSelection.start != 2L
+        )
+        session.close()
+    }
+
     /** Claims and begins one simulated picker result preparation. */
     private fun EditorSession.claimPreparedSaveDestination(): SaveDestinationRequest {
         val request = requireNotNull(claimSaveDestination())

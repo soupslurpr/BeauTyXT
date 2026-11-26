@@ -118,6 +118,76 @@ class DocumentSelectionTest {
             DocumentSelection.Reading(0, ReadingPoint(0, 5), ReadingPoint(1, 0)), 100))
     }
 
+    @Test fun exactSourceRejectsSelectionSpanningHiddenBlocks() {
+        val document = model(
+            block("before").copy(
+                source = MarkdownSourceRange(0, 6),
+                sourceMaps = listOf(MarkdownSourceMap(0, 6, MarkdownSourceRange(0, 6)))
+            ),
+            block("hidden body").copy(
+                source = MarkdownSourceRange(8, 19),
+                sourceMaps = listOf(MarkdownSourceMap(0, 11, MarkdownSourceRange(8, 19)))
+            ),
+            block("after").copy(
+                source = MarkdownSourceRange(21, 26),
+                sourceMaps = listOf(MarkdownSourceMap(0, 5, MarkdownSourceRange(21, 26)))
+            )
+        )
+        val span = DocumentSelection.Reading(0, ReadingPoint(0, 0), ReadingPoint(2, 5))
+        assertEquals(Utf16Range(0, 26), span.exactSource(document))
+        assertNull(span.exactSource(document, isBlockVisible = { index, _ -> index != 1 }))
+    }
+
+    @Test fun readingFindScopeSkipsHiddenBlocksAcrossCollapsedDetails() {
+        val document = model(
+            block("before").copy(detailsId = 0),
+            block("Summary", MarkdownBlockKind.DetailsSummary).copy(detailsId = 1),
+            block("hidden secret").copy(detailsId = 1),
+            block("after").copy(detailsId = 0)
+        )
+        val units = readingSearchUnits(document, false).units
+        assertEquals(listOf("before", "Summary", "hidden secret", "after"), units.map { it.text })
+        val span = DocumentSelection.Reading(0, ReadingPoint(0, 0), ReadingPoint(3, 5))
+        val visibleOnly: (Int) -> Boolean = { blockIndex -> blockIndex != 2 }
+        val scopedTexts = units.mapNotNull { unit ->
+            readingUnitScope(unit, span, visibleOnly)?.let { scope ->
+                unit.text.substring(scope.start.toInt(), scope.end.toInt())
+            }
+        }
+        assertEquals(listOf("before", "Summary", "after"), scopedTexts)
+    }
+
+    @Test fun readingFindIncludesVisibleFrontmatterKeysAndSkipsWhenCollapsed() {
+        val document = model(
+            block("team", MarkdownBlockKind.Frontmatter).copy(metadata = "releaseOwner"),
+            block("body")
+        )
+        val units = readingSearchUnits(document, false).units
+        assertEquals(listOf("releaseOwner", "team", "body"), units.map { it.text })
+        // Searching for "Owner" inside the frontmatter key must produce a valid non-inverted
+        // key-scoped segment `[7, 12)` without crashing MarkdownPresentationText highlights.
+        val keyResult = readingSearchResult(
+            document = document,
+            unit = units.first(),
+            hit = dev.soupslurpr.beautyxt.document.SearchHit(Utf16Range(7, 12), "Owner", null, "release", "")
+        )
+        val keySeg = keyResult.segments.single()
+        assertTrue(keySeg.isFrontmatterKey)
+        assertEquals(7, keySeg.blockStart)
+        assertEquals(12, keySeg.blockEnd)
+        assertEquals(0, keySeg.markerStart)
+        assertEquals(0, keySeg.markerEnd)
+        assertFalse(keySeg.exact)
+        assertNull(keyResult.source)
+        val span = DocumentSelection.Reading(0, ReadingPoint(0, 0), ReadingPoint(1, 4))
+        val collapsedScope = units.mapNotNull { unit ->
+            readingUnitScope(unit, span) { blockIndex -> blockIndex != 0 }?.let { scope ->
+                unit.text.substring(scope.start.toInt(), scope.end.toInt())
+            }
+        }
+        assertEquals(listOf("body"), collapsedScope)
+    }
+
     @Test fun readingFindPreservesListGroupsParagraphsWithinItemsAndSplitTableCells() {
         val list = model(block("first", MarkdownBlockKind.ListItem).copy(startsList = true, listDepth = 1),
             block("continued", MarkdownBlockKind.ListItem).copy(continuesListItem = true, listDepth = 1),
@@ -196,6 +266,176 @@ class DocumentSelectionTest {
         val selection = DocumentSelection.Reading(0, ReadingPoint(0, 0), ReadingPoint(0, 3))
         assertEquals("😀é", selectedReadingText(document, selection, 6))
         assertThrows(SelectionLimitException::class.java) { selectedReadingText(document, selection, 5) }
+    }
+
+    @Test fun readingSelectionSkipsHiddenCollapsedDetailsBlocks() {
+        val summary = block("Details title", MarkdownBlockKind.DetailsSummary).copy(detailsId = 1)
+        val hiddenBody = block("Hidden secret").copy(detailsId = 1)
+        val hiddenItem = block("Hidden item", MarkdownBlockKind.ListItem).copy(detailsId = 1)
+        val document = model(block("Before"), summary, hiddenBody, hiddenItem, block("After"))
+        val layout = prepareMarkdownPreview(document.blocks)
+        val selection = DocumentSelection.Reading(0, ReadingPoint(0, 0), ReadingPoint(4, 5))
+        val visibleOnly: (Int, MarkdownRenderBlock) -> Boolean = { _, b ->
+            isMarkdownBlockVisibleInDetails(layout, b, emptyMap())
+        }
+        val copied = selectedReadingText(document, selection, 1_000, isBlockVisible = visibleOnly)
+        assertTrue(copied.contains("Before"))
+        assertTrue(copied.contains("Details title"))
+        assertTrue(copied.contains("After"))
+        assertFalse(copied.contains("Hidden secret"))
+        assertFalse(copied.contains("Hidden item"))
+
+        val formatted = selectedMarkdown(document, selection, isBlockVisible = visibleOnly)
+        assertTrue(formatted.markdown.contains("Before"))
+        assertTrue(formatted.markdown.contains("After"))
+        assertFalse(formatted.markdown.contains("Hidden secret"))
+        assertFalse(formatted.markdown.contains("Hidden item"))
+    }
+
+    @Test fun readingSelectionExcludesHiddenFootnoteDefinitionsAndCollapsedFrontmatter() {
+        val frontmatter = block("secret: token", MarkdownBlockKind.Frontmatter)
+        val ref = block("See note[^1]").copy(
+            spans = listOf(
+                MarkdownInlineSpan(
+                    start = 8,
+                    end = 12,
+                    styles = MARKDOWN_SPAN_STYLE_FOOTNOTE_REFERENCE,
+                    destination = "1",
+                    destinationKind = MarkdownInlineDestinationKind.FootnoteReference
+                )
+            )
+        )
+        val summary = block("Notes", MarkdownBlockKind.DetailsSummary).copy(detailsId = 1)
+        val hiddenDef = block("Collapsed definition", MarkdownBlockKind.Footnote).copy(
+            detailsId = 1,
+            metadata = "1",
+            footnoteLabel = "1"
+        )
+        val document = model(frontmatter, ref, summary, hiddenDef)
+        val layout = prepareMarkdownPreview(document.blocks)
+        val visibleOnly: (Int, MarkdownRenderBlock) -> Boolean = { _, b ->
+            b.kind != MarkdownBlockKind.Frontmatter &&
+                isMarkdownBlockVisibleInDetails(layout, b, emptyMap())
+        }
+        val all = DocumentSelection.Reading(0, ReadingPoint(0, 0), ReadingPoint(3, hiddenDef.text.length))
+        val copied = selectedReadingText(document, all, 1_000, isBlockVisible = visibleOnly)
+        assertFalse(copied.contains("secret: token"))
+        assertFalse(copied.contains("Collapsed definition"))
+
+        val refOnly = DocumentSelection.Reading(0, ReadingPoint(1, 0), ReadingPoint(1, ref.text.length))
+        val formatted = selectedMarkdown(document, refOnly, isBlockVisible = visibleOnly)
+        assertFalse(formatted.markdown.contains("Collapsed definition"))
+        assertTrue(formatted.notices.any { it.kind == ExcerptNoticeKind.MissingNote })
+
+        // Reading selection stats also exclude collapsed Frontmatter and collapsed `<details>` bodies.
+        val (words, _) = countReadingSelectionStats(document, all, isBlockVisible = visibleOnly)
+        assertEquals(3L, words) // "See note[^1]" (2) + "Notes" (1)
+    }
+
+    @Test fun readingSelectionResolvesOriginalDuplicateHeadingAnchorsBeforeVisibilityFiltering() {
+        val summary = block("Fold", MarkdownBlockKind.DetailsSummary).copy(detailsId = 1)
+        val hiddenHeading = block("Topic", MarkdownBlockKind.Heading).copy(headingLevel = 1, detailsId = 1)
+        val visibleHeading = block("Topic", MarkdownBlockKind.Heading).copy(headingLevel = 1)
+        val links = block("hidden visible").copy(
+            spans = listOf(
+                MarkdownInlineSpan(
+                    start = 0,
+                    end = 6,
+                    styles = 0,
+                    destination = "#topic",
+                    destinationKind = MarkdownInlineDestinationKind.Link
+                ),
+                MarkdownInlineSpan(
+                    start = 7,
+                    end = 14,
+                    styles = 0,
+                    destination = "#topic-1",
+                    destinationKind = MarkdownInlineDestinationKind.Link
+                )
+            )
+        )
+        val document = model(summary, hiddenHeading, visibleHeading, links)
+        val layout = prepareMarkdownPreview(document.blocks)
+        val visibleOnly: (Int, MarkdownRenderBlock) -> Boolean = { _, b ->
+            isMarkdownBlockVisibleInDetails(layout, b, emptyMap())
+        }
+        val selection = DocumentSelection.Reading(0, ReadingPoint(2, 0), ReadingPoint(3, links.text.length))
+        val formatted = selectedMarkdown(document, selection, isBlockVisible = visibleOnly)
+        assertTrue(formatted.markdown.contains("[visible](<#topic>)"))
+        assertFalse(formatted.markdown.contains("[hidden](<#topic>)"))
+        assertTrue(formatted.notices.any { it.kind == ExcerptNoticeKind.RemovedLink && it.detail == "#topic" })
+    }
+
+    @Test fun previewKeysAreContentIndependentExcerptsEscapeSummaryAndStatsCarryWordsAcrossFragments() {
+        val codeA = block("secret_alpha", MarkdownBlockKind.Code).copy(metadata = "k")
+        val codeB = block("different_beta", MarkdownBlockKind.Code).copy(metadata = "z")
+        assertEquals(
+            prepareMarkdownPreview(listOf(codeA)).items.single().stableKey,
+            prepareMarkdownPreview(listOf(codeB)).items.single().stableKey
+        )
+
+        val summary = block("[literal](example.org)", MarkdownBlockKind.DetailsSummary).copy(detailsId = 1)
+        val frontmatter = block("*raw*", MarkdownBlockKind.Frontmatter).copy(metadata = "key_1")
+        val doc = model(frontmatter, summary)
+        val excerpt = selectedMarkdown(doc, DocumentSelection.Reading(0, ReadingPoint(0, 0), ReadingPoint(1, summary.text.length)))
+        assertTrue(excerpt.markdown.contains("\\[literal\\]\\(example\\.org\\)"))
+        assertTrue(excerpt.markdown.contains("key\\_1: \\*raw\\*"))
+
+        val frag1 = block("a".repeat(3_000))
+        val frag2 = block("b".repeat(3_000)).copy(continuesPrevious = true)
+        val fragDoc = model(frag1, frag2)
+        val (words, chars) = countReadingSelectionStats(
+            fragDoc,
+            DocumentSelection.Reading(0, ReadingPoint(0, 0), ReadingPoint(1, 3_000))
+        )
+        assertEquals(1L, words)
+        assertEquals(6_000L, chars)
+
+        // Excerpt selection clips and rebases syntax runs alongside inline spans.
+        val codeFrag1 = block("let n = ", MarkdownBlockKind.Code).copy(
+            metadata = "rust",
+            syntaxRuns = listOf(
+                dev.soupslurpr.beautyxt.markdown.MarkdownSyntaxRun(
+                    start = 0,
+                    end = 3,
+                    role = dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.Keyword
+                )
+            )
+        )
+        val codeFrag2 = block("7;", MarkdownBlockKind.Code).copy(
+            metadata = "rust",
+            continuesPrevious = true,
+            syntaxRuns = listOf(
+                dev.soupslurpr.beautyxt.markdown.MarkdownSyntaxRun(
+                    start = 0,
+                    end = 1,
+                    role = dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.Number
+                )
+            )
+        )
+        val codeDoc = model(codeFrag1, codeFrag2)
+        val codeExcerpt = selectedMarkdown(
+            codeDoc,
+            DocumentSelection.Reading(0, ReadingPoint(1, 0), ReadingPoint(1, 1))
+        )
+        val outBlock = codeExcerpt.document.blocks.single()
+        assertEquals("7", outBlock.text)
+        assertEquals(1, outBlock.syntaxRuns.size)
+        assertEquals(0, outBlock.syntaxRuns[0].start)
+        assertEquals(1, outBlock.syntaxRuns[0].end)
+        assertEquals(dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.Number, outBlock.syntaxRuns[0].role)
+
+        // Outline tracking maps through visible Reading indices when `<details>` collapses earlier items.
+        val h1 = block("First", MarkdownBlockKind.Heading).copy(headingLevel = 1)
+        val foldSummary = block("Fold", MarkdownBlockKind.DetailsSummary).copy(detailsId = 1)
+        val hiddenH2 = block("Hidden", MarkdownBlockKind.Heading).copy(headingLevel = 2, detailsId = 1)
+        val hiddenBody = block("Body").copy(detailsId = 1)
+        val visibleH2 = block("Second", MarkdownBlockKind.Heading).copy(headingLevel = 2)
+        val outlineLayout = prepareMarkdownPreview(listOf(h1, foldSummary, hiddenH2, hiddenBody, visibleH2))
+        val lookup = visibleOutlineLookup(outlineLayout, emptyMap())
+        // Visible items are [h1 (0), foldSummary (1), visibleH2 (2)] -> only visible headings 0 and 2 appear.
+        assertEquals(listOf(0 to 0, 2 to 2), lookup.visibleEntries)
+        assertEquals(2, activeOutlineEntry(outlineLayout.outline, itemIndex = 2, visibleLookup = lookup))
     }
 
     @Test fun nativeSourceSelectionSurvivesFindFocusAndUsesExactCharacters() = runBlocking {

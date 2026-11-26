@@ -13,7 +13,7 @@ class DocumentFormatTest {
                 resolveDocumentFormat("notes.$extension", "text/plain")
             )
         }
-        for (extension in listOf("txt", "text", "log", "asc", "TXT")) {
+        for (extension in listOf("txt", "text", "log", "asc", "TXT", "json", "rs", "kt", "toml", "yaml", "xml", "js", "sh")) {
             assertEquals(
                 DocumentFormat.PlainText,
                 resolveDocumentFormat("notes.$extension", "text/markdown")
@@ -30,6 +30,9 @@ class DocumentFormatTest {
             assertEquals(DocumentFormat.Markdown, resolveDocumentFormat("notes", mimeType))
         }
         assertEquals(DocumentFormat.PlainText, resolveDocumentFormat(null, "TEXT/CSV"))
+        assertEquals(DocumentFormat.PlainText, resolveDocumentFormat("config.json", "application/json"))
+        assertEquals(DocumentFormat.PlainText, resolveDocumentFormat(null, "application/json"))
+        assertEquals(DocumentFormat.PlainText, resolveDocumentFormat("main.rs", "application/octet-stream"))
         assertNull(resolveDocumentFormat("archive.zip", "application/zip"))
         assertNull(resolveDocumentFormat("notes", null))
     }

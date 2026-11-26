@@ -182,13 +182,21 @@ internal class TestEditorDocument(
         }
     }
 
-    private data class History(val token: Long, val before: String, val after: String)
+    private data class History(
+        val token: Long,
+        val before: String,
+        val after: String,
+        val beforeLineEnding: DocumentLineEnding,
+        val afterLineEnding: DocumentLineEnding
+    )
     private val undo = ArrayDeque<History>()
     private val redo = ArrayDeque<History>()
+    var lineEnding: DocumentLineEnding = DocumentLineEnding.Lf
+        private set
 
-    private fun recordHistory(before: String) {
+    private fun recordHistory(before: String, beforeLineEnding: DocumentLineEnding = lineEnding) {
         redo.clear()
-        undo.addLast(History(revision, before, text))
+        undo.addLast(History(revision, before, text, beforeLineEnding, lineEnding))
         while (undo.size > 128) undo.removeFirst()
     }
 
@@ -207,6 +215,7 @@ internal class TestEditorDocument(
         source.removeLast()
         destination.addLast(entry)
         text = if (undo) entry.before else entry.after
+        lineEnding = if (undo) entry.beforeLineEnding else entry.afterLineEnding
         this.revision++
         return transformedMetrics()
     }
@@ -501,6 +510,21 @@ internal class TestEditorDocument(
         return transformedMetrics()
     }
 
+    /** Atomically converts serialized line endings as one Undo-able test revision. */
+    override fun convertLineEndings(
+        expectedRevision: Long,
+        target: DocumentLineEnding
+    ): DocumentMetrics {
+        checkOpen()
+        requireCurrentRevision(expectedRevision)
+        if (lineEnding == target) return transformedMetrics()
+        val beforeLineEnding = lineEnding
+        lineEnding = target
+        revision = Math.incrementExact(revision)
+        recordHistory(text, beforeLineEnding)
+        return transformedMetrics()
+    }
+
     /** Captures one immutable revision independently from subsequent document edits. */
     override fun captureSnapshot(expectedRevision: Long): EditorDocumentSnapshot {
         checkOpen()
@@ -539,7 +563,7 @@ internal class TestEditorDocument(
 
     /** Returns current metrics after applying the configured test seam. */
     private fun transformedMetrics(): DocumentMetrics =
-        transformMetrics(createMetrics(text = text, revision = revision))
+        transformMetrics(createMetrics(text = text, revision = revision, lineEnding = lineEnding))
 
     /** Returns the scalar-aligned candidate-start range inspected by one find call. */
     private fun findBatchRange(
@@ -632,21 +656,28 @@ internal class QueuedSessionTestDispatcher : CoroutineDispatcher() {
 }
 
 /** Creates document metrics consistent with one normalized test string. */
-private fun createMetrics(text: String, revision: Long): DocumentMetrics {
+private fun createMetrics(
+    text: String,
+    revision: Long,
+    lineEnding: DocumentLineEnding = DocumentLineEnding.Lf
+): DocumentMetrics {
+    val newlineCount = text.count { character -> character == '\n' }.toLong()
     val byteLength = text.toByteArray(Charsets.UTF_8).size.toLong()
+    val serializedByteLength =
+        if (lineEnding == DocumentLineEnding.CrLf) byteLength + newlineCount else byteLength
     return DocumentMetrics(
         revision = revision,
         byteLength = byteLength,
-        serializedByteLength = byteLength,
+        serializedByteLength = serializedByteLength,
         characterLength = text.codePointCount(0, text.length).toLong(),
         utf16Length = text.length.toLong(),
-        lineCount = text.count { character -> character == '\n' }.toLong() + 1L,
+        lineCount = newlineCount + 1L,
         wordCount = countTestWords(text),
         hasUtf8Bom = false,
-        hasLfLineEndings = '\n' in text,
-        hasCrlfLineEndings = false,
-        hasCrLineEndings = false,
-        insertedLineEnding = DocumentLineEnding.Lf,
+        hasLfLineEndings = newlineCount > 0L && lineEnding == DocumentLineEnding.Lf,
+        hasCrlfLineEndings = newlineCount > 0L && lineEnding == DocumentLineEnding.CrLf,
+        hasCrLineEndings = newlineCount > 0L && lineEnding == DocumentLineEnding.Cr,
+        insertedLineEnding = lineEnding,
         isEditable = true
     )
 }

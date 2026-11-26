@@ -17,15 +17,16 @@ private const val TEST_TEXT_BYTES_OFFSET = 48
 private const val TEST_AUXILIARY_BYTES_OFFSET = 56
 private const val TEST_SOURCE_MAP_COUNT_OFFSET = 72
 private const val TEST_BLOCK_FLAGS_OFFSET = 84
-private const val TEST_BLOCK_TEXT_OFFSET = 152
-private const val TEST_SPAN_END_OFFSET = 166
-private const val TEST_SOURCE_MAP_RENDERED_END_OFFSET = 190
-private const val TEST_SOURCE_MAP_SOURCE_END_OFFSET = 202
-private const val TEST_PACKET_VERSION = 6L
+private const val TEST_BLOCK_TEXT_OFFSET = 168
+private const val TEST_SPAN_END_OFFSET = 182
+private const val TEST_SOURCE_MAP_RENDERED_END_OFFSET = 206
+private const val TEST_SOURCE_MAP_SOURCE_END_OFFSET = 218
+private const val TEST_PACKET_VERSION = 7L
 private const val TEST_HEADER_BYTES = 80L
-private const val TEST_BLOCK_HEADER_BYTES = 72L
+private const val TEST_BLOCK_HEADER_BYTES = 88L
 private const val TEST_SPAN_HEADER_BYTES = 24L
 private const val TEST_SOURCE_MAP_HEADER_BYTES = 24L
+private const val TEST_SYNTAX_RUN_BYTES = 8L
 private const val TEST_TABLE_START_FLAG = 1L shl 12
 
 /** Verifies strict decoding of the isolated Markdown render format. */
@@ -177,7 +178,7 @@ class MarkdownPacketDecoderTest {
     @Test
     fun rejectsUnsupportedAndMalformedBlockData() {
         val flagPacket = createHeadingPacket()
-        flagPacket.writeLittleEndianInt(TEST_BLOCK_FLAGS_OFFSET, 1L shl 15)
+        flagPacket.writeLittleEndianInt(TEST_BLOCK_FLAGS_OFFSET, 1L shl 18)
         assertProtocolFailure(
             "block flags contains unsupported bits",
             flagPacket
@@ -189,6 +190,72 @@ class MarkdownPacketDecoderTest {
             "block text is not valid UTF-8",
             utf8Packet
         )
+    }
+
+    /** Decodes BTXTMDR7 frontmatter, details summary, task marker offset, and syntax runs. */
+    @Test
+    fun decodesVersionSevenSyntaxFrontmatterDetailsAndTaskMarker() {
+        val frontmatter = MarkdownPacketDecoder.decode(
+            createSingleBlockPacket(
+                TestBlock(
+                    kind = MarkdownBlockKind.Frontmatter,
+                    flags = 1L shl 15,
+                    text = "Hello",
+                    metadata = "title"
+                )
+            )
+        ).blocks.single()
+        assertEquals(MarkdownBlockKind.Frontmatter, frontmatter.kind)
+        assertTrue(frontmatter.startsFrontmatter)
+        assertEquals("title", frontmatter.metadata)
+        assertEquals("Hello", frontmatter.text)
+
+        val details = MarkdownPacketDecoder.decode(
+            createSingleBlockPacket(
+                TestBlock(
+                    kind = MarkdownBlockKind.DetailsSummary,
+                    flags = 1L shl 16,
+                    text = "More info",
+                    detailsId = 2,
+                    detailsParentId = 1
+                )
+            )
+        ).blocks.single()
+        assertEquals(MarkdownBlockKind.DetailsSummary, details.kind)
+        assertTrue(details.detailsInitiallyOpen)
+        assertEquals(2, details.detailsId)
+        assertEquals(1, details.detailsParentId)
+
+        val task = MarkdownPacketDecoder.decode(
+            createSingleBlockPacket(
+                TestBlock(
+                    kind = MarkdownBlockKind.ListItem,
+                    flags = (1L shl 3) or (1L shl 17),
+                    text = "☐ Check me",
+                    taskMarkerSourceUtf16 = 2L
+                )
+            )
+        ).blocks.single()
+        assertTrue(task.isTaskUnchecked)
+        assertEquals(2L, task.taskMarkerSourceUtf16)
+
+        val code = MarkdownPacketDecoder.decode(
+            createSingleBlockPacket(
+                TestBlock(
+                    kind = MarkdownBlockKind.Code,
+                    text = "fn main() {}",
+                    metadata = "rust",
+                    syntaxRuns = listOf(
+                        MarkdownSyntaxRun(0, 2, SyntaxTokenRole.Keyword),
+                        MarkdownSyntaxRun(3, 7, SyntaxTokenRole.Function)
+                    )
+                )
+            )
+        )
+        assertEquals(2, code.syntaxRunCount)
+        assertEquals(2, code.blocks.single().syntaxRuns.size)
+        assertEquals(SyntaxTokenRole.Keyword, code.blocks.single().syntaxRuns[0].role)
+        assertEquals(SyntaxTokenRole.Function, code.blocks.single().syntaxRuns[1].role)
     }
 
     /** Rejects a styled range that divides a supplementary Unicode scalar. */
@@ -443,7 +510,7 @@ class MarkdownPacketDecoderTest {
                 TEST_SPAN_HEADER_BYTES +
                 TEST_SOURCE_MAP_HEADER_BYTES
         return ByteArrayOutputStream().apply {
-            write("BTXTMDR6".toByteArray(Charsets.US_ASCII))
+            write("BTXTMDR7".toByteArray(Charsets.US_ASCII))
             writeLittleEndianInt(TEST_PACKET_VERSION)
             writeLittleEndianInt(TEST_HEADER_BYTES)
             writeLittleEndianInt(0)
@@ -473,6 +540,9 @@ class MarkdownPacketDecoderTest {
             writeLittleEndianLong(8)
             writeLittleEndianInt(1)
             writeLittleEndianInt(0)
+            writeLittleEndianInt(0)
+            writeLittleEndianInt(0)
+            writeLittleEndianLong(0)
             write(textBytes)
 
             writeLittleEndianInt(0)
@@ -519,7 +589,7 @@ class MarkdownPacketDecoderTest {
                 textBytes.size +
                 TEST_SOURCE_MAP_HEADER_BYTES * sourceMapCount
         return ByteArrayOutputStream().apply {
-            write("BTXTMDR6".toByteArray(Charsets.US_ASCII))
+            write("BTXTMDR7".toByteArray(Charsets.US_ASCII))
             writeLittleEndianInt(TEST_PACKET_VERSION)
             writeLittleEndianInt(TEST_HEADER_BYTES)
             writeLittleEndianInt(0)
@@ -549,6 +619,9 @@ class MarkdownPacketDecoderTest {
             writeLittleEndianLong(text.length.toLong())
             writeLittleEndianInt(sourceMapCount)
             writeLittleEndianInt(0)
+            writeLittleEndianInt(0)
+            writeLittleEndianInt(0)
+            writeLittleEndianLong(0)
             write(textBytes)
             if (sourceMapCount != 0L) {
                 writeLittleEndianInt(0)
@@ -570,19 +643,21 @@ class MarkdownPacketDecoderTest {
         val separatorBytes = block.separators.size * Int.SIZE_BYTES
         val auxiliaryBytes = metadataBytes.size + destinationBytes.sumOf(ByteArray::size) + ownerBytes.size + separatorBytes
         val sourceMapCount = if (block.text.isEmpty()) 0L else 1L
+        val syntaxBytes = TEST_SYNTAX_RUN_BYTES * block.syntaxRuns.size
         val packetBytes =
             TEST_HEADER_BYTES +
                 TEST_BLOCK_HEADER_BYTES +
                 textBytes.size +
                 auxiliaryBytes +
                 spanBytes +
-                TEST_SOURCE_MAP_HEADER_BYTES * sourceMapCount
+                TEST_SOURCE_MAP_HEADER_BYTES * sourceMapCount +
+                syntaxBytes
         return ByteArrayOutputStream().apply {
-            write("BTXTMDR6".toByteArray(Charsets.US_ASCII))
+            write("BTXTMDR7".toByteArray(Charsets.US_ASCII))
             writeLittleEndianInt(TEST_PACKET_VERSION)
             writeLittleEndianInt(TEST_HEADER_BYTES)
             writeLittleEndianInt(0)
-            writeLittleEndianInt(0)
+            writeLittleEndianInt(block.syntaxRuns.size.toLong())
             writeLittleEndianLong(textBytes.size.toLong())
             writeLittleEndianLong(packetBytes)
             writeLittleEndianInt(1)
@@ -608,6 +683,12 @@ class MarkdownPacketDecoderTest {
             writeLittleEndianLong(block.text.length.toLong())
             writeLittleEndianInt(sourceMapCount)
             writeLittleEndianInt(block.quoteAlertDepth)
+            writeLittleEndianInt(
+                (block.detailsId.toLong() and 0xffffL) or
+                    ((block.detailsParentId.toLong() and 0xffffL) shl 16)
+            )
+            writeLittleEndianInt(block.syntaxRuns.size.toLong())
+            writeLittleEndianLong(block.taskMarkerSourceUtf16)
             write(textBytes)
             write(metadataBytes)
             write(ownerBytes)
@@ -629,10 +710,18 @@ class MarkdownPacketDecoderTest {
                 writeLittleEndianLong(0)
                 writeLittleEndianLong(block.text.length.toLong())
             }
+            block.syntaxRuns.forEach { run ->
+                writeLittleEndianInt(run.start.toLong())
+                val len = run.end - run.start
+                write(len and 0xff)
+                write((len ushr 8) and 0xff)
+                write(run.role.protocolValue)
+                write(0)
+            }
         }.toByteArray()
     }
 
-    /** Describes one minimal test block for the version-six packet writer. */
+    /** Describes one minimal test block for the version-seven packet writer. */
     private data class TestBlock(
         val kind: MarkdownBlockKind,
         val flags: Long = 0L,
@@ -642,7 +731,11 @@ class MarkdownPacketDecoderTest {
         val spans: List<TestSpan> = emptyList(),
         val separators: List<Int> = if (kind == MarkdownBlockKind.TableRow) text.indices.filter { text[it] == '\t' } else emptyList(),
         val footnoteLabel: String? = metadata.takeIf { kind == MarkdownBlockKind.Footnote },
-        val quoteAlertDepth: Long = 0L
+        val quoteAlertDepth: Long = 0L,
+        val detailsId: Int = 0,
+        val detailsParentId: Int = 0,
+        val taskMarkerSourceUtf16: Long = 0L,
+        val syntaxRuns: List<MarkdownSyntaxRun> = emptyList()
     )
 
     /** Describes one minimal test span for the version-six packet writer. */
