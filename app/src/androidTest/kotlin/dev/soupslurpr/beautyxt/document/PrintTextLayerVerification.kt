@@ -17,6 +17,7 @@ import dev.soupslurpr.beautyxt.markdown.MarkdownBlockKind
 import dev.soupslurpr.beautyxt.markdown.MarkdownInlineDestinationKind
 import dev.soupslurpr.beautyxt.markdown.MarkdownInlineSpan
 import dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument
+import dev.soupslurpr.beautyxt.markdown.MarkdownSyntaxRun
 import dev.soupslurpr.beautyxt.markdown.MarkdownTableAlignment
 import dev.soupslurpr.beautyxt.markdown.client.IsolatedMarkdownRenderer
 import dev.soupslurpr.beautyxt.markdown.markdownFootnoteNumbers
@@ -428,6 +429,21 @@ internal fun verifyMarkdownPrintFragmentContinuity(context: Context) {
         check(document.blocks.joinToString("") { it.text } == expectedText) {
             "Markdown fixture $index has unexpected rendered text"
         }
+        val joinedSyntaxRuns = buildList {
+            var offset = 0
+            document.blocks.forEach { fragment ->
+                fragment.syntaxRuns.forEach { run ->
+                    add(
+                        MarkdownSyntaxRun(
+                            start = offset + run.start,
+                            end = offset + run.end,
+                            role = run.role
+                        )
+                    )
+                }
+                offset += fragment.text.length
+            }
+        }
         val completeBlock = document.blocks.first().copy(
             text = expectedText,
             spans = if (source.startsWith("**")) {
@@ -435,6 +451,7 @@ internal fun verifyMarkdownPrintFragmentContinuity(context: Context) {
             } else {
                 emptyList()
             },
+            syntaxRuns = joinedSyntaxRuns,
             sourceMaps = emptyList(),
             tableAlignments = if (source.startsWith("<table>")) {
                 listOf(MarkdownTableAlignment.None, MarkdownTableAlignment.None)

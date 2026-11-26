@@ -381,6 +381,7 @@ internal fun Instrumentation.verifyTextAppearance() {
             awaitReadingCondition("corrected draft did not apply") {
                 preferences().markdown.custom[AppearanceOption.Size] == 23.5f
             }
+            waitForImeVisibility(activity, visible = false)
             requireActionableContentDescription("Reset Text size").performRequiredClick()
             awaitReadingCondition("Size reset did not restore the default") {
                 AppearanceOption.Size !in preferences().markdown.custom

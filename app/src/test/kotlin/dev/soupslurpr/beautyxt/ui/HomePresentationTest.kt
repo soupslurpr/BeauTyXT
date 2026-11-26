@@ -92,7 +92,7 @@ class HomePresentationTest {
         assertFalse(usesWideHomeLayout(0.dp, 0.dp, 1f))
     }
 
-    /** Verifies compatible text providers remain discoverable without a universal filter. */
+    /** Verifies compatible text, code, and Markdown providers remain discoverable without a universal filter. */
     @Test
     fun discoversCommonTextAndMarkdownMimeTypes() {
         assertArrayEquals(
@@ -100,6 +100,7 @@ class HomePresentationTest {
                 "text/*",
                 "application/markdown",
                 "application/x-markdown",
+                *dev.soupslurpr.beautyxt.document.TEXT_BASED_APPLICATION_MIME_TYPES.toTypedArray(),
                 "application/octet-stream"
             ),
             openDocumentMimeTypes()

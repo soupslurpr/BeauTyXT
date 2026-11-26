@@ -318,6 +318,11 @@ internal fun Instrumentation.verifyAppThemeStorageRecovery() {
             retry.state.value == AppThemeStoreState.Ready(AppThemePreferences(true))
         }
         check(file.readText() == saved && !backup.exists())
+        waitForAccessibilityNode("True black switch restored after retry") { node ->
+            node.isCheckable &&
+                node.checked == AccessibilityNodeInfo.CHECKED_STATE_TRUE &&
+                node.hasDescendantOrSelfText("True black")
+        }
 
         file.writeText(corrupt)
         val reset = showStore()

@@ -163,6 +163,7 @@ private fun Instrumentation.verifyMarkdownCodeCopyFixtures(capturePreviews: Bool
             if (fixtureIndex == 0) {
                 for (fontScale in listOf(1f, 2f)) {
                     runOnMainSync { scale.floatValue = fontScale }
+                    waitForIdleSync()
                     waitForAccessibilityIdle()
                     codeCopyButton().performRequiredClick()
                     waitForAccessibilityIdle()
@@ -320,6 +321,7 @@ private fun Instrumentation.awaitCopiedCodeLength(session: EditorSession, length
 }
 
 private fun Instrumentation.codeCopyButton(): AccessibilityNodeInfo {
+    uiAutomation.clearCache()
     val node = waitForCodeCopyAppNode("enabled Copy code") {
         it.contentDescription?.toString() == "Copy code"
     }.codeCopyControl()
