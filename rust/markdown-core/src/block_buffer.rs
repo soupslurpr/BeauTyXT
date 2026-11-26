@@ -1,8 +1,8 @@
 //! Bounds aggregate render allocations before packet encoding.
 
 use super::{
-    MAX_BLOCK_COUNT, MAX_PACKET_BYTES, MAX_SOURCE_MAP_COUNT, MAX_SPAN_COUNT, PACKET_HEADER_BYTES,
-    RenderBlock, RenderError,
+    MAX_BLOCK_COUNT, MAX_PACKET_BYTES, MAX_SOURCE_MAP_COUNT, MAX_SPAN_COUNT, MAX_SYNTAX_RUN_COUNT,
+    PACKET_HEADER_BYTES, RenderBlock, RenderError, SYNTAX_RUN_BYTES, SyntaxRun,
 };
 
 /// Owns render blocks whose aggregate wire representation fits the packet limits.
@@ -11,6 +11,7 @@ pub(super) struct BlockBuffer {
     pub(super) blocks: Vec<RenderBlock>,
     pub(super) span_count: usize,
     pub(super) source_map_count: usize,
+    pub(super) syntax_run_count: usize,
     packet_bytes: usize,
     max_packet_bytes: usize,
 }
@@ -28,6 +29,7 @@ impl BlockBuffer {
             blocks: Vec::new(),
             span_count: 0,
             source_map_count: 0,
+            syntax_run_count: 0,
             packet_bytes: PACKET_HEADER_BYTES,
             max_packet_bytes,
         }
@@ -69,6 +71,13 @@ impl BlockBuffer {
         if source_map_count > MAX_SOURCE_MAP_COUNT {
             return Err(RenderError::SourceMapLimit);
         }
+        let syntax_run_count = self
+            .syntax_run_count
+            .checked_add(block.syntax_runs.len())
+            .ok_or(RenderError::ArithmeticOverflow)?;
+        if syntax_run_count > MAX_SYNTAX_RUN_COUNT {
+            return Err(RenderError::PacketLimit);
+        }
         let packet_bytes = self
             .packet_bytes
             .checked_add(block.packet_bytes()?)
@@ -79,6 +88,7 @@ impl BlockBuffer {
         self.blocks.push(block);
         self.span_count = span_count;
         self.source_map_count = source_map_count;
+        self.syntax_run_count = syntax_run_count;
         self.packet_bytes = packet_bytes;
         Ok(())
     }
@@ -89,6 +99,40 @@ impl BlockBuffer {
             self.push(block)?;
         }
         Ok(())
+    }
+
+    /// Attaches optional syntax runs to an already-accepted block using only leftover budget.
+    pub(super) fn attach_syntax_runs(
+        &mut self,
+        block_index: usize,
+        mut runs: Vec<SyntaxRun>,
+        syntax_truncated: &mut bool,
+    ) {
+        if runs.is_empty() {
+            return;
+        }
+        let remaining_runs = MAX_SYNTAX_RUN_COUNT.saturating_sub(self.syntax_run_count);
+        let remaining_bytes = self.max_packet_bytes.saturating_sub(self.packet_bytes);
+        let max_by_bytes = remaining_bytes / SYNTAX_RUN_BYTES;
+        let allowed = remaining_runs.min(max_by_bytes);
+        if runs.len() > allowed {
+            runs.truncate(allowed);
+            *syntax_truncated = true;
+        }
+        if runs.is_empty() {
+            return;
+        }
+        let added_bytes = runs.len() * SYNTAX_RUN_BYTES;
+        self.syntax_run_count += runs.len();
+        self.packet_bytes += added_bytes;
+        self.blocks[block_index].syntax_runs = runs;
+    }
+
+    /// Returns how many optional syntax runs can still fit within both count and packet byte limits.
+    pub(super) fn remaining_syntax_run_capacity(&self) -> usize {
+        let remaining_runs = MAX_SYNTAX_RUN_COUNT.saturating_sub(self.syntax_run_count);
+        let remaining_bytes = self.max_packet_bytes.saturating_sub(self.packet_bytes);
+        remaining_runs.min(remaining_bytes / SYNTAX_RUN_BYTES)
     }
 }
 
@@ -129,6 +173,9 @@ mod tests {
             quote_alert_depth: 0,
             list_depth: 0,
             list_number: 0,
+            details_id: 0,
+            details_parent_id: 0,
+            task_marker_source_utf16: 0,
             metadata: String::new(),
         });
         block

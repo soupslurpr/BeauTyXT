@@ -151,8 +151,159 @@ fn host_css(family: &str) -> String {
         // centered text anchor would apply that shift twice. Keep this correction family-local.
         css.push_str(".edgeLabel text, .edgeLabel tspan { text-anchor: start !important; }");
     }
+    if family == "pie" {
+        css.push_str(
+            ".pieCircle { opacity: 1 !important; stroke: #010101 !important; }\
+             .pieOuterCircle { stroke: #010100 !important; }\
+             .legend rect { stroke: #010100 !important; }\
+             .slice, .pieTitleText, .legend text { fill: #010100 !important; }",
+        );
+    }
+    if family == "gitGraph" {
+        css.push_str(
+            ".commit-label-bkg { opacity: 1 !important; fill: #010103 !important; }\
+             .branch-label, .branch-label text, .commit-label, .tag-label { fill: #010100 !important; }\
+             .tag-label-bkg { fill: #010103 !important; stroke: #010100 !important; }\
+             .branch { stroke: #010100 !important; }\
+             .commit { fill: #010102 !important; stroke: #010100 !important; }\
+             .commit-merge { fill: #010101 !important; stroke: #010102 !important; }\
+             .arrow { stroke: #010102 !important; }",
+        );
+    }
+    if matches!(family, "packet-beta" | "packet") {
+        css.push_str(
+            ".packetBlock { fill: #010103 !important; stroke: #010100 !important; }\
+             .packetLabel, .packetByte, .packetTitle { fill: #010100 !important; }",
+        );
+    }
+    if family == "quadrantChart" {
+        css.push_str(
+            ".quadrant rect { fill: #010103 !important; stroke: #010100 !important; }\
+             .quadrant text, .labels text, .title text, .data-points text { fill: #010100 !important; }\
+             .border line { stroke: #010100 !important; }\
+             .data-points circle { fill: #010102 !important; stroke: #010100 !important; }",
+        );
+    }
+    if matches!(family, "xychart-beta" | "xychart") {
+        // Preserve per-series colors from `xyChart.plotColorPalette` while keeping
+        // the canvas surface on the host Surface sentinel and bar outlines crisp.
+        css.push_str(
+            ".main-background { fill: #010101 !important; }\
+             .bar-plot-0 rect, .bar-plot-1 rect, .bar-plot-2 rect { stroke: #010100 !important; }",
+        );
+    }
     css
 }
+
+const HOST_INK_VARS: &[&str] = &[
+    "primaryBorderColor",
+    "primaryTextColor",
+    "lineColor",
+    "textColor",
+    "actorBorder",
+    "actorTextColor",
+    "actorLineColor",
+    "signalColor",
+    "signalTextColor",
+    "labelBoxBorderColor",
+    "labelTextColor",
+    "loopTextColor",
+    "noteTextColor",
+    "noteBorderColor",
+    "activationBorderColor",
+    "clusterBorder",
+    "titleColor",
+    "labelColor",
+    "transitionColor",
+    "transitionLabelColor",
+    "stateLabelColor",
+    "compositeBorder",
+    "innerEndBackground",
+    "specialStateColor",
+    "classText",
+    "relationColor",
+    "nodeBorder",
+    "border1",
+    "pieTitleTextColor",
+    "pieSectionTextColor",
+    "pieLegendTextColor",
+    "pieStrokeColor",
+    "pieOuterStrokeColor",
+    "gitBranchLabel0",
+    "gitBranchLabel1",
+    "gitBranchLabel2",
+    "gitBranchLabel3",
+    "gitBranchLabel4",
+    "gitBranchLabel5",
+    "gitBranchLabel6",
+    "gitBranchLabel7",
+    "commitLabelColor",
+    "tagLabelColor",
+    "tagLabelBorder",
+    "quadrantTextFill",
+    "quadrantTitleFill",
+    "quadrantXAxisTextFill",
+    "quadrantYAxisTextFill",
+    "quadrantInternalBorderStrokeFill",
+    "quadrantExternalBorderStrokeFill",
+    "quadrantPointTextFill",
+];
+
+const HOST_SURFACE_VARS: &[&str] = &[
+    "background",
+    "secondaryColor",
+    "edgeLabelBackground",
+    "clusterBkg",
+    "rowOdd",
+    "attributeBackgroundColorOdd",
+    "labelBackgroundColor",
+    "compositeBackground",
+    "pie1",
+    "pie4",
+    "pie7",
+    "pie10",
+    "quadrant2Fill",
+    "quadrant3Fill",
+];
+
+const HOST_ACCENT_VARS: &[&str] = &[
+    "pie2",
+    "pie5",
+    "pie8",
+    "pie11",
+    "git0",
+    "git1",
+    "git2",
+    "git3",
+    "git4",
+    "git5",
+    "git6",
+    "git7",
+    "quadrantPointFill",
+];
+
+const HOST_TONE_VARS: &[&str] = &[
+    "mainBkg",
+    "primaryColor",
+    "tertiaryColor",
+    "actorBkg",
+    "labelBoxBkgColor",
+    "noteBkgColor",
+    "activationBkgColor",
+    "rowEven",
+    "attributeBackgroundColorEven",
+    "stateBkg",
+    "altBackground",
+    "compositeTitleBackground",
+    "pie3",
+    "pie6",
+    "pie9",
+    "pie12",
+    "commitLabelBackground",
+    "tagLabelBackground",
+    "quadrant1Fill",
+    "quadrant4Fill",
+];
 
 // These sentinel colors become semantic host color roles in the closed path packet. Grouping
 // by role makes omissions and accidental document-independent contrast differences easier to see.
@@ -163,74 +314,31 @@ fn host_theme(family: &str) -> serde_json::Value {
     // Closed vector path packets reject SVG filter effects; disable Mermaid's default drop shadow.
     values.insert("dropShadow".into(), "none".into());
     for (names, color) in [
-        (
-            &[
-                "primaryBorderColor",
-                "primaryTextColor",
-                "lineColor",
-                "textColor",
-                "actorBorder",
-                "actorTextColor",
-                "actorLineColor",
-                "signalColor",
-                "signalTextColor",
-                "labelBoxBorderColor",
-                "labelTextColor",
-                "loopTextColor",
-                "noteTextColor",
-                "noteBorderColor",
-                "activationBorderColor",
-                "clusterBorder",
-                "titleColor",
-                "labelColor",
-                "transitionColor",
-                "transitionLabelColor",
-                "stateLabelColor",
-                "compositeBorder",
-                "innerEndBackground",
-                "specialStateColor",
-                "classText",
-                "relationColor",
-                "nodeBorder",
-                "border1",
-            ][..],
-            "#010100",
-        ),
-        (
-            &[
-                "background",
-                "secondaryColor",
-                "edgeLabelBackground",
-                "clusterBkg",
-                "rowOdd",
-                "attributeBackgroundColorOdd",
-                "labelBackgroundColor",
-                "compositeBackground",
-            ][..],
-            "#010101",
-        ),
-        (
-            &[
-                "mainBkg",
-                "primaryColor",
-                "tertiaryColor",
-                "actorBkg",
-                "labelBoxBkgColor",
-                "noteBkgColor",
-                "activationBkgColor",
-                "rowEven",
-                "attributeBackgroundColorEven",
-                "stateBkg",
-                "altBackground",
-                "compositeTitleBackground",
-            ][..],
-            "#010103",
-        ),
+        (HOST_INK_VARS, "#010100"),
+        (HOST_SURFACE_VARS, "#010101"),
+        (HOST_ACCENT_VARS, "#010102"),
+        (HOST_TONE_VARS, "#010103"),
     ] {
         for name in names {
             values.insert((*name).into(), color.into());
         }
     }
+    values.insert(
+        "xyChart".into(),
+        serde_json::json!({
+            "backgroundColor": "#010101",
+            "titleColor": "#010100",
+            "xAxisLabelColor": "#010100",
+            "xAxisTitleColor": "#010100",
+            "xAxisTickColor": "#010100",
+            "xAxisLineColor": "#010100",
+            "yAxisLabelColor": "#010100",
+            "yAxisTitleColor": "#010100",
+            "yAxisTickColor": "#010100",
+            "yAxisLineColor": "#010100",
+            "plotColorPalette": "#010102,#010100,#010103"
+        }),
+    );
     serde_json::Value::Object(values)
 }
 
@@ -271,6 +379,16 @@ fn admit_source(source: &str) -> Result<&str, DrawingError> {
             | "stateDiagram"
             | "classDiagram"
             | "erDiagram"
+            | "pie"
+            | "gitGraph"
+            | "requirementDiagram"
+            | "packet-beta"
+            | "packet"
+            | "quadrantChart"
+            | "xychart-beta"
+            | "xychart"
+            | "block-beta"
+            | "block"
     ) {
         return Err(DrawingError::Unsupported);
     }
@@ -322,7 +440,7 @@ mod tests {
             Err(DrawingError::Limit)
         );
         for source in [
-            "pie\nA: 1",
+            "mindmap\n  root((Docs))",
             "---\nconfig: {}\n---\nflowchart TD\nA-->B",
             "flowchart TD\n%%{init: {}}%%\nA-->B",
             "flowchart TD\n%% \t {init: {}}%%\nA-->B",
@@ -410,6 +528,89 @@ mod tests {
             assert!(packet.len() > 200);
             assert_host_palette(&packet, source);
         }
+    }
+
+    #[test]
+    #[ignore = "requires an explicitly selected platform test font"]
+    fn evaluates_expanded_mermaid_families_deterministically_with_host_palette() {
+        let font = std::fs::read(std::env::var("BEAUTYXT_DIAGRAM_TEST_FONT").unwrap()).unwrap();
+        for source in [
+            "pie title Storage\n\"Docs\" : 60\n\"Notes\" : 40",
+            "gitGraph\ncommit id: \"init\"\nbranch feat\ncheckout feat\ncommit id: \"work\"\ncheckout main\nmerge feat",
+            "requirementDiagram\nrequirement offline {\nid: 1\ntext: Stay offline\nrisk: low\nverifymethod: test\n}\nelement app {\ntype: module\n}\napp - satisfies -> offline",
+            "packet-beta\n0-15: \"Header\"\n16-31: \"Length\"",
+            "quadrantChart\ntitle Priorities\nx-axis Low --> High\ny-axis Easy --> Hard\nA: [0.3, 0.7]\nB: [0.8, 0.2]",
+            "xychart-beta\ntitle Metrics\nx-axis [a, b, c]\ny-axis \"Score\" 0 --> 10\nbar [3, 7, 5]",
+            "block-beta\ncolumns 2\nA[\"Source\"] B[\"Reading\"]",
+        ] {
+            let packet =
+                render_diagram(source, &font).unwrap_or_else(|error| panic!("{error}: {source}"));
+            assert_eq!(&packet[..8], b"BTXTILL4");
+            assert!(packet.len() > 200);
+            assert_host_palette(&packet, source);
+            let repeated = render_diagram(source, &font).unwrap();
+            assert_eq!(
+                packet, repeated,
+                "diagram output must be deterministic for {source}"
+            );
+        }
+
+        // Verify multi-series XY charts preserve distinct host color roles across series
+        // (Accent, Ink, Tone) rather than collapsing series onto one color.
+        let xy_one = render_diagram(
+            "xychart-beta\nx-axis [a, b, c]\ny-axis 0 --> 10\nline [1, 8, 3]",
+            &font,
+        )
+        .unwrap();
+        let xy_two = render_diagram(
+            "xychart-beta\nx-axis [a, b, c]\ny-axis 0 --> 10\nline [1, 8, 3]\nline [7, 2, 9]",
+            &font,
+        )
+        .unwrap();
+        let xy_three = render_diagram(
+            "xychart-beta\nx-axis [a, b, c]\ny-axis 0 --> 10\nline [1, 8, 3]\nline [7, 2, 9]\nline [4, 5, 6]",
+            &font,
+        )
+        .unwrap();
+        assert_host_palette(&xy_one, "xy_one");
+        assert_host_palette(&xy_two, "xy_two");
+        assert_host_palette(&xy_three, "xy_three");
+        let counts_one = color_role_counts(&xy_one);
+        let counts_two = color_role_counts(&xy_two);
+        let counts_three = color_role_counts(&xy_three);
+        assert!(counts_one[2] >= 1, "series 0 must render with Accent");
+        assert_eq!(
+            counts_two[2], counts_one[2],
+            "series 1 must not reuse series 0's Accent role: {counts_one:?} vs {counts_two:?}"
+        );
+        assert!(
+            counts_two[0] > counts_one[0],
+            "series 1 must render with Ink: {counts_one:?} vs {counts_two:?}"
+        );
+        assert!(
+            counts_three[3] > counts_two[3],
+            "series 2 must render with Tone: {counts_two:?} vs {counts_three:?}"
+        );
+    }
+
+    fn color_role_counts(packet: &[u8]) -> [usize; 4] {
+        let integer =
+            |offset| u32::from_le_bytes(packet[offset..offset + 4].try_into().unwrap()) as usize;
+        let mut offset = 60 + integer(40) + integer(44) + integer(52);
+        let mut counts = [0usize; 4];
+        for _ in 0..integer(16) {
+            let color = integer(offset);
+            counts[color] += 1;
+            let components = integer(offset + 8);
+            let clips = integer(offset + 12);
+            offset += 16 + components * 4;
+            for _ in 0..clips {
+                let c = integer(offset + 4);
+                offset += 8 + c * 4;
+            }
+        }
+        assert_eq!(offset, packet.len());
+        counts
     }
 
     fn assert_host_palette(packet: &[u8], source: &str) {

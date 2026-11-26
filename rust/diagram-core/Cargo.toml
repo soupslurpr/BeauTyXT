@@ -15,6 +15,13 @@ merman = { version = "=0.11.0", default-features = false, features = [
     "diagram-state",
     "diagram-class",
     "diagram-er",
+    "diagram-pie",
+    "diagram-git-graph",
+    "diagram-requirement",
+    "diagram-packet",
+    "diagram-quadrant-chart",
+    "diagram-xychart",
+    "diagram-block",
 ] }
 merman-render = { version = "=0.11.0", default-features = false }
 roxmltree = "0.21.2"

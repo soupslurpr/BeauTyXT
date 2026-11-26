@@ -108,6 +108,7 @@ version = "0.1.0"
 dependencies = [
  "beautyxt-editor-bridge-protocol",
  "beautyxt-editor-core",
+ "beautyxt-syntax-core",
  "jni",
  "libc",
 ]
@@ -172,6 +173,7 @@ dependencies = [
 name = "beautyxt-markdown-core"
 version = "0.1.0"
 dependencies = [
+ "beautyxt-syntax-core",
  "html5ever",
  "pulldown-cmark",
  "unicode-segmentation",
@@ -234,6 +236,10 @@ dependencies = [
 
 [[package]]
 name = "beautyxt-source-save-core"
+version = "0.1.0"
+
+[[package]]
+name = "beautyxt-syntax-core"
 version = "0.1.0"
 
 [[package]]
@@ -1034,6 +1040,7 @@ dependencies = [
  "merman-model",
  "pulldown-cmark",
  "rustc-hash",
+ "ryu-js",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -1055,6 +1062,7 @@ dependencies = [
  "merman-markup",
  "merman-model",
  "rustc-hash",
+ "ryu-js",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

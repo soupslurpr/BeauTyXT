@@ -693,6 +693,80 @@ impl Document {
         })
     }
 
+    /// Captures an ephemeral snapshot with one uncommitted draft range applied, without
+    /// modifying the live document, revision counter, or Undo history.
+    ///
+    /// # Errors
+    ///
+    /// Rejects stale revisions, invalid/misaligned ranges, non-normalized replacements,
+    /// and replacements exceeding the inline limit.
+    pub fn snapshot_with_replacement(
+        &self,
+        expected_revision: u64,
+        range: Utf16Range,
+        replacement: &str,
+    ) -> Result<DocumentSnapshot, DocumentError> {
+        if expected_revision != self.revision {
+            return Err(DocumentError::StaleRevision {
+                expected: expected_revision,
+                actual: self.revision,
+            });
+        }
+        if replacement.len() > MAX_INLINE_REPLACEMENT_BYTES || replacement.contains('\r') {
+            return Err(DocumentError::InvalidReplacement(
+                "preview replacement exceeds its limit or is not normalized",
+            ));
+        }
+        let mut tree = self.tree.clone();
+        if let ReplaceOutcome::Replaced(updated) = tree.replace(range, replacement)? {
+            tree = updated;
+        }
+        let preview = Self {
+            tree,
+            revision: self.revision,
+            history: history::History::default(),
+            insertion: None,
+        };
+        let metrics = preview.metrics();
+        Ok(DocumentSnapshot {
+            tree: preview.tree,
+            metrics,
+            logical_serialization: false,
+        })
+    }
+
+    /// Converts all serialized line endings uniformly to `target` as a single Undo-able revision.
+    ///
+    /// # Errors
+    ///
+    /// Rejects stale revisions, serialized-size expansion past the 256 MiB source-save limit,
+    /// history budget overflow, or revision counter exhaustion.
+    pub fn convert_line_endings(
+        &mut self,
+        expected_revision: u64,
+        target: DocumentLineEnding,
+    ) -> Result<DocumentMetrics, DocumentError> {
+        self.require_revision(expected_revision)?;
+        let current = self.metrics();
+        let already_uniform = current.inserted_line_ending == target
+            && match target {
+                DocumentLineEnding::Lf => {
+                    !current.has_crlf_line_endings && !current.has_cr_line_endings
+                }
+                DocumentLineEnding::CrLf => {
+                    !current.has_lf_line_endings && !current.has_cr_line_endings
+                }
+                DocumentLineEnding::Cr => {
+                    !current.has_lf_line_endings && !current.has_crlf_line_endings
+                }
+            };
+        if already_uniform {
+            return Ok(current);
+        }
+        let next_tree = self.tree.with_line_ending_override(target);
+        self.commit_tree(next_tree, MAX_OUTPUT_BYTES)
+    }
+
     /// Replaces a UTF-16 range and returns the resulting document metrics.
     ///
     /// # Errors
@@ -1153,32 +1227,39 @@ impl PreparedSourceSave {
             None,
         )
         .map_err(package_error)?;
-        let mut counter = SourceSaveSegmentCounter::default();
-        let sparse_counted = match tree.visit_serialized_segments(true, &mut counter) {
-            Ok(()) => true,
-            Err(_) if counter.record_limit_reached => false,
-            Err(error) => return Err(error),
-        };
-        if sparse_counted && let SourceClone::Available(source) = tree.try_clone_source() {
-            let source_bytes = Some(source.byte_length);
-            let sparse_header = PackageHeader::new(
-                counter.record_count,
-                output_bytes,
-                counter.payload_bytes,
-                source_bytes,
-            )
-            .map_err(package_error)?;
-            if sparse_header.package_bytes() < full_payload_header.package_bytes() {
-                let package_metrics = package_metrics(sparse_header);
-                return Ok(Self {
-                    tree,
-                    document_metrics,
-                    package_metrics,
-                    source: Some(source.file),
-                    mode: SourceSaveMode::Sparse,
-                });
+        let sparse_counted = if tree.has_line_ending_override() {
+            false
+        } else {
+            let mut counter = SourceSaveSegmentCounter::default();
+            match tree.visit_serialized_segments(true, &mut counter) {
+                Ok(()) => {
+                    if let SourceClone::Available(source) = tree.try_clone_source() {
+                        let source_bytes = Some(source.byte_length);
+                        let sparse_header = PackageHeader::new(
+                            counter.record_count,
+                            output_bytes,
+                            counter.payload_bytes,
+                            source_bytes,
+                        )
+                        .map_err(package_error)?;
+                        if sparse_header.package_bytes() < full_payload_header.package_bytes() {
+                            let package_metrics = package_metrics(sparse_header);
+                            return Ok(Self {
+                                tree,
+                                document_metrics,
+                                package_metrics,
+                                source: Some(source.file),
+                                mode: SourceSaveMode::Sparse,
+                            });
+                        }
+                    }
+                    true
+                }
+                Err(_) if counter.record_limit_reached => false,
+                Err(error) => return Err(error),
             }
-        }
+        };
+        let _ = sparse_counted;
 
         Ok(Self {
             tree,
@@ -4637,6 +4718,67 @@ mod tests {
             .expect("memory writer should succeed");
 
         assert_eq!(output, input);
+    }
+
+    /// Verifies LF/CRLF conversion updates serialization, metrics, source-save packages, and Undo.
+    #[test]
+    fn converts_line_endings_atomically_with_undo_and_full_payload_package() {
+        let mut document = Document::from_text("alpha\nbeta\ngamma");
+        let initial = document.metrics();
+        assert!(initial.has_lf_line_endings);
+        assert!(!initial.has_crlf_line_endings);
+        assert_eq!(initial.serialized_bytes, 16);
+
+        let crlf = document
+            .convert_line_endings(initial.revision, DocumentLineEnding::CrLf)
+            .expect("LF to CRLF conversion should succeed");
+        assert_eq!(crlf.revision, initial.revision + 1);
+        assert!(!crlf.has_lf_line_endings);
+        assert!(crlf.has_crlf_line_endings);
+        assert_eq!(crlf.inserted_line_ending, DocumentLineEnding::CrLf);
+        assert_eq!(crlf.serialized_bytes, 18);
+
+        let mut crlf_bytes = Vec::new();
+        document.write_to(&mut crlf_bytes).unwrap();
+        assert_eq!(crlf_bytes, b"alpha\r\nbeta\r\ngamma");
+
+        // Idempotent repeat does not advance revision.
+        let same = document
+            .convert_line_endings(crlf.revision, DocumentLineEnding::CrLf)
+            .unwrap();
+        assert_eq!(same.revision, crlf.revision);
+
+        // Prepared source-save package emits exact CRLF bytes without stale source backing.
+        let prepared = document.snapshot().prepare_source_save().unwrap();
+        assert_eq!(prepared.package_metrics().output_bytes, 18);
+        assert!(prepared.package_metrics().source_bytes.is_none());
+
+        // Undo restores original LF serialization cleanly.
+        let undone = document
+            .restore_history(crlf.revision, crlf.revision, true)
+            .unwrap();
+        assert!(undone.has_lf_line_endings);
+        assert!(!undone.has_crlf_line_endings);
+        let mut lf_bytes = Vec::new();
+        document.write_to(&mut lf_bytes).unwrap();
+        assert_eq!(lf_bytes, b"alpha\nbeta\ngamma");
+    }
+
+    /// Verifies ephemeral preview snapshots apply draft edits without touching revision or Undo.
+    #[test]
+    fn snapshot_with_replacement_leaves_live_document_and_history_untouched() {
+        let document = Document::from_text("# Hello\nworld");
+        let preview = document
+            .snapshot_with_replacement(0, Utf16Range::new(8, 13), "BeauTyXT")
+            .unwrap();
+        let mut preview_bytes = Vec::new();
+        preview.write_to(&mut preview_bytes).unwrap();
+        assert_eq!(preview_bytes, b"# Hello\nBeauTyXT");
+        assert_eq!(document.metrics().revision, 0);
+        assert_eq!(document.history_state().entries, 0);
+        let mut live_bytes = Vec::new();
+        document.write_to(&mut live_bytes).unwrap();
+        assert_eq!(live_bytes, b"# Hello\nworld");
     }
 
     /// Searches every bounded continuation until one match or exact exhaustion.

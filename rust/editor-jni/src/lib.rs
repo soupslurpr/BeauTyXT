@@ -17,10 +17,15 @@ use beautyxt_editor_bridge_protocol::{
     EncodeError, encode_document_metrics, encode_edit_window, encode_find, encode_viewport,
 };
 use beautyxt_editor_core::{
-    Document, DocumentError, DocumentSnapshot, EditWindowRequest, FindDirection,
-    FindHighlightRequest, FindRequest, MAX_FIND_CANDIDATE_UTF16_UNITS, MAX_FIND_QUERY_BYTES,
-    MAX_FIND_QUERY_UTF16_UNITS, PreparedSourceSave, PreviousViewportRequest,
+    Document, DocumentError, DocumentLineEnding, DocumentSnapshot, EditWindowRequest,
+    FindDirection, FindHighlightRequest, FindRequest, MAX_FIND_CANDIDATE_UTF16_UNITS,
+    MAX_FIND_QUERY_BYTES, MAX_FIND_QUERY_UTF16_UNITS, PreparedSourceSave, PreviousViewportRequest,
     SourceSavePackageMetrics, Utf16Range, ViewportPosition, ViewportRequest,
+};
+use beautyxt_syntax_core::markdown_assist::is_utf16_offset_in_markdown_literal_context;
+use beautyxt_syntax_core::{
+    LineState, MAX_TOKENS_PER_BLOCK, SyntaxLanguage, advance_state as advance_syntax_line_state,
+    highlight_with_state as highlight_syntax_with_state,
 };
 use jni::EnvUnowned;
 use jni::errors::{Error as JniError, ThrowRuntimeExAndDefault};
@@ -843,6 +848,180 @@ pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_clos
     unowned_env
         .with_env(|_| -> Result<(), BridgeError> { lock_registry()?.remove(handle) })
         .resolve::<ThrowRuntimeExAndDefault>();
+}
+
+/// Converts all serialized line endings uniformly as one atomic, Undo-able revision.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_convertLineEndings<
+    'caller,
+>(
+    mut unowned_env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    handle: jlong,
+    expected_revision: jlong,
+    target_line_ending: jint,
+) -> JByteArray<'caller> {
+    unowned_env
+        .with_env(|env| -> Result<JByteArray<'caller>, BridgeError> {
+            let revision = nonnegative_u64(expected_revision, "expected revision")?;
+            let target = match target_line_ending {
+                0 => DocumentLineEnding::Lf,
+                1 => DocumentLineEnding::CrLf,
+                2 => DocumentLineEnding::Cr,
+                _ => return Err(BridgeError::InvalidArgument("target line ending")),
+            };
+            let metrics = lock_registry()?
+                .get_mut(handle)?
+                .convert_line_endings(revision, target)?;
+            let packet = encode_document_metrics(&metrics)?;
+            Ok(env.byte_array_from_slice(&packet)?)
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// Captures an ephemeral snapshot with one uncommitted edit range applied, leaving Undo/revision untouched.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_capturePreviewSnapshot<
+    'caller,
+>(
+    mut unowned_env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    handle: jlong,
+    expected_revision: jlong,
+    start_utf16: jlong,
+    end_utf16: jlong,
+    replacement: JString<'caller>,
+) -> jlong {
+    unowned_env
+        .with_env(|_| -> Result<jlong, BridgeError> {
+            let revision = nonnegative_u64(expected_revision, "expected revision")?;
+            let range = Utf16Range::new(
+                nonnegative_usize(start_utf16, "preview start utf-16")?,
+                nonnegative_usize(end_utf16, "preview end utf-16")?,
+            );
+            let replacement_text: String = replacement.to_string();
+            let snapshot = lock_registry()?.get(handle)?.snapshot_with_replacement(
+                revision,
+                range,
+                &replacement_text,
+            )?;
+            let snapshot_handle = lock_snapshot_registry()?.insert(snapshot)?;
+            Ok(snapshot_handle)
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// Maps a display filename or extension to its stable `beautyxt-syntax-core` language id.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_syntaxLanguageForFilename<
+    'caller,
+>(
+    mut unowned_env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    filename: JString<'caller>,
+) -> jint {
+    unowned_env
+        .with_env(|_| -> Result<jint, BridgeError> {
+            let name: String = filename.to_string();
+            Ok(jint::from(SyntaxLanguage::from_filename(&name).as_u8()))
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// Advances cross-line syntax lexer state over a bounded prefix without collecting tokens.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_advanceSyntaxState<
+    'caller,
+>(
+    mut unowned_env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    language_id: jint,
+    entry_state: jlong,
+    text: JString<'caller>,
+) -> jlong {
+    unowned_env
+        .with_env(|_| -> Result<jlong, BridgeError> {
+            let lang = u8::try_from(language_id)
+                .ok()
+                .and_then(SyntaxLanguage::from_u8)
+                .unwrap_or(SyntaxLanguage::Plain);
+            let input: String = text.to_string();
+            let next =
+                advance_syntax_line_state(lang, &input, LineState(entry_state.cast_unsigned()));
+            Ok(next.0.cast_signed())
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// Highlights a bounded UTF-8 slice and returns `[exitState, packedToken...]`.
+///
+/// Each packed token stores `(start_utf16 << 32) | (len_utf16 << 16) | role`.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_highlightSyntax<
+    'caller,
+>(
+    mut unowned_env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    language_id: jint,
+    entry_state: jlong,
+    text: JString<'caller>,
+    max_tokens: jint,
+) -> JLongArray<'caller> {
+    unowned_env
+        .with_env(|env| -> Result<JLongArray<'caller>, BridgeError> {
+            let lang = u8::try_from(language_id)
+                .ok()
+                .and_then(SyntaxLanguage::from_u8)
+                .unwrap_or(SyntaxLanguage::Plain);
+            let limit = usize::try_from(max_tokens)
+                .unwrap_or(MAX_TOKENS_PER_BLOCK)
+                .min(MAX_TOKENS_PER_BLOCK);
+            let input: String = text.to_string();
+            let output = highlight_syntax_with_state(
+                lang,
+                &input,
+                LineState(entry_state.cast_unsigned()),
+                limit,
+            );
+            let mut packed = Vec::with_capacity(output.tokens.len().saturating_add(1));
+            packed.push(output.exit_state.0.cast_signed());
+            for token in output.tokens {
+                let len = token.end_utf16.saturating_sub(token.start_utf16);
+                if len == 0 || len > u32::from(u16::MAX) {
+                    continue;
+                }
+                let word: u64 = (u64::from(token.start_utf16) << 32)
+                    | (u64::from(len) << 16)
+                    | u64::from(token.kind.as_u8());
+                packed.push(word.cast_signed());
+            }
+            let array = env.new_long_array(packed.len())?;
+            array.set_region(env, 0, &packed)?;
+            Ok(array)
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+/// Returns whether a UTF-16 offset lies inside leading YAML frontmatter, a code fence, or
+/// indented code inside `CommonMark` containers (sharing the exact frontmatter parser with Reading).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_soupslurpr_beautyxt_document_NativeDocument_isMarkdownLiteralContext<
+    'caller,
+>(
+    mut unowned_env: EnvUnowned<'caller>,
+    _class: JClass<'caller>,
+    text: JString<'caller>,
+    offset_utf16: jint,
+) -> jboolean {
+    unowned_env
+        .with_env(|_| -> Result<jboolean, BridgeError> {
+            let input: String = text.to_string();
+            let offset = usize::try_from(offset_utf16).unwrap_or(0);
+            Ok(jboolean::from(is_utf16_offset_in_markdown_literal_context(
+                &input, offset,
+            )))
+        })
+        .resolve::<ThrowRuntimeExAndDefault>()
 }
 
 /// Returns exclusive access to the global registry.

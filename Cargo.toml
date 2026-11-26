@@ -20,6 +20,7 @@ members = [
     "rust/print-core",
     "rust/print-jni",
     "rust/source-save-core",
+    "rust/syntax-core",
     "rust/transfer-core",
     "rust/transfer-service",
 ]

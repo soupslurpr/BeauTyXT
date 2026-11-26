@@ -2,8 +2,8 @@
 
 use super::fonts::DiagramFonts;
 use beautyxt_illustration_core::{
-    Drawing, DrawingError, FilledPath, INK, MAX_PATH_CLIPS, PathClip, SURFACE, TONE, TextBox,
-    TextRun,
+    ACCENT, Drawing, DrawingError, FilledPath, INK, MAX_PATH_CLIPS, PathClip, SURFACE, TONE,
+    TextBox, TextRun,
 };
 
 pub(super) fn drawing(source: &str, fonts: &DiagramFonts) -> Result<Vec<u8>, DrawingError> {
@@ -248,6 +248,7 @@ fn color(paint: &usvg::Paint, opacity: f32) -> Result<u32, DrawingError> {
     Ok(match (color.red, color.green, color.blue) {
         (1, 1, 0) => INK,
         (1, 1, 1) => SURFACE,
+        (1, 1, 2) => ACCENT,
         (1, 1, 3) => TONE,
         (red, green, blue) => {
             0xff00_0000 | u32::from(red) << 16 | u32::from(green) << 8 | u32::from(blue)

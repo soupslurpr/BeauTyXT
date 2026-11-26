@@ -5,6 +5,7 @@
 mod autolink;
 mod block_buffer;
 mod bracket_math;
+mod details;
 mod html;
 
 use std::borrow::Cow;
@@ -12,6 +13,8 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::ops::Range;
 
+use beautyxt_syntax_core::frontmatter::{self, FrontmatterProperty};
+use beautyxt_syntax_core::{LineState, MAX_TOKENS_PER_BLOCK, SyntaxLanguage, highlight_with_state};
 use block_buffer::BlockBuffer;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -34,6 +37,12 @@ pub const MAX_SPAN_COUNT: usize = 131_072;
 /// Limits source-map runs while allowing one extra split per presentation block.
 pub const MAX_SOURCE_MAP_COUNT: usize = 262_144 + MAX_BLOCK_COUNT;
 
+/// Limits one render model to 65,536 syntax highlight runs (independent of `MAX_SPAN_COUNT`).
+pub const MAX_SYNTAX_RUN_COUNT: usize = 65_536;
+
+/// Fixes every syntax-run record width in bytes.
+pub const SYNTAX_RUN_BYTES: usize = 8;
+
 /// Limits one presentation block to 4 KiB of UTF-8 text.
 pub const MAX_BLOCK_TEXT_BYTES: usize = 4 * 1024;
 
@@ -41,7 +50,7 @@ pub const MAX_BLOCK_TEXT_BYTES: usize = 4 * 1024;
 pub const PACKET_HEADER_BYTES: usize = 80;
 
 /// Fixes every block header width.
-pub const BLOCK_HEADER_BYTES: usize = 72;
+pub const BLOCK_HEADER_BYTES: usize = 88;
 
 /// Fixes every styled-span header width.
 pub const SPAN_HEADER_BYTES: usize = 24;
@@ -49,14 +58,17 @@ pub const SPAN_HEADER_BYTES: usize = 24;
 /// Fixes every source-map header width.
 pub const SOURCE_MAP_HEADER_BYTES: usize = 24;
 
-/// Identifies every version-six Markdown render packet.
-pub const PACKET_MAGIC: [u8; 8] = *b"BTXTMDR6";
+/// Identifies every version-seven Markdown render packet.
+pub const PACKET_MAGIC: [u8; 8] = *b"BTXTMDR7";
 
 /// Identifies the only supported Markdown render packet version.
-pub const PACKET_VERSION: u32 = 6;
+pub const PACKET_VERSION: u32 = 7;
 
 /// Indicates that a render model contains literal raw HTML.
 pub const DOCUMENT_FLAG_RAW_HTML: u32 = 1;
+
+/// Indicates that syntax highlighting reached its bounded run budget.
+pub const DOCUMENT_FLAG_SYNTAX_TRUNCATED: u32 = 1 << 1;
 
 /// Identifies an ordinary Markdown paragraph.
 pub const BLOCK_KIND_PARAGRAPH: u32 = 1;
@@ -81,6 +93,12 @@ pub const BLOCK_KIND_TABLE_ROW: u32 = 7;
 
 /// Identifies one footnote definition.
 pub const BLOCK_KIND_FOOTNOTE: u32 = 8;
+
+/// Identifies one leading YAML frontmatter property row.
+pub const BLOCK_KIND_FRONTMATTER: u32 = 9;
+
+/// Identifies the collapsible summary header of a `<details>` container.
+pub const BLOCK_KIND_DETAILS_SUMMARY: u32 = 10;
 
 /// Indicates that a block continues a bounded predecessor.
 pub const BLOCK_FLAG_CONTINUATION: u32 = 1;
@@ -126,6 +144,15 @@ pub const BLOCK_FLAG_LIST_ITEM_CONTINUATION: u32 = 1 << 13;
 
 /// Marks the first semantic paragraph of an original list group.
 pub const BLOCK_FLAG_LIST_START: u32 = 1 << 14;
+
+/// Marks the first property block in a YAML frontmatter card.
+pub const BLOCK_FLAG_FRONTMATTER_START: u32 = 1 << 15;
+
+/// Marks a `<details>` summary block whose authored tag included `open`.
+pub const BLOCK_FLAG_DETAILS_OPEN: u32 = 1 << 16;
+
+/// Indicates that `task_marker_source_utf16` points to the authored `[ ]`/`[x]` marker.
+pub const BLOCK_FLAG_HAS_TASK_MARKER: u32 = 1 << 17;
 
 const BLOCK_FLAGS_QUOTE_KIND: u32 = BLOCK_FLAG_QUOTE_NOTE
     | BLOCK_FLAG_QUOTE_TIP
@@ -191,7 +218,7 @@ const MAGIC_OFFSET: usize = 0;
 const VERSION_OFFSET: usize = 8;
 const HEADER_BYTES_OFFSET: usize = 12;
 const DOCUMENT_FLAGS_OFFSET: usize = 16;
-const HEADER_RESERVED_OFFSET: usize = 20;
+const HEADER_SYNTAX_RUN_COUNT_OFFSET: usize = 20;
 const INPUT_BYTES_OFFSET: usize = 24;
 const PACKET_BYTES_OFFSET: usize = 32;
 const BLOCK_COUNT_OFFSET: usize = 40;
@@ -217,6 +244,9 @@ const BLOCK_SOURCE_START_UTF16_OFFSET: usize = 48;
 const BLOCK_SOURCE_END_UTF16_OFFSET: usize = 56;
 const BLOCK_SOURCE_MAP_COUNT_OFFSET: usize = 64;
 const BLOCK_QUOTE_ALERT_DEPTH_OFFSET: usize = 68;
+const BLOCK_DETAILS_FIELD_OFFSET: usize = 72;
+const BLOCK_SYNTAX_RUN_COUNT_OFFSET: usize = 76;
+const BLOCK_TASK_MARKER_SOURCE_UTF16_OFFSET: usize = 80;
 
 const SPAN_START_UTF16_OFFSET: usize = 0;
 const SPAN_END_UTF16_OFFSET: usize = 4;
@@ -323,7 +353,9 @@ pub struct RenderPacket {
     block_count: u32,
     span_count: u32,
     source_map_count: u32,
+    syntax_run_count: u32,
     contains_raw_html: bool,
+    syntax_truncated: bool,
 }
 
 impl RenderPacket {
@@ -357,11 +389,30 @@ impl RenderPacket {
         self.source_map_count
     }
 
+    /// Returns the number of encoded syntax highlight runs.
+    #[must_use]
+    pub const fn syntax_run_count(&self) -> u32 {
+        self.syntax_run_count
+    }
+
     /// Returns whether raw HTML is present as inert literal text.
     #[must_use]
     pub const fn contains_raw_html(&self) -> bool {
         self.contains_raw_html
     }
+
+    /// Returns whether syntax highlighting reached its bounded run budget.
+    #[must_use]
+    pub const fn syntax_truncated(&self) -> bool {
+        self.syntax_truncated
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SyntaxRun {
+    start_utf16: u32,
+    len_utf16: u16,
+    role: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -545,6 +596,9 @@ struct BlockSpec {
     quote_alert_depth: u32,
     list_depth: u32,
     list_number: u64,
+    details_id: u16,
+    details_parent_id: u16,
+    task_marker_source_utf16: u64,
     metadata: String,
 }
 
@@ -557,6 +611,7 @@ struct RenderBlock {
     span_bytes: usize,
     source_range: Option<SourceRange>,
     source_maps: Vec<InlineSourceMap>,
+    syntax_runs: Vec<SyntaxRun>,
     table_separators: Vec<u32>,
     footnote_label: String,
 }
@@ -571,6 +626,7 @@ impl RenderBlock {
             span_bytes: 0,
             source_range: None,
             source_maps: Vec::new(),
+            syntax_runs: Vec::new(),
             table_separators: Vec::new(),
             footnote_label: String::new(),
         }
@@ -630,6 +686,7 @@ impl RenderBlock {
             self.auxiliary_bytes()?,
             span_bytes,
             self.source_maps.len(),
+            self.syntax_runs.len(),
         )?;
         self.spans.push(InlineSpan {
             start_utf16,
@@ -712,6 +769,7 @@ impl RenderBlock {
             self.auxiliary_bytes()?,
             self.span_bytes,
             self.source_maps.len(),
+            self.syntax_runs.len(),
         )
     }
 }
@@ -722,9 +780,11 @@ fn bounded_block_packet_bytes(
     metadata_bytes: usize,
     span_bytes: usize,
     source_map_count: usize,
+    syntax_run_count: usize,
 ) -> Result<usize, RenderError> {
     let bytes = source_map_count
         .checked_mul(SOURCE_MAP_HEADER_BYTES)
+        .and_then(|bytes| bytes.checked_add(syntax_run_count.checked_mul(SYNTAX_RUN_BYTES)?))
         .and_then(|bytes| bytes.checked_add(BLOCK_HEADER_BYTES))
         .and_then(|bytes| bytes.checked_add(text_bytes))
         .and_then(|bytes| bytes.checked_add(metadata_bytes))
@@ -757,6 +817,31 @@ struct QuoteContext {
     starts_next_block: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DetailsContainer {
+    quote_depth: usize,
+    list_depth: usize,
+    in_footnote: bool,
+}
+
+#[derive(Debug)]
+struct DetailsFrame {
+    id: u16,
+    parent_id: u16,
+    container: DetailsContainer,
+    summary_block_index: usize,
+    has_summary_text: bool,
+    original_html_block: RenderBlock,
+    leading_body_block_count: usize,
+    consumed_summary_html_block: Option<(usize, RenderBlock)>,
+}
+
+#[derive(Debug)]
+struct ActiveHtmlBlock {
+    stream: details::DetailsBalanceStream,
+    consumed_close: bool,
+}
+
 #[derive(Debug)]
 struct DocumentBuilder {
     blocks: BlockBuffer,
@@ -764,12 +849,17 @@ struct DocumentBuilder {
     quotes: Vec<QuoteContext>,
     lists: Vec<ListContext>,
     items: Vec<ListItemContext>,
+    details_stack: Vec<DetailsFrame>,
+    ignored_details_containers: Vec<(DetailsContainer, usize)>,
+    active_html: Option<ActiveHtmlBlock>,
+    next_details_id: u16,
     table_alignments: Option<String>,
     table_header: bool,
     table_cell_count: usize,
     footnote_label: Option<String>,
     footnote_source: Option<SourceRange>,
     contains_raw_html: bool,
+    syntax_truncated: bool,
 }
 
 impl DocumentBuilder {
@@ -780,13 +870,58 @@ impl DocumentBuilder {
             quotes: Vec::new(),
             lists: Vec::new(),
             items: Vec::new(),
+            details_stack: Vec::new(),
+            ignored_details_containers: Vec::new(),
+            active_html: None,
+            next_details_id: 1,
             table_alignments: None,
             table_header: false,
             table_cell_count: 0,
             footnote_label: None,
             footnote_source: None,
             contains_raw_html: false,
+            syntax_truncated: false,
         }
+    }
+
+    fn current_details_ids(&self) -> (u16, u16) {
+        self.details_stack
+            .last()
+            .map_or((0, 0), |frame| (frame.id, frame.parent_id))
+    }
+
+    fn push_frontmatter(
+        &mut self,
+        properties: &[FrontmatterProperty],
+        source_offsets: &SourceOffsetIndex<'_>,
+    ) -> Result<(), RenderError> {
+        for (index, prop) in properties.iter().enumerate() {
+            let source = source_offsets.source_range(prop.byte_range.clone())?;
+            let flags = if index == 0 {
+                BLOCK_FLAG_FRONTMATTER_START
+            } else {
+                0
+            };
+            let mut block = RenderBlock::new(BlockSpec {
+                kind: BLOCK_KIND_FRONTMATTER,
+                flags,
+                heading_level: 0,
+                quote_depth: 0,
+                quote_alert_depth: 0,
+                list_depth: 0,
+                list_number: 0,
+                details_id: 0,
+                details_parent_id: 0,
+                task_marker_source_utf16: 0,
+                metadata: bounded_metadata(&prop.key),
+            });
+            block.include_source(source);
+            if !prop.value.is_empty() {
+                block.append_mapped(&prop.value, 0, None, source)?;
+            }
+            self.push_block(block)?;
+        }
+        Ok(())
     }
 
     fn start_block(&mut self, mut spec: BlockSpec, source: SourceRange) -> Result<(), RenderError> {
@@ -885,6 +1020,9 @@ impl DocumentBuilder {
                 } else {
                     0
                 },
+                details_id: 0,
+                details_parent_id: 0,
+                task_marker_source_utf16: 0,
                 metadata: if is_footnote {
                     self.footnote_label.clone().ok_or(RenderError::State)?
                 } else {
@@ -913,13 +1051,37 @@ impl DocumentBuilder {
                 quote_alert_depth: 0,
                 list_depth: 0,
                 list_number: 0,
+                details_id: 0,
+                details_parent_id: 0,
+                task_marker_source_utf16: 0,
                 metadata,
             },
             source,
         )
     }
 
+    fn enter_html_block(&mut self) -> Result<(), RenderError> {
+        if let Some(current) = self.current.as_ref() {
+            // Tight list prose has no paragraph-end event before a following HTML block.
+            if current.spec.kind != BLOCK_KIND_LIST_ITEM {
+                return Err(RenderError::State);
+            }
+            self.finish_block()?;
+        }
+        self.active_html = Some(ActiveHtmlBlock {
+            stream: details::DetailsBalanceStream::new(),
+            consumed_close: false,
+        });
+        Ok(())
+    }
+
+    #[cfg(test)]
     fn start_html_block(&mut self, source: SourceRange) -> Result<(), RenderError> {
+        self.enter_html_block()?;
+        self.start_html_segment(source)
+    }
+
+    fn start_html_segment(&mut self, source: SourceRange) -> Result<(), RenderError> {
         self.start_block(
             BlockSpec {
                 kind: BLOCK_KIND_HTML_LITERAL,
@@ -929,10 +1091,177 @@ impl DocumentBuilder {
                 quote_alert_depth: 0,
                 list_depth: 0,
                 list_number: 0,
+                details_id: 0,
+                details_parent_id: 0,
+                task_marker_source_utf16: 0,
                 metadata: String::new(),
             },
             source,
         )
+    }
+
+    fn has_open_or_ignored_details_in_container(&self, container: DetailsContainer) -> bool {
+        self.details_stack
+            .last()
+            .is_some_and(|f| f.container == container)
+            || self
+                .ignored_details_containers
+                .last()
+                .is_some_and(|&(c, count)| c == container && count > 0)
+    }
+
+    fn append_html_piece(
+        &mut self,
+        piece: &str,
+        style: u32,
+        cur_source_start: u64,
+        source_end: u64,
+    ) -> Result<u64, RenderError> {
+        let piece_utf16 = u64::try_from(piece.encode_utf16().count())
+            .map_err(|_| RenderError::ArithmeticOverflow)?;
+        let piece_end = cur_source_start.saturating_add(piece_utf16).min(source_end);
+        let piece_range = SourceRange::new(cur_source_start, piece_end);
+        if self.current.is_none() {
+            self.start_html_segment(piece_range)?;
+        }
+        self.append(piece, style, None, piece_range)?;
+        Ok(piece_end)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn append_html(
+        &mut self,
+        chunk: &str,
+        style: u32,
+        source: SourceRange,
+    ) -> Result<(), RenderError> {
+        if self.active_html.is_none() {
+            return self.append(chunk, style, None, source);
+        }
+        let mut remaining = chunk;
+        let mut cur_source_start = source.start_utf16;
+        while !remaining.is_empty() {
+            let close_opt = self
+                .active_html
+                .as_mut()
+                .and_then(|active| active.stream.scan_until_close(remaining));
+            let Some(close_tag) = close_opt else {
+                let tail_range = SourceRange::new(cur_source_start, source.end_utf16);
+                let consumed_close = self
+                    .active_html
+                    .as_ref()
+                    .is_some_and(|active| active.consumed_close);
+                if self.current.is_none() && (!remaining.trim().is_empty() || !consumed_close) {
+                    self.start_html_segment(tail_range)?;
+                }
+                if self.current.is_some() {
+                    self.append(remaining, style, None, tail_range)?;
+                }
+                break;
+            };
+            if close_tag.kind == details::CloseTagKind::CompletedTopLevel {
+                // Self-contained `<details>...</details>` completed: flush it as its own segment
+                // so any immediately following HTML starts cleanly outside the fold.
+                let piece = &remaining[..close_tag.tag_end_in_chunk];
+                cur_source_start =
+                    self.append_html_piece(piece, style, cur_source_start, source.end_utf16)?;
+                self.finish_html_segment()?;
+                if let Some(active) = self.active_html.as_mut() {
+                    active.consumed_close = true;
+                }
+                let mut next_byte = close_tag.tag_end_in_chunk;
+                if remaining[next_byte..].starts_with("\r\n") {
+                    next_byte += 2;
+                } else if remaining[next_byte..].starts_with('\n') {
+                    next_byte += 1;
+                }
+                if next_byte > close_tag.tag_end_in_chunk {
+                    let nl_utf16 = u64::try_from(
+                        remaining[close_tag.tag_end_in_chunk..next_byte]
+                            .encode_utf16()
+                            .count(),
+                    )
+                    .map_err(|_| RenderError::ArithmeticOverflow)?;
+                    cur_source_start = cur_source_start
+                        .saturating_add(nl_utf16)
+                        .min(source.end_utf16);
+                }
+                remaining = &remaining[next_byte..];
+                continue;
+            }
+            let container = self.current_details_container();
+            let has_ignored_in_container = self
+                .ignored_details_containers
+                .last()
+                .is_some_and(|&(c, count)| c == container && count > 0);
+            if !self.has_open_or_ignored_details_in_container(container) {
+                // Stray top-level `</details>`: keep literal raw HTML.
+                let piece = &remaining[..close_tag.tag_end_in_chunk];
+                cur_source_start =
+                    self.append_html_piece(piece, style, cur_source_start, source.end_utf16)?;
+                remaining = &remaining[close_tag.tag_end_in_chunk..];
+                continue;
+            }
+            if has_ignored_in_container {
+                // Closes an unsupported `<details>` opened in this container: keep literal HTML.
+                let _ = self.close_details_in_container(container, 1);
+                let piece = &remaining[..close_tag.tag_end_in_chunk];
+                cur_source_start =
+                    self.append_html_piece(piece, style, cur_source_start, source.end_utf16)?;
+                remaining = &remaining[close_tag.tag_end_in_chunk..];
+                continue;
+            }
+            if let Some(tag_start) = close_tag.tag_start_in_chunk
+                && close_tag.is_clean_close_tag
+            {
+                let prefix = &remaining[..tag_start];
+                let has_prior_content = self.current.as_ref().is_some_and(|b| {
+                    !b.text.trim().is_empty() || b.spec.flags & BLOCK_FLAG_CONTINUATION != 0
+                });
+                if has_prior_content || !prefix.trim().is_empty() {
+                    if !prefix.is_empty() {
+                        let _ = self.append_html_piece(
+                            prefix,
+                            style,
+                            cur_source_start,
+                            source.end_utf16,
+                        )?;
+                    }
+                    self.finish_html_segment()?;
+                } else {
+                    self.current = None;
+                }
+                let _ = self.close_details_in_container(container, 1);
+                if let Some(active) = self.active_html.as_mut() {
+                    active.consumed_close = true;
+                }
+                let mut next_byte = close_tag.tag_end_in_chunk;
+                if remaining[next_byte..].starts_with("\r\n") {
+                    next_byte += 2;
+                } else if remaining[next_byte..].starts_with('\n') {
+                    next_byte += 1;
+                }
+                let consumed_utf16 = u64::try_from(remaining[..next_byte].encode_utf16().count())
+                    .map_err(|_| RenderError::ArithmeticOverflow)?;
+                cur_source_start = cur_source_start
+                    .saturating_add(consumed_utf16)
+                    .min(source.end_utf16);
+                remaining = &remaining[next_byte..];
+            } else {
+                // Multiline or attribute-bearing `</details ...>`: keep literal tag inside the
+                // fold, close the fold, and start a fresh segment outside for anything after `>`.
+                let piece = &remaining[..close_tag.tag_end_in_chunk];
+                cur_source_start =
+                    self.append_html_piece(piece, style, cur_source_start, source.end_utf16)?;
+                self.finish_html_segment()?;
+                let _ = self.close_details_in_container(container, 1);
+                if let Some(active) = self.active_html.as_mut() {
+                    active.consumed_close = true;
+                }
+                remaining = &remaining[close_tag.tag_end_in_chunk..];
+            }
+        }
+        Ok(())
     }
 
     fn start_table_row(&mut self, source: SourceRange) -> Result<(), RenderError> {
@@ -950,6 +1279,9 @@ impl DocumentBuilder {
                 quote_alert_depth: 0,
                 list_depth: 0,
                 list_number: 0,
+                details_id: 0,
+                details_parent_id: 0,
+                task_marker_source_utf16: 0,
                 metadata: self.table_alignments.clone().ok_or(RenderError::State)?,
             },
             source,
@@ -973,6 +1305,7 @@ impl DocumentBuilder {
         {
             return Err(RenderError::State);
         }
+        self.unwind_details_for_footnote();
         Ok(())
     }
 
@@ -986,6 +1319,9 @@ impl DocumentBuilder {
                 quote_alert_depth: 0,
                 list_depth: 0,
                 list_number: 0,
+                details_id: 0,
+                details_parent_id: 0,
+                task_marker_source_utf16: 0,
                 metadata: String::new(),
             },
             source,
@@ -1114,14 +1450,20 @@ impl DocumentBuilder {
     }
 
     fn allows_extended_autolinks(&self) -> bool {
-        self.current.as_ref().is_none_or(|block| {
-            block.spec.kind != BLOCK_KIND_CODE
-                && block.spec.kind != BLOCK_KIND_HTML_LITERAL
-                && block.spec.flags & BLOCK_FLAG_RAW_HTML == 0
-        })
+        self.active_html.is_none()
+            && self.current.as_ref().is_none_or(|block| {
+                block.spec.kind != BLOCK_KIND_CODE
+                    && block.spec.kind != BLOCK_KIND_HTML_LITERAL
+                    && block.spec.flags & BLOCK_FLAG_RAW_HTML == 0
+            })
     }
 
-    fn mark_task(&mut self, checked: bool, source: SourceRange) -> Result<(), RenderError> {
+    fn mark_task(
+        &mut self,
+        checked: bool,
+        source: SourceRange,
+        marker_source_utf16: Option<u64>,
+    ) -> Result<(), RenderError> {
         if self.current.is_none() {
             self.start_text_block(BLOCK_KIND_PARAGRAPH, 0, source)?;
         }
@@ -1134,6 +1476,10 @@ impl DocumentBuilder {
         } else {
             BLOCK_FLAG_TASK_UNCHECKED
         };
+        if let Some(marker_utf16) = marker_source_utf16 {
+            current.spec.flags |= BLOCK_FLAG_HAS_TASK_MARKER;
+            current.spec.task_marker_source_utf16 = marker_utf16;
+        }
         self.append(
             if checked {
                 CHECKED_TASK_PREFIX
@@ -1228,11 +1574,112 @@ impl DocumentBuilder {
     }
 
     fn finish_html_block(&mut self) -> Result<(), RenderError> {
-        let block = self.current.take().ok_or(RenderError::State)?;
-        if block.spec.flags & BLOCK_FLAG_CONTINUATION == 0
-            && let Some(blocks) =
-                html::render_safe_html_blocks(&block.text, block.spec.quote_depth)?
+        let result = self.finish_html_segment();
+        self.active_html = None;
+        result
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn finish_html_segment(&mut self) -> Result<(), RenderError> {
+        let Some(mut block) = self.current.take() else {
+            return Ok(());
+        };
+        let (stream_opens, consumed_close) = self.active_html.as_mut().map_or((0, false), |a| {
+            (a.stream.take_trailing_opens(), a.consumed_close)
+        });
+        if consumed_close
+            && block.spec.flags & BLOCK_FLAG_CONTINUATION == 0
+            && block.text.trim().is_empty()
         {
+            return Ok(());
+        }
+        let container = self.current_details_container();
+        let has_ignored_in_container = self
+            .ignored_details_containers
+            .last()
+            .is_some_and(|&(c, count)| c == container && count > 0);
+        if block.spec.flags & BLOCK_FLAG_CONTINUATION != 0 {
+            if stream_opens > 0 && self.has_open_or_ignored_details_in_container(container) {
+                self.push_ignored_details(container, stream_opens);
+            }
+            self.contains_raw_html = true;
+            return self.push_block(block);
+        }
+        if let Some(directive) = details::parse_details_directive(&block.text) {
+            match directive {
+                details::DetailsDirective::Open {
+                    initially_open,
+                    summary,
+                    leading_body_html,
+                } if !has_ignored_in_container
+                    && self.details_stack.len() < details::MAX_DETAILS_DEPTH
+                    && self.next_details_id <= details::MAX_DETAILS_GROUPS =>
+                {
+                    match self.open_details_frame(
+                        block,
+                        container,
+                        initially_open,
+                        summary,
+                        leading_body_html.as_deref(),
+                    )? {
+                        None => return Ok(()),
+                        Some(rejected_block) => {
+                            block = rejected_block;
+                            if self.has_open_or_ignored_details_in_container(container) {
+                                self.push_ignored_details(container, 1);
+                            }
+                        }
+                    }
+                }
+                details::DetailsDirective::Open { .. } => {
+                    if self.has_open_or_ignored_details_in_container(container) {
+                        self.push_ignored_details(container, 1);
+                    }
+                }
+                details::DetailsDirective::UnsupportedOpens(opens) => {
+                    if opens > 0 && self.has_open_or_ignored_details_in_container(container) {
+                        self.push_ignored_details(container, opens);
+                    }
+                }
+                details::DetailsDirective::Summary(summary_text)
+                    if !has_ignored_in_container
+                        && self
+                            .details_stack
+                            .last()
+                            .is_some_and(|f| !f.has_summary_text && f.container == container) =>
+                {
+                    let insert_index = self.blocks.blocks.len();
+                    if let Some(frame) = self.details_stack.last_mut() {
+                        let source = block.source_range.ok_or(RenderError::State)?;
+                        if let Some(summary_block) =
+                            self.blocks.blocks.get_mut(frame.summary_block_index)
+                        {
+                            summary_block.include_source(source);
+                            if !summary_text.is_empty() {
+                                summary_block.append_mapped(&summary_text, 0, None, source)?;
+                            }
+                            frame.has_summary_text = true;
+                            frame.consumed_summary_html_block = Some((insert_index, block));
+                            return Ok(());
+                        }
+                    }
+                }
+                details::DetailsDirective::Complete {
+                    initially_open,
+                    summary,
+                    body_html,
+                } if !has_ignored_in_container
+                    && self.details_stack.len() < details::MAX_DETAILS_DEPTH
+                    && self.next_details_id <= details::MAX_DETAILS_GROUPS =>
+                {
+                    if self.emit_complete_details(&block, initially_open, summary, &body_html)? {
+                        return Ok(());
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(blocks) = html::render_safe_html_blocks(&block.text, block.spec.quote_depth)? {
             let quote_kind_flags = block.spec.flags & BLOCK_FLAGS_QUOTE_KIND;
             let starts_alert = block.spec.flags & BLOCK_FLAG_QUOTE_ALERT_START != 0;
             let source = block.source_range.ok_or(RenderError::State)?;
@@ -1267,7 +1714,9 @@ impl DocumentBuilder {
         let footnote_label = completed.footnote_label.clone();
         let mut continuation_spec = completed.spec.clone();
         continuation_spec.flags |= BLOCK_FLAG_CONTINUATION;
-        continuation_spec.flags &= !(BLOCK_FLAG_TABLE_START | BLOCK_FLAG_LIST_START);
+        continuation_spec.flags &=
+            !(BLOCK_FLAG_TABLE_START | BLOCK_FLAG_LIST_START | BLOCK_FLAG_HAS_TASK_MARKER);
+        continuation_spec.task_marker_source_utf16 = 0;
         if completed.spec.kind == BLOCK_KIND_TABLE_ROW {
             continuation_spec.metadata =
                 table_alignment_suffix(&completed.spec.metadata, completed.table_separators.len())?;
@@ -1283,7 +1732,12 @@ impl DocumentBuilder {
         Ok(())
     }
 
-    fn push_block(&mut self, block: RenderBlock) -> Result<(), RenderError> {
+    fn push_block(&mut self, mut block: RenderBlock) -> Result<(), RenderError> {
+        if block.spec.details_id == 0 {
+            let (details_id, details_parent_id) = self.current_details_ids();
+            block.spec.details_id = details_id;
+            block.spec.details_parent_id = details_parent_id;
+        }
         self.blocks.push(block)
     }
 
@@ -1338,6 +1792,8 @@ impl DocumentBuilder {
         if self.current.is_some() {
             self.finish_block()?;
         }
+        let leaving_list_depth = self.items.len();
+        self.unwind_details_for_container(self.quotes.len(), leaving_list_depth);
         if self.items.len() != self.lists.len() || self.items.pop().is_none() {
             return Err(RenderError::State);
         }
@@ -1380,10 +1836,294 @@ impl DocumentBuilder {
     }
 
     fn leave_quote(&mut self) -> Result<(), RenderError> {
+        let leaving_quote_depth = self.quotes.len();
+        self.unwind_details_for_container(leaving_quote_depth, self.items.len());
         self.quotes.pop().map(|_| ()).ok_or(RenderError::State)
     }
 
-    fn finish(self) -> Result<RenderDocument, RenderError> {
+    fn current_details_container(&self) -> DetailsContainer {
+        DetailsContainer {
+            quote_depth: self.quotes.len(),
+            list_depth: self.items.len(),
+            in_footnote: self.footnote_label.is_some(),
+        }
+    }
+
+    fn emit_complete_details(
+        &mut self,
+        block: &RenderBlock,
+        initially_open: bool,
+        summary: Option<String>,
+        body_html: &str,
+    ) -> Result<bool, RenderError> {
+        let safe_body = if body_html.is_empty() {
+            Some(BlockBuffer::new())
+        } else {
+            html::render_safe_html_blocks(body_html, block.spec.quote_depth)?
+        };
+        let Some(body_blocks) = safe_body else {
+            return Ok(false);
+        };
+        let id = self.next_details_id;
+        self.next_details_id = self.next_details_id.saturating_add(1);
+        let (parent_id, _) = self.current_details_ids();
+        let source = block.source_range.ok_or(RenderError::State)?;
+        let quote_kind_flags = block.spec.flags & BLOCK_FLAGS_QUOTE_KIND;
+        let starts_alert = block.spec.flags & BLOCK_FLAG_QUOTE_ALERT_START != 0;
+        let mut summary_block = RenderBlock::new(BlockSpec {
+            kind: BLOCK_KIND_DETAILS_SUMMARY,
+            flags: quote_kind_flags
+                | if starts_alert {
+                    BLOCK_FLAG_QUOTE_ALERT_START
+                } else {
+                    0
+                }
+                | if initially_open {
+                    BLOCK_FLAG_DETAILS_OPEN
+                } else {
+                    0
+                },
+            heading_level: 0,
+            quote_depth: block.spec.quote_depth,
+            quote_alert_depth: block.spec.quote_alert_depth,
+            list_depth: 0,
+            list_number: 0,
+            details_id: id,
+            details_parent_id: parent_id,
+            task_marker_source_utf16: 0,
+            metadata: String::new(),
+        });
+        summary_block.include_source(source);
+        summary_block
+            .footnote_label
+            .clone_from(&block.footnote_label);
+        if let Some(summary_text) = summary
+            && !summary_text.is_empty()
+        {
+            summary_block.append_mapped(&summary_text, 0, None, source)?;
+        }
+        self.blocks.push(summary_block)?;
+        for mut safe_block in body_blocks.blocks {
+            safe_block.spec.flags |= quote_kind_flags;
+            safe_block.spec.quote_alert_depth = block.spec.quote_alert_depth;
+            safe_block.spec.details_id = id;
+            safe_block.spec.details_parent_id = parent_id;
+            safe_block.include_source(source);
+            safe_block.footnote_label.clone_from(&block.footnote_label);
+            self.blocks.push(safe_block)?;
+        }
+        Ok(true)
+    }
+
+    fn open_details_frame(
+        &mut self,
+        block: RenderBlock,
+        container: DetailsContainer,
+        initially_open: bool,
+        summary: Option<String>,
+        leading_body_html: Option<&str>,
+    ) -> Result<Option<RenderBlock>, RenderError> {
+        let leading_blocks = if let Some(body_html) = leading_body_html {
+            let Some(safe_body) = html::render_safe_html_blocks(body_html, block.spec.quote_depth)?
+            else {
+                return Ok(Some(block));
+            };
+            safe_body.blocks
+        } else {
+            Vec::new()
+        };
+        let id = self.next_details_id;
+        self.next_details_id = self.next_details_id.saturating_add(1);
+        let (parent_id, _) = self.current_details_ids();
+        let source = block.source_range.ok_or(RenderError::State)?;
+        let quote_kind_flags = block.spec.flags & BLOCK_FLAGS_QUOTE_KIND;
+        let mut summary_block = RenderBlock::new(BlockSpec {
+            kind: BLOCK_KIND_DETAILS_SUMMARY,
+            flags: quote_kind_flags
+                | (block.spec.flags & BLOCK_FLAG_QUOTE_ALERT_START)
+                | if initially_open {
+                    BLOCK_FLAG_DETAILS_OPEN
+                } else {
+                    0
+                },
+            heading_level: 0,
+            quote_depth: block.spec.quote_depth,
+            quote_alert_depth: block.spec.quote_alert_depth,
+            list_depth: 0,
+            list_number: 0,
+            details_id: id,
+            details_parent_id: parent_id,
+            task_marker_source_utf16: 0,
+            metadata: String::new(),
+        });
+        summary_block.include_source(source);
+        summary_block
+            .footnote_label
+            .clone_from(&block.footnote_label);
+        let has_summary_text =
+            summary.as_ref().is_some_and(|s| !s.is_empty()) || leading_body_html.is_some();
+        if let Some(summary_text) = summary
+            && !summary_text.is_empty()
+        {
+            summary_block.append_mapped(&summary_text, 0, None, source)?;
+        }
+        let summary_block_index = self.blocks.blocks.len();
+        self.blocks.push(summary_block)?;
+        let leading_body_block_count = leading_blocks.len();
+        for mut safe_block in leading_blocks {
+            safe_block.spec.flags |= quote_kind_flags;
+            safe_block.spec.quote_alert_depth = block.spec.quote_alert_depth;
+            safe_block.spec.details_id = id;
+            safe_block.spec.details_parent_id = parent_id;
+            safe_block.include_source(source);
+            safe_block.footnote_label.clone_from(&block.footnote_label);
+            self.blocks.push(safe_block)?;
+        }
+        self.details_stack.push(DetailsFrame {
+            id,
+            parent_id,
+            container,
+            summary_block_index,
+            has_summary_text,
+            original_html_block: block,
+            leading_body_block_count,
+            consumed_summary_html_block: None,
+        });
+        Ok(None)
+    }
+
+    fn consume_ignored_details(&mut self, container: DetailsContainer, count: usize) -> usize {
+        let mut consumed_ignored = 0usize;
+        while consumed_ignored < count {
+            let Some((last_container, last_count)) = self.ignored_details_containers.last_mut()
+            else {
+                break;
+            };
+            if *last_container != container {
+                break;
+            }
+            let take = (count - consumed_ignored).min(*last_count);
+            *last_count -= take;
+            consumed_ignored += take;
+            if *last_count == 0 {
+                self.ignored_details_containers.pop();
+            }
+        }
+        consumed_ignored
+    }
+
+    fn close_details_in_container(
+        &mut self,
+        container: DetailsContainer,
+        count: usize,
+    ) -> (usize, usize) {
+        let consumed_ignored = self.consume_ignored_details(container, count);
+        let remaining = count - consumed_ignored;
+        let mut consumed_supported = 0usize;
+        while consumed_supported < remaining
+            && self
+                .details_stack
+                .last()
+                .is_some_and(|f| f.container == container)
+        {
+            self.details_stack.pop();
+            consumed_supported += 1;
+        }
+        (consumed_ignored, consumed_supported)
+    }
+
+    fn push_ignored_details(&mut self, container: DetailsContainer, count: usize) {
+        if count == 0 {
+            return;
+        }
+        if let Some((last_container, last_count)) = self.ignored_details_containers.last_mut()
+            && *last_container == container
+        {
+            *last_count = last_count.saturating_add(count);
+            return;
+        }
+        self.ignored_details_containers.push((container, count));
+    }
+
+    fn unwind_details_frame(&mut self, frame: DetailsFrame) {
+        self.contains_raw_html = true;
+        if let Some(slot) = self.blocks.blocks.get_mut(frame.summary_block_index) {
+            let mut restored = frame.original_html_block;
+            restored.spec.details_id = frame.parent_id;
+            restored.spec.details_parent_id = 0;
+            *slot = restored;
+        }
+        if frame.leading_body_block_count > 0 {
+            let remove_start = frame.summary_block_index + 1;
+            let remove_end = remove_start
+                .saturating_add(frame.leading_body_block_count)
+                .min(self.blocks.blocks.len());
+            if remove_start < remove_end {
+                self.blocks.blocks.drain(remove_start..remove_end);
+            }
+        }
+        if let Some((insert_at, mut summary_html)) = frame.consumed_summary_html_block {
+            summary_html.spec.details_id = frame.parent_id;
+            summary_html.spec.details_parent_id = 0;
+            let pos = insert_at
+                .max(frame.summary_block_index + 1)
+                .min(self.blocks.blocks.len());
+            self.blocks.blocks.insert(pos, summary_html);
+        }
+        for block in &mut self.blocks.blocks[frame.summary_block_index + 1..] {
+            if block.spec.details_id == frame.id {
+                block.spec.details_id = frame.parent_id;
+                block.spec.details_parent_id = 0;
+            } else if block.spec.details_parent_id == frame.id {
+                block.spec.details_parent_id = frame.parent_id;
+            }
+        }
+    }
+
+    fn unwind_details_for_container(&mut self, min_quote_depth: usize, min_list_depth: usize) {
+        let in_footnote = self.footnote_label.is_some();
+        while self
+            .ignored_details_containers
+            .last()
+            .is_some_and(|&(c, _)| {
+                c.in_footnote == in_footnote
+                    && c.quote_depth >= min_quote_depth
+                    && c.list_depth >= min_list_depth
+            })
+        {
+            self.ignored_details_containers.pop();
+        }
+        while self.details_stack.last().is_some_and(|f| {
+            f.container.in_footnote == in_footnote
+                && f.container.quote_depth >= min_quote_depth
+                && f.container.list_depth >= min_list_depth
+        }) {
+            if let Some(frame) = self.details_stack.pop() {
+                self.unwind_details_frame(frame);
+            }
+        }
+    }
+
+    fn unwind_details_for_footnote(&mut self) {
+        while self
+            .ignored_details_containers
+            .last()
+            .is_some_and(|&(c, _)| c.in_footnote)
+        {
+            self.ignored_details_containers.pop();
+        }
+        while self
+            .details_stack
+            .last()
+            .is_some_and(|f| f.container.in_footnote)
+        {
+            if let Some(frame) = self.details_stack.pop() {
+                self.unwind_details_frame(frame);
+            }
+        }
+    }
+
+    fn finish(mut self) -> Result<RenderDocument, RenderError> {
         if self.current.is_some()
             || !self.quotes.is_empty()
             || !self.lists.is_empty()
@@ -1394,13 +2134,21 @@ impl DocumentBuilder {
         {
             return Err(RenderError::State);
         }
+        // Any unclosed `<details>` degrades cleanly to literal HTML + ordinary body blocks.
+        while let Some(frame) = self.details_stack.pop() {
+            self.unwind_details_frame(frame);
+        }
+        self.ignored_details_containers.clear();
         let mut blocks = split_blocks_for_presentation(self.blocks.blocks)?;
+        attach_document_syntax_runs(&mut blocks, &mut self.syntax_truncated);
         blocks.blocks.shrink_to_fit();
         Ok(RenderDocument {
             blocks: blocks.blocks,
             span_count: blocks.span_count,
             source_map_count: blocks.source_map_count,
+            syntax_run_count: blocks.syntax_run_count,
             contains_raw_html: self.contains_raw_html,
+            syntax_truncated: self.syntax_truncated,
         })
     }
 }
@@ -1572,7 +2320,9 @@ struct RenderDocument {
     blocks: Vec<RenderBlock>,
     span_count: usize,
     source_map_count: usize,
+    syntax_run_count: usize,
     contains_raw_html: bool,
+    syntax_truncated: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1580,6 +2330,7 @@ struct EncodedDocumentMetrics {
     block_count: u32,
     span_count: u32,
     source_map_count: u32,
+    syntax_run_count: u32,
     text_bytes: u64,
     auxiliary_bytes: u64,
     packet_bytes: usize,
@@ -1627,6 +2378,7 @@ fn validate_markdown_input(
 ///
 /// Returns an error when rendering is interrupted, the input or derived model
 /// violates a defensive limit, or parser events are inconsistent.
+#[allow(clippy::too_many_lines)]
 pub fn render_markdown_with_control(
     markdown: &str,
     control: &mut impl RenderControl,
@@ -1635,12 +2387,19 @@ pub fn render_markdown_with_control(
     let options = markdown_options();
     let parser_input = parser_line_endings(markdown.strip_prefix('\u{feff}').unwrap_or(markdown));
     let source_offsets = SourceOffsetIndex::new(&parser_input)?;
-    let bracket_math = bracket_math::BracketMath::prepare(&parser_input, options, control)?;
+    let mut builder = DocumentBuilder::new();
+    let body_byte_offset = if let Some(fm) = frontmatter::extract_frontmatter(&parser_input) {
+        builder.push_frontmatter(&fm.properties, &source_offsets)?;
+        fm.body_byte_offset
+    } else {
+        0
+    };
+    let body_input = &parser_input[body_byte_offset..];
+    let bracket_math = bracket_math::BracketMath::prepare(body_input, options, control)?;
     let prepared_input = bracket_math.input.as_ref();
     let render_safe_inline_html = validate_safe_inline_html(prepared_input, options, control)?;
     control.checkpoint()?;
     let parser = Parser::new_ext(prepared_input, options).into_offset_iter();
-    let mut builder = DocumentBuilder::new();
     let mut inline = InlineState::new();
     let mut nesting_depth = 0_usize;
 
@@ -1651,7 +2410,9 @@ pub fn render_markdown_with_control(
         if event_index % CHECKPOINT_EVENT_INTERVAL == 0 {
             control.checkpoint()?;
         }
-        let source = source_offsets.source_range(byte_range.clone())?;
+        let global_byte_range =
+            (byte_range.start + body_byte_offset)..(byte_range.end + body_byte_offset);
+        let source = source_offsets.source_range(global_byte_range.clone())?;
         match event {
             Event::Start(tag) => {
                 nesting_depth = nesting_depth
@@ -1667,7 +2428,11 @@ pub fn render_markdown_with_control(
                 nesting_depth = nesting_depth.checked_sub(1).ok_or(RenderError::State)?;
             }
             Event::Text(text) => {
-                append_text_with_extended_autolinks(&text, source, &mut builder, &inline)?;
+                if builder.active_html.is_some() {
+                    builder.append_html(&text, inline.styles() | SPAN_STYLE_CODE, source)?;
+                } else {
+                    append_text_with_extended_autolinks(&text, source, &mut builder, &inline)?;
+                }
             }
             Event::Code(code) => {
                 builder.append(
@@ -1678,7 +2443,7 @@ pub fn render_markdown_with_control(
                 )?;
             }
             Event::InlineMath(math) => {
-                let mapped = math_source_range(&parser_input[byte_range], &math, false, source)?;
+                let mapped = math_source_range(&body_input[byte_range], &math, false, source)?;
                 builder.append_math(&math, false, &inline, mapped)?;
             }
             Event::DisplayMath(math) => {
@@ -1687,7 +2452,7 @@ pub fn render_markdown_with_control(
                 builder.append_math(&math, display, &inline, mapped)?;
             }
             Event::Html(html) => {
-                builder.append(&html, inline.styles() | SPAN_STYLE_CODE, None, source)?;
+                builder.append_html(&html, inline.styles() | SPAN_STYLE_CODE, source)?;
             }
             Event::InlineHtml(html) => {
                 handle_inline_html(
@@ -1708,7 +2473,15 @@ pub fn render_markdown_with_control(
                 builder.append(HARD_BREAK, inline.styles(), inline.destination(), source)?;
             }
             Event::Rule => builder.push_rule(source)?,
-            Event::TaskListMarker(checked) => builder.mark_task(checked, source)?,
+            Event::TaskListMarker(checked) => {
+                let marker_utf16 = locate_task_marker_utf16(
+                    &parser_input,
+                    &global_byte_range,
+                    checked,
+                    &source_offsets,
+                )?;
+                builder.mark_task(checked, source, marker_utf16)?;
+            }
         }
     }
     inline.close_html_tags()?;
@@ -1722,6 +2495,34 @@ pub fn render_markdown_with_control(
         source_offsets.logical_utf16_units,
         control,
     )
+}
+
+/// Locates the exact UTF-16 offset of `[` for a GFM `[ ]`/`[x]`/`[X]` task-list marker.
+fn locate_task_marker_utf16(
+    input: &str,
+    range: &Range<usize>,
+    checked: bool,
+    source_offsets: &SourceOffsetIndex<'_>,
+) -> Result<Option<u64>, RenderError> {
+    let Some(slice) = input.get(range.clone()) else {
+        return Ok(None);
+    };
+    let bytes = slice.as_bytes();
+    for (offset, window) in bytes.windows(3).enumerate() {
+        let matches_marker = if checked {
+            window == b"[x]" || window == b"[X]"
+        } else {
+            window == b"[ ]" || window == b"[\t]"
+        };
+        if matches_marker {
+            let bracket_byte = range
+                .start
+                .checked_add(offset)
+                .ok_or(RenderError::ArithmeticOverflow)?;
+            return Ok(Some(source_offsets.logical_utf16_at(bracket_byte)?));
+        }
+    }
+    Ok(None)
 }
 
 /// Makes standalone CR line endings parse like LF without shifting any byte offsets.
@@ -1934,7 +2735,7 @@ fn handle_start(
         }
         Tag::BlockQuote(kind) => builder.enter_quote(kind),
         Tag::CodeBlock(kind) => builder.start_code_block(kind, source),
-        Tag::HtmlBlock => builder.start_html_block(source),
+        Tag::HtmlBlock => builder.enter_html_block(),
         Tag::List(start) => builder.push_list(start),
         Tag::Item => builder.start_item(source),
         Tag::FootnoteDefinition(label) => builder.enter_footnote(&label, source),
@@ -1989,10 +2790,7 @@ fn handle_end(
             builder.include_current_source_end(source)?;
             builder.finish_block()
         }
-        TagEnd::HtmlBlock => {
-            builder.include_current_source_end(source)?;
-            builder.finish_html_block()
-        }
+        TagEnd::HtmlBlock => builder.finish_html_block(),
         TagEnd::FootnoteDefinition => builder.leave_footnote(),
         TagEnd::BlockQuote(_) => builder.leave_quote(),
         TagEnd::List(_) => builder.pop_list(),
@@ -2174,6 +2972,7 @@ fn split_block_for_presentation(
 }
 
 /// Splits a block that exceeds text or per-cell alignment limits.
+#[allow(clippy::too_many_lines)]
 fn split_large_block_for_presentation(
     block: RenderBlock,
     blocks: &mut BlockBuffer,
@@ -2246,6 +3045,7 @@ fn split_large_block_for_presentation(
                 span_bytes: chunk_span_bytes,
                 source_range: Some(chunk_source_range),
                 source_maps: chunk_source_maps,
+                syntax_runs: Vec::new(),
                 table_separators: table_separators
                     .iter()
                     .copied()
@@ -2287,7 +3087,10 @@ fn presentation_block_spec(
         kind: spec.kind,
         flags: if is_continuation {
             (spec.flags | BLOCK_FLAG_CONTINUATION)
-                & !(BLOCK_FLAG_TABLE_START | BLOCK_FLAG_LIST_START)
+                & !(BLOCK_FLAG_TABLE_START
+                    | BLOCK_FLAG_LIST_START
+                    | BLOCK_FLAG_FRONTMATTER_START
+                    | BLOCK_FLAG_HAS_TASK_MARKER)
         } else {
             spec.flags
         },
@@ -2296,6 +3099,13 @@ fn presentation_block_spec(
         quote_alert_depth: spec.quote_alert_depth,
         list_depth: spec.list_depth,
         list_number: spec.list_number,
+        details_id: spec.details_id,
+        details_parent_id: spec.details_parent_id,
+        task_marker_source_utf16: if is_continuation {
+            0
+        } else {
+            spec.task_marker_source_utf16
+        },
         metadata: if spec.kind == BLOCK_KIND_TABLE_ROW {
             table_alignment_chunk(&spec.metadata, separators, utf16_start, utf16_end)?
         } else if is_continuation {
@@ -2449,6 +3259,250 @@ fn push_presentation_block(
     blocks.push(block)
 }
 
+/// Appends `tokens` (at `token_base_utf16` relative to a single chunk) into `runs`, splitting
+/// tokens wider than `u16::MAX` and respecting `limit`.
+fn append_chunk_tokens(
+    tokens: &[beautyxt_syntax_core::SyntaxToken],
+    token_base_utf16: u32,
+    runs: &mut Vec<SyntaxRun>,
+    block_runs_used: &mut usize,
+    limit: usize,
+    syntax_truncated: &mut bool,
+) {
+    for token in tokens {
+        let mut start = token_base_utf16.saturating_add(token.start_utf16);
+        let tok_end = token_base_utf16.saturating_add(token.end_utf16);
+        while start < tok_end {
+            if *block_runs_used >= limit {
+                *syntax_truncated = true;
+                return;
+            }
+            let chunk_len = (tok_end - start).min(u32::from(u16::MAX));
+            if let Ok(len_u16) = u16::try_from(chunk_len) {
+                runs.push(SyntaxRun {
+                    start_utf16: start,
+                    len_utf16: len_u16,
+                    role: token.kind.as_u8(),
+                });
+                *block_runs_used = block_runs_used.saturating_add(1);
+            }
+            start = start.saturating_add(chunk_len);
+        }
+    }
+}
+
+struct SpanningLineSegment {
+    local_chunk_idx: usize,
+    chunk_utf16_start: u32,
+    line_utf16_start: u32,
+    line_utf16_end: u32,
+}
+
+/// Projects tokens from one logical line that spans multiple presentation chunks onto each chunk.
+fn project_spanning_line_tokens(
+    tokens: &[beautyxt_syntax_core::SyntaxToken],
+    segments: &[SpanningLineSegment],
+    chunk_runs: &mut [Vec<SyntaxRun>],
+    block_runs_used: &mut usize,
+    limit: usize,
+    syntax_truncated: &mut bool,
+) {
+    for token in tokens {
+        for seg in segments {
+            let overlap_start = token.start_utf16.max(seg.line_utf16_start);
+            let overlap_end = token.end_utf16.min(seg.line_utf16_end);
+            if overlap_start >= overlap_end {
+                continue;
+            }
+            let mut local_start = seg
+                .chunk_utf16_start
+                .saturating_add(overlap_start - seg.line_utf16_start);
+            let local_end = seg
+                .chunk_utf16_start
+                .saturating_add(overlap_end - seg.line_utf16_start);
+            let runs = &mut chunk_runs[seg.local_chunk_idx];
+            while local_start < local_end {
+                if *block_runs_used >= limit {
+                    *syntax_truncated = true;
+                    return;
+                }
+                let chunk_len = (local_end - local_start).min(u32::from(u16::MAX));
+                if let Ok(len_u16) = u16::try_from(chunk_len) {
+                    runs.push(SyntaxRun {
+                        start_utf16: local_start,
+                        len_utf16: len_u16,
+                        role: token.kind.as_u8(),
+                    });
+                    *block_runs_used = block_runs_used.saturating_add(1);
+                }
+                local_start = local_start.saturating_add(chunk_len);
+            }
+        }
+    }
+}
+
+/// Highlights fenced code blocks using only packet budget remaining after all required blocks.
+///
+/// Reassembles logical lines that cross 4 KiB presentation chunk boundaries (bounded to
+/// `MAX_HIGHLIGHT_INPUT_BYTES`) so line comments, strings, keywords, and numbers never break at
+/// chunk splits.
+#[allow(clippy::too_many_lines)]
+fn attach_document_syntax_runs(blocks: &mut BlockBuffer, syntax_truncated: &mut bool) {
+    let mut index = 0;
+    while index < blocks.blocks.len() {
+        let is_code_start = blocks.blocks[index].spec.kind == BLOCK_KIND_CODE
+            && blocks.blocks[index].spec.flags & BLOCK_FLAG_CONTINUATION == 0
+            && !blocks.blocks[index].spec.metadata.is_empty();
+        if !is_code_start {
+            index += 1;
+            continue;
+        }
+        let lang = SyntaxLanguage::from_fence_info(&blocks.blocks[index].spec.metadata);
+        let mut end = index + 1;
+        while end < blocks.blocks.len()
+            && blocks.blocks[end].spec.kind == BLOCK_KIND_CODE
+            && blocks.blocks[end].spec.flags & BLOCK_FLAG_CONTINUATION != 0
+        {
+            end += 1;
+        }
+        if lang != SyntaxLanguage::Plain {
+            let chunk_count = end - index;
+            let total_limit = blocks
+                .remaining_syntax_run_capacity()
+                .min(MAX_TOKENS_PER_BLOCK);
+            if total_limit == 0 {
+                *syntax_truncated = true;
+                index = end;
+                continue;
+            }
+            let mut state = LineState::NORMAL;
+            let mut block_runs_used = 0usize;
+            let mut chunk_runs: Vec<Vec<SyntaxRun>> =
+                (0..chunk_count).map(|_| Vec::new()).collect();
+            let mut spanning_buf = String::new();
+            let mut spanning_segments: Vec<SpanningLineSegment> = Vec::new();
+            let mut spanning_utf16: u32 = 0;
+
+            for local_idx in 0..chunk_count {
+                if block_runs_used >= total_limit {
+                    *syntax_truncated = true;
+                    break;
+                }
+                let text = blocks.blocks[index + local_idx].text.as_str();
+                let mut byte_pos = 0usize;
+                let mut chunk_utf16_pos: u32 = 0;
+
+                // If a logical line started in a previous chunk, continue accumulating it.
+                if !spanning_segments.is_empty() {
+                    let take_end = text.find('\n').map_or(text.len(), |nl| nl + 1);
+                    let piece = &text[..take_end];
+                    let piece_utf16 =
+                        u32::try_from(piece.encode_utf16().count()).unwrap_or(u32::MAX);
+                    if spanning_buf.len().saturating_add(piece.len())
+                        > beautyxt_syntax_core::MAX_HIGHLIGHT_INPUT_BYTES
+                    {
+                        *syntax_truncated = true;
+                        spanning_buf.clear();
+                        spanning_segments.clear();
+                        break;
+                    }
+                    let line_start_u16 = spanning_utf16;
+                    let line_end_u16 = line_start_u16.saturating_add(piece_utf16);
+                    spanning_buf.push_str(piece);
+                    spanning_segments.push(SpanningLineSegment {
+                        local_chunk_idx: local_idx,
+                        chunk_utf16_start: 0,
+                        line_utf16_start: line_start_u16,
+                        line_utf16_end: line_end_u16,
+                    });
+                    spanning_utf16 = line_end_u16;
+                    byte_pos = take_end;
+                    chunk_utf16_pos = piece_utf16;
+
+                    let finishes_line = piece.ends_with('\n') || local_idx + 1 == chunk_count;
+                    if finishes_line {
+                        let remaining = total_limit.saturating_sub(block_runs_used);
+                        let res = highlight_with_state(lang, &spanning_buf, state, remaining);
+                        state = res.exit_state;
+                        if res.truncated {
+                            *syntax_truncated = true;
+                        }
+                        project_spanning_line_tokens(
+                            &res.tokens,
+                            &spanning_segments,
+                            &mut chunk_runs,
+                            &mut block_runs_used,
+                            total_limit,
+                            syntax_truncated,
+                        );
+                        spanning_buf.clear();
+                        spanning_segments.clear();
+                        spanning_utf16 = 0;
+                    }
+                }
+
+                if byte_pos >= text.len() || block_runs_used >= total_limit {
+                    continue;
+                }
+
+                // Determine the largest contiguous run of complete lines remaining in this chunk.
+                let tail = &text[byte_pos..];
+                let complete_len = if local_idx + 1 == chunk_count {
+                    tail.len()
+                } else {
+                    tail.rfind('\n').map_or(0, |nl| nl + 1)
+                };
+
+                if complete_len > 0 {
+                    let complete_slice = &tail[..complete_len];
+                    let remaining = total_limit.saturating_sub(block_runs_used);
+                    let res = highlight_with_state(lang, complete_slice, state, remaining);
+                    state = res.exit_state;
+                    if res.truncated {
+                        *syntax_truncated = true;
+                    }
+                    append_chunk_tokens(
+                        &res.tokens,
+                        chunk_utf16_pos,
+                        &mut chunk_runs[local_idx],
+                        &mut block_runs_used,
+                        total_limit,
+                        syntax_truncated,
+                    );
+                    let slice_utf16 =
+                        u32::try_from(complete_slice.encode_utf16().count()).unwrap_or(u32::MAX);
+                    chunk_utf16_pos = chunk_utf16_pos.saturating_add(slice_utf16);
+                    byte_pos += complete_len;
+                }
+
+                // Any trailing partial line continues into the next chunk.
+                if byte_pos < text.len() && local_idx + 1 < chunk_count {
+                    let partial = &text[byte_pos..];
+                    let partial_utf16 =
+                        u32::try_from(partial.encode_utf16().count()).unwrap_or(u32::MAX);
+                    if partial.len() > beautyxt_syntax_core::MAX_HIGHLIGHT_INPUT_BYTES {
+                        *syntax_truncated = true;
+                        break;
+                    }
+                    spanning_buf.push_str(partial);
+                    spanning_segments.push(SpanningLineSegment {
+                        local_chunk_idx: local_idx,
+                        chunk_utf16_start: chunk_utf16_pos,
+                        line_utf16_start: 0,
+                        line_utf16_end: partial_utf16,
+                    });
+                    spanning_utf16 = partial_utf16;
+                }
+            }
+
+            for (local_idx, runs) in chunk_runs.into_iter().enumerate() {
+                blocks.attach_syntax_runs(index + local_idx, runs, syntax_truncated);
+            }
+        }
+        index = end;
+    }
+}
+
 /// Measures the encoded headers and destinations of one span slice.
 fn encoded_span_bytes(spans: &[InlineSpan]) -> Result<usize, RenderError> {
     spans.iter().try_fold(0_usize, |bytes, span| {
@@ -2576,7 +3630,9 @@ fn encode_document(
         block_count: metrics.block_count,
         span_count: metrics.span_count,
         source_map_count: metrics.source_map_count,
+        syntax_run_count: metrics.syntax_run_count,
         contains_raw_html: document.contains_raw_html,
+        syntax_truncated: document.syntax_truncated,
     })
 }
 
@@ -2590,6 +3646,8 @@ fn encoded_document_metrics(
         u32::try_from(document.span_count).map_err(|_| RenderError::ArithmeticOverflow)?;
     let source_map_count =
         u32::try_from(document.source_map_count).map_err(|_| RenderError::ArithmeticOverflow)?;
+    let syntax_run_count =
+        u32::try_from(document.syntax_run_count).map_err(|_| RenderError::ArithmeticOverflow)?;
     let text_bytes = document.blocks.iter().try_fold(0_u64, |total, block| {
         let length =
             u64::try_from(block.text.len()).map_err(|_| RenderError::ArithmeticOverflow)?;
@@ -2630,10 +3688,15 @@ fn encoded_document_metrics(
         .source_map_count
         .checked_mul(SOURCE_MAP_HEADER_BYTES)
         .ok_or(RenderError::ArithmeticOverflow)?;
+    let syntax_run_bytes = document
+        .syntax_run_count
+        .checked_mul(SYNTAX_RUN_BYTES)
+        .ok_or(RenderError::ArithmeticOverflow)?;
     let packet_bytes = PACKET_HEADER_BYTES
         .checked_add(block_headers)
         .and_then(|bytes| bytes.checked_add(span_headers))
         .and_then(|bytes| bytes.checked_add(source_map_headers))
+        .and_then(|bytes| bytes.checked_add(syntax_run_bytes))
         .and_then(|bytes| bytes.checked_add(usize::try_from(text_bytes).ok()?))
         .and_then(|bytes| bytes.checked_add(usize::try_from(auxiliary_bytes).ok()?))
         .ok_or(RenderError::ArithmeticOverflow)?;
@@ -2644,6 +3707,7 @@ fn encoded_document_metrics(
         block_count,
         span_count,
         source_map_count,
+        syntax_run_count,
         text_bytes,
         auxiliary_bytes,
         packet_bytes,
@@ -2669,9 +3733,14 @@ fn encode_packet_header(
     encode_u32(
         packet,
         DOCUMENT_FLAGS_OFFSET,
-        u32::from(document.contains_raw_html) * DOCUMENT_FLAG_RAW_HTML,
+        (u32::from(document.contains_raw_html) * DOCUMENT_FLAG_RAW_HTML)
+            | (u32::from(document.syntax_truncated) * DOCUMENT_FLAG_SYNTAX_TRUNCATED),
     );
-    encode_u32(packet, HEADER_RESERVED_OFFSET, 0);
+    encode_u32(
+        packet,
+        HEADER_SYNTAX_RUN_COUNT_OFFSET,
+        metrics.syntax_run_count,
+    );
     encode_u64(
         packet,
         INPUT_BYTES_OFFSET,
@@ -2754,6 +3823,19 @@ fn encode_block(packet: &mut Vec<u8>, block: &RenderBlock) -> Result<(), RenderE
         BLOCK_QUOTE_ALERT_DEPTH_OFFSET,
         block.spec.quote_alert_depth,
     );
+    let details_field =
+        u32::from(block.spec.details_id) | (u32::from(block.spec.details_parent_id) << 16);
+    encode_u32(header, BLOCK_DETAILS_FIELD_OFFSET, details_field);
+    encode_u32(
+        header,
+        BLOCK_SYNTAX_RUN_COUNT_OFFSET,
+        u32::try_from(block.syntax_runs.len()).map_err(|_| RenderError::ArithmeticOverflow)?,
+    );
+    encode_u64(
+        header,
+        BLOCK_TASK_MARKER_SOURCE_UTF16_OFFSET,
+        block.spec.task_marker_source_utf16,
+    );
     packet.extend_from_slice(block.text.as_bytes());
     packet.extend_from_slice(block.spec.metadata.as_bytes());
     packet.extend_from_slice(block.footnote_label.as_bytes());
@@ -2766,7 +3848,18 @@ fn encode_block(packet: &mut Vec<u8>, block: &RenderBlock) -> Result<(), RenderE
     for source_map in &block.source_maps {
         encode_source_map(packet, source_map)?;
     }
+    for run in &block.syntax_runs {
+        encode_syntax_run(packet, *run);
+    }
     Ok(())
+}
+
+/// Appends one compact 8-byte syntax highlight run to the packet.
+fn encode_syntax_run(packet: &mut Vec<u8>, run: SyntaxRun) {
+    packet.extend_from_slice(&run.start_utf16.to_le_bytes());
+    packet.extend_from_slice(&run.len_utf16.to_le_bytes());
+    packet.push(run.role);
+    packet.push(0);
 }
 
 /// Appends one inline span to the packet.
@@ -4486,6 +5579,9 @@ mod tests {
         quote_alert_depth: u32,
         list_depth: u32,
         list_number: u64,
+        details_id: u16,
+        details_parent_id: u16,
+        task_marker_source_utf16: u64,
         text: String,
         metadata: String,
         styles: Vec<u32>,
@@ -4493,6 +5589,7 @@ mod tests {
         destinations: Vec<String>,
         source: SourceRange,
         source_maps: Vec<InlineSourceMap>,
+        syntax_runs: Vec<super::SyntaxRun>,
         table_separators: Vec<u32>,
         footnote_label: String,
     }
@@ -4508,6 +5605,7 @@ mod tests {
     }
 
     /// Decodes test packets and checks complete footnote-reference spans.
+    #[allow(clippy::too_many_lines)]
     fn decode_blocks(packet: &[u8]) -> Vec<DecodedBlock> {
         let block_count = decode_u32(packet, 40) as usize;
         let mut offset = PACKET_HEADER_BYTES;
@@ -4519,6 +5617,15 @@ mod tests {
             let metadata_bytes = decode_u32(header, 36) as usize;
             let span_count = decode_u32(header, 40) as usize;
             let source_map_count = decode_u32(header, 64) as usize;
+            let details_field = decode_u32(header, 72);
+            let details_id = (details_field & 0xffff) as u16;
+            let details_parent_id = ((details_field >> 16) & 0xffff) as u16;
+            let syntax_run_count = decode_u32(header, 76) as usize;
+            let task_marker_source_utf16 = u64::from_le_bytes(
+                header[80..88]
+                    .try_into()
+                    .expect("task marker bytes should be exact"),
+            );
             let text = String::from_utf8(packet[offset..offset + text_bytes].to_vec())
                 .expect("encoded block text should be UTF-8");
             offset += text_bytes;
@@ -4565,6 +5672,17 @@ mod tests {
                 offset += destination_bytes;
             }
             let source_maps = decode_source_maps(packet, &mut offset, source_map_count);
+            let mut syntax_runs = Vec::with_capacity(syntax_run_count);
+            for _ in 0..syntax_run_count {
+                let run = &packet[offset..offset + super::SYNTAX_RUN_BYTES];
+                offset += super::SYNTAX_RUN_BYTES;
+                syntax_runs.push(super::SyntaxRun {
+                    start_utf16: decode_u32(run, 0),
+                    len_utf16: u16::from_le_bytes(run[4..6].try_into().unwrap()),
+                    role: run[6],
+                });
+                assert_eq!(run[7], 0);
+            }
             blocks.push(DecodedBlock {
                 kind: decode_u32(header, 0),
                 flags: decode_u32(header, 4),
@@ -4577,6 +5695,9 @@ mod tests {
                         .try_into()
                         .expect("u64 bytes should be exact"),
                 ),
+                details_id,
+                details_parent_id,
+                task_marker_source_utf16,
                 text,
                 metadata,
                 styles,
@@ -4595,12 +5716,686 @@ mod tests {
                     ),
                 ),
                 source_maps,
+                syntax_runs,
                 table_separators,
                 footnote_label,
             });
         }
         assert_eq!(offset, packet.len());
         blocks
+    }
+
+    #[test]
+    fn highlights_fenced_code_and_preserves_syntax_runs_across_chunks() {
+        let md = "```rust\nfn main() {\n    let x = \"hi\";\n}\n```\n";
+        let packet = render_markdown(md).unwrap();
+        assert!(packet.syntax_run_count() > 0);
+        assert!(!packet.syntax_truncated());
+        let blocks = decode_blocks(packet.as_bytes());
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].kind, BLOCK_KIND_CODE);
+        assert!(!blocks[0].syntax_runs.is_empty());
+    }
+
+    #[test]
+    fn parses_leading_frontmatter_and_shifts_body_offsets() {
+        let md = "---\ntitle: Hello\ntags: [a, b]\n---\n# Heading\n\n- [ ] Task\n";
+        let packet = render_markdown(md).unwrap();
+        let blocks = decode_blocks(packet.as_bytes());
+        assert_eq!(blocks[0].kind, super::BLOCK_KIND_FRONTMATTER);
+        assert_ne!(blocks[0].flags & super::BLOCK_FLAG_FRONTMATTER_START, 0);
+        assert_eq!(blocks[0].metadata, "title");
+        assert_eq!(blocks[0].text, "Hello");
+        assert_eq!(blocks[1].kind, super::BLOCK_KIND_FRONTMATTER);
+        assert_eq!(blocks[1].metadata, "tags");
+        assert_eq!(blocks[1].text, "a, b");
+        assert_eq!(blocks[2].kind, super::BLOCK_KIND_HEADING);
+        assert_eq!(blocks[2].text, "Heading");
+        // Verify task marker offset points directly to `[ ]` in original `md`.
+        let task = &blocks[3];
+        assert_ne!(task.flags & super::BLOCK_FLAG_HAS_TASK_MARKER, 0);
+        let offset = usize::try_from(task.task_marker_source_utf16).unwrap();
+        assert_eq!(&md[offset..offset + 3], "[ ]");
+    }
+
+    #[test]
+    fn parses_mixed_and_single_block_details_and_unwinds_unclosed() {
+        let md = "<details open>\n<summary>Info</summary>\n\n**Bold** body\n\n</details>\n";
+        let blocks = decode_blocks(render_markdown(md).unwrap().as_bytes());
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].kind, super::BLOCK_KIND_DETAILS_SUMMARY);
+        assert_ne!(blocks[0].flags & super::BLOCK_FLAG_DETAILS_OPEN, 0);
+        assert_eq!(blocks[0].text, "Info");
+        assert_eq!(blocks[0].details_id, 1);
+        assert_eq!(blocks[1].details_id, 1);
+        assert_eq!(blocks[1].text, "Bold body");
+
+        let unclosed = "<details>\n<summary>Oops</summary>\n\nStill visible\n";
+        let packet = render_markdown(unclosed).unwrap();
+        assert!(packet.contains_raw_html());
+        let blocks = decode_blocks(packet.as_bytes());
+        assert_eq!(blocks[0].kind, super::BLOCK_KIND_HTML_LITERAL);
+        assert_eq!(blocks[0].details_id, 0);
+        assert_eq!(blocks[1].text, "Still visible");
+        assert_eq!(blocks[1].details_id, 0);
+    }
+
+    #[test]
+    fn syntax_run_overflow_after_splitting_truncates_instead_of_failing_render() {
+        // 16 diff fences where splitting a run across chunk boundaries would exceed 65,536 runs.
+        let mut fence = String::from("```diff\n");
+        for _ in 0..4_200 {
+            fence.push_str("+a\n");
+        }
+        fence.push_str("```\n\n");
+        let md = fence.repeat(16);
+        let packet =
+            render_markdown(&md).expect("optional syntax runs must never cause PacketLimit");
+        assert!(packet.syntax_truncated());
+        assert!(usize::try_from(packet.syntax_run_count()).unwrap() <= super::MAX_SYNTAX_RUN_COUNT);
+    }
+
+    #[test]
+    fn ninth_nested_details_closer_does_not_pop_eighth_container() {
+        let mut md = String::new();
+        for i in 1..=9 {
+            let _ = std::fmt::Write::write_fmt(
+                &mut md,
+                format_args!("<details open>\n<summary>L{i}</summary>\n\n"),
+            );
+        }
+        md.push_str("Inner9\n\n</details>\n\nStillIn8\n\n");
+        for _ in 1..=8 {
+            md.push_str("</details>\n\n");
+        }
+        let blocks = decode_blocks(render_markdown(&md).unwrap().as_bytes());
+        let still_in_8 = blocks
+            .iter()
+            .find(|b| b.text == "StillIn8")
+            .expect("StillIn8 block");
+        assert_eq!(still_in_8.details_id, 8);
+    }
+
+    #[test]
+    fn unsupported_inner_details_does_not_close_outer_container() {
+        let md = "<details>\n<summary>Outer</summary>\n\n<details class=\"x\">\n\nInner\n\n</details>\n\nStillOuter\n\n</details>\n";
+        let blocks = decode_blocks(render_markdown(md).unwrap().as_bytes());
+        let still_outer = blocks
+            .iter()
+            .find(|b| b.text == "StillOuter")
+            .expect("StillOuter block");
+        assert_eq!(still_outer.details_id, 1);
+    }
+
+    #[test]
+    fn grouped_unsupported_openers_and_grouped_closers_preserve_nesting() {
+        let md_grouped_unsupported = "<details>\n<summary>Outer</summary>\n\n<details class=\"a\">\n<details class=\"b\">\n\nInner\n\n</details>\n\n</details>\n\nStillOuter\n\n</details>\n";
+        let blocks = decode_blocks(render_markdown(md_grouped_unsupported).unwrap().as_bytes());
+        let still_outer = blocks
+            .iter()
+            .find(|b| b.text == "StillOuter")
+            .expect("StillOuter block");
+        assert_eq!(still_outer.details_id, 1);
+
+        let md_grouped_closers = "<details>\n<summary>Outer</summary>\n\n<details>\n<summary>Inner</summary>\n\nDeep\n\n</details>\n</details>\n\nAfterBoth\n";
+        let blocks2 = decode_blocks(render_markdown(md_grouped_closers).unwrap().as_bytes());
+        let summaries: Vec<&str> = blocks2
+            .iter()
+            .filter(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY)
+            .map(|b| b.text.as_str())
+            .collect();
+        assert_eq!(summaries, vec!["Outer", "Inner"]);
+        let deep = blocks2.iter().find(|b| b.text == "Deep").expect("Deep");
+        assert_eq!(deep.details_id, 2);
+        let after = blocks2
+            .iter()
+            .find(|b| b.text == "AfterBoth")
+            .expect("AfterBoth");
+        assert_eq!(after.details_id, 0);
+
+        // Unfinished <summary> with trailing whitespace must fall back cleanly without panicking.
+        let unfinished = "<details><summary>unfinished          \n";
+        assert!(render_markdown(unfinished).is_ok());
+
+        // Unclosed <details> with blank-separated <summary> must restore the <summary> block on EOF unwind.
+        let unclosed_sep_summary = "<details>\n\n<summary>Keep this title</summary>\n\nBody\n";
+        let unwound = decode_blocks(render_markdown(unclosed_sep_summary).unwrap().as_bytes());
+        assert!(
+            unwound.iter().any(|b| b.text.contains("Keep this title")),
+            "expected blank-separated summary to survive EOF unwind: {unwound:?}"
+        );
+
+        // HTML comments and raw-text `<script>` mentioning `<details>` inside a valid `<details>`
+        // must not steal its closer.
+        let comment_inside = "<details>\n<summary>Outer</summary>\n\n<!-- About the <details> element -->\n\n<script>const x = '<details>';</script>\n\nInside\n\n</details>\n\nOutside\n";
+        let comment_blocks = decode_blocks(render_markdown(comment_inside).unwrap().as_bytes());
+        let inside = comment_blocks
+            .iter()
+            .find(|b| b.text == "Inside")
+            .expect("Inside");
+        let outside = comment_blocks
+            .iter()
+            .find(|b| b.text == "Outside")
+            .expect("Outside");
+        assert_eq!(inside.details_id, 1);
+        assert_eq!(outside.details_id, 0);
+
+        // `<details>` opened in one blockquote must not match `</details>` in another blockquote
+        // or hide the top-level paragraph between them.
+        let cross_quote =
+            "> <details>\n> <summary>Q1</summary>\n\nTop-level middle\n\n> </details>\n";
+        let cross_blocks = decode_blocks(render_markdown(cross_quote).unwrap().as_bytes());
+        let middle = cross_blocks
+            .iter()
+            .find(|b| b.text == "Top-level middle")
+            .expect("Top-level middle");
+        assert_eq!(middle.details_id, 0);
+
+        // Late `<summary>` in an unclosed `<details>` must be restored in its original order.
+        let late_summary =
+            "<details>\n\nFirst paragraph\n\n<summary>Late title</summary>\n\nSecond paragraph\n";
+        let late_blocks = decode_blocks(render_markdown(late_summary).unwrap().as_bytes());
+        let first_idx = late_blocks
+            .iter()
+            .position(|b| b.text == "First paragraph")
+            .expect("first paragraph");
+        let summary_idx = late_blocks
+            .iter()
+            .position(|b| b.text.contains("Late title"))
+            .expect("late summary");
+        let second_idx = late_blocks
+            .iter()
+            .position(|b| b.text == "Second paragraph")
+            .expect("second paragraph");
+        assert!(first_idx < summary_idx && summary_idx < second_idx);
+
+        // Oversized (>64 KiB) inner `<details>` opener must still balance its closer without
+        // prematurely closing the outer supported `<details>` container.
+        let big_attr = "a".repeat(70 * 1024);
+        let oversized_inner = format!(
+            "<details>\n<summary>Outer</summary>\n\n<details data-x=\"{big_attr}\">\n\nInner\n\n</details>\n\nStillOuterAfterBig\n\n</details>\n"
+        );
+        let big_blocks = decode_blocks(render_markdown(&oversized_inner).unwrap().as_bytes());
+        let still_outer = big_blocks
+            .iter()
+            .find(|b| b.text == "StillOuterAfterBig")
+            .expect("StillOuterAfterBig");
+        assert_eq!(still_outer.details_id, 1);
+    }
+
+    #[test]
+    fn details_fragments_footnotes_and_unclosed_parent_recovery() {
+        // Fragmented (>256 KiB) inner `<details>` opener split across builder blocks must also
+        // carry tag balance so its closer does not close the outer fold.
+        let huge_attr = "b".repeat(300 * 1024);
+        let huge_inner = format!(
+            "<details>\n<summary>Outer</summary>\n\n<details data-x=\"{huge_attr}\">\n\nInner\n\n</details>\n\nStillOuterAfterHuge\n\n</details>\n"
+        );
+        let huge_blocks = decode_blocks(render_markdown(&huge_inner).unwrap().as_bytes());
+        let still_outer_huge = huge_blocks
+            .iter()
+            .find(|b| b.text == "StillOuterAfterHuge")
+            .expect("StillOuterAfterHuge");
+        assert_eq!(still_outer_huge.details_id, 1);
+
+        // Footnote definitions inside an enclosing `<details>` must NOT unwind the enclosing fold.
+        let note_in_details = "<details>\n<summary>With note</summary>\n\nBody[^n]\n\n[^n]: Footnote body\n\nAfterNote\n\n</details>\n";
+        let note_blocks = decode_blocks(render_markdown(note_in_details).unwrap().as_bytes());
+        assert!(
+            note_blocks
+                .iter()
+                .any(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY && b.text == "With note")
+        );
+        let after_note = note_blocks
+            .iter()
+            .find(|b| b.text == "AfterNote")
+            .expect("AfterNote");
+        assert_eq!(after_note.details_id, 1);
+
+        // Unclosed inner `<details>` inside a blockquote inside an outer `<details>` must restore
+        // its raw HTML block INSIDE the outer fold (details_id == 1, not 0).
+        let unclosed_inner_quote = "<details>\n<summary>Outer</summary>\n\n> <details>\n> <summary>Unclosed</summary>\n> Quoted\n\n</details>\n";
+        let unclosed_blocks =
+            decode_blocks(render_markdown(unclosed_inner_quote).unwrap().as_bytes());
+        let restored_html = unclosed_blocks
+            .iter()
+            .find(|b| b.text.contains("<details>"))
+            .expect("restored raw <details>");
+        assert_eq!(restored_html.details_id, 1);
+
+        // Adjacent sibling folds (`</details>\n<details>`) in one HTML block must close the first
+        // fold and open the second fold cleanly.
+        let siblings = "<details>\n<summary>First</summary>\n\nBody1\n\n</details>\n<details>\n<summary>Second</summary>\n\nBody2\n\n</details>\n";
+        let sibling_blocks = decode_blocks(render_markdown(siblings).unwrap().as_bytes());
+        let body1 = sibling_blocks
+            .iter()
+            .find(|b| b.text == "Body1")
+            .expect("Body1");
+        let body2 = sibling_blocks
+            .iter()
+            .find(|b| b.text == "Body2")
+            .expect("Body2");
+        assert_eq!(body1.details_id, 1);
+        assert_eq!(body2.details_id, 2);
+
+        // More than 4,096 unsupported inner openers + matching closers must never drop balance.
+        let mut many = String::from("<details>\n<summary>Outer</summary>\n\n");
+        for _ in 0..4_097 {
+            many.push_str("<details class=\"x\">\n");
+        }
+        many.push_str("\nInner\n\n");
+        for _ in 0..4_097 {
+            many.push_str("</details>\n");
+        }
+        many.push_str("\nStillInsideOuter\n\n</details>\n");
+        let many_blocks = decode_blocks(render_markdown(&many).unwrap().as_bytes());
+        let still_inside = many_blocks
+            .iter()
+            .find(|b| b.text == "StillInsideOuter")
+            .expect("StillInsideOuter");
+        assert_eq!(still_inside.details_id, 1);
+
+        // `</details>` immediately followed by `<p>Outside</p>` or a complete sibling fold in one
+        // HTML block must still close the preceding fold cleanly.
+        let shared_close =
+            "<details>\n<summary>S1</summary>\n\nBody1\n\n</details>\n<p>Outside</p>\n";
+        let shared_blocks = decode_blocks(render_markdown(shared_close).unwrap().as_bytes());
+        assert!(
+            shared_blocks
+                .iter()
+                .any(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY && b.text == "S1")
+        );
+        let outside = shared_blocks
+            .iter()
+            .find(|b| b.text.contains("Outside"))
+            .expect("Outside");
+        assert_eq!(outside.details_id, 0);
+
+        let sibling_complete = "<details>\n<summary>First</summary>\n\nBody1\n\n</details>\n<details><summary>Second</summary><p>Body2</p></details>\n";
+        let sc_blocks = decode_blocks(render_markdown(sibling_complete).unwrap().as_bytes());
+        let sc_summaries: Vec<&str> = sc_blocks
+            .iter()
+            .filter(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY)
+            .map(|b| b.text.as_str())
+            .collect();
+        assert_eq!(sc_summaries, vec!["First", "Second"]);
+
+        // 4,098 adjacent `</details>` closers (4,097 inner + 1 outer) in one HTML block must close
+        // both the inner ignored openers and the supported outer fold cleanly.
+        let mut all_adj = String::from("<details>\n<summary>Outer</summary>\n\n");
+        for _ in 0..4_097 {
+            all_adj.push_str("<details class=\"x\">\n");
+        }
+        all_adj.push_str("\nInner\n\n");
+        for _ in 0..4_098 {
+            all_adj.push_str("</details>\n");
+        }
+        all_adj.push_str("\nAfterAll\n");
+        let adj_blocks = decode_blocks(render_markdown(&all_adj).unwrap().as_bytes());
+        assert!(
+            adj_blocks
+                .iter()
+                .any(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY && b.text == "Outer")
+        );
+        let after_all = adj_blocks
+            .iter()
+            .find(|b| b.text == "AfterAll")
+            .expect("AfterAll");
+        assert_eq!(after_all.details_id, 0);
+    }
+
+    #[test]
+    fn details_close_before_oversized_html_and_unsupported_sibling() {
+        // `</details>` followed by a 300 KiB HTML paragraph must close the fold BEFORE the first
+        // emitted fragment so none of the subsequent HTML is hidden inside the collapsed fold.
+        let big_para = "p".repeat(300 * 1024);
+        let close_then_huge = format!(
+            "<details>\n<summary>Fold</summary>\n\nInside\n\n</details>\n<p>{big_para}</p>\n"
+        );
+        let huge_blocks = decode_blocks(render_markdown(&close_then_huge).unwrap().as_bytes());
+        assert!(
+            huge_blocks
+                .iter()
+                .any(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY && b.text == "Fold")
+        );
+        let first_html_frag = huge_blocks
+            .iter()
+            .find(|b| b.text.contains("<p>ppp"))
+            .expect("first fragment of 300 KiB paragraph");
+        assert_eq!(first_html_frag.details_id, 0);
+
+        // `</details>` immediately followed by an unsupported `<details class="x">` must close the
+        // first fold instead of cancelling out to 0 balance.
+        let close_then_unsupported = "<details>\n<summary>First</summary>\n\nBody1\n\n</details>\n<details class=\"x\">\n\nSiblingBody\n\n</details>\n";
+        let sibling_blocks =
+            decode_blocks(render_markdown(close_then_unsupported).unwrap().as_bytes());
+        let sib_body = sibling_blocks
+            .iter()
+            .find(|b| b.text == "SiblingBody")
+            .expect("SiblingBody");
+        assert_eq!(sib_body.details_id, 0);
+
+        // Nested details with unsupported `<summary class="x">` + inner `</details>` must close
+        // the inner fold so intervening outer text stays attached to the outer fold, not the inner.
+        let nested_bad_summary = "<details open>\n<summary>Outer</summary>\n\n<details>\n<summary class=\"x\">Inner</summary>\n</details>\n\nOuterAfterInner\n\n</details>\n";
+        let nested_blocks = decode_blocks(render_markdown(nested_bad_summary).unwrap().as_bytes());
+        let outer_summary = nested_blocks
+            .iter()
+            .find(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY && b.text == "Outer")
+            .expect("Outer summary");
+        let outer_after = nested_blocks
+            .iter()
+            .find(|b| b.text == "OuterAfterInner")
+            .expect("OuterAfterInner");
+        assert_eq!(outer_after.details_id, outer_summary.details_id);
+
+        // `</details>` directly followed by `<!-- note -->` closes the fold without dropping the comment.
+        let close_then_comment = "<details>\n<summary>Fold</summary>\n\nInside\n\n</details>\n<!-- note -->\n\nAfterComment\n";
+        let comment_blocks = decode_blocks(render_markdown(close_then_comment).unwrap().as_bytes());
+        let comment_block = comment_blocks
+            .iter()
+            .find(|b| b.text.contains("<!-- note -->"))
+            .expect("preserved HTML comment");
+        assert_eq!(comment_block.details_id, 0);
+        let after_comment = comment_blocks
+            .iter()
+            .find(|b| b.text == "AfterComment")
+            .expect("AfterComment");
+        assert_eq!(after_comment.details_id, 0);
+    }
+
+    #[test]
+    fn details_leading_html_before_markdown_folds_and_unwinds() {
+        let mixed_open = "<details><summary>MixedTitle</summary><p>IntroHtml</p>\n\n**MoreMarkdown**\n\n</details>\n\nOutsideMixed\n";
+        let mixed_blocks = decode_blocks(render_markdown(mixed_open).unwrap().as_bytes());
+        let mixed_summary = mixed_blocks
+            .iter()
+            .find(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY && b.text == "MixedTitle")
+            .expect("MixedTitle summary");
+        let intro_html = mixed_blocks
+            .iter()
+            .find(|b| b.text == "IntroHtml")
+            .expect("IntroHtml paragraph");
+        assert_eq!(intro_html.details_id, mixed_summary.details_id);
+        let more_md = mixed_blocks
+            .iter()
+            .find(|b| b.text == "MoreMarkdown")
+            .expect("MoreMarkdown paragraph");
+        assert_eq!(more_md.details_id, mixed_summary.details_id);
+        let outside_mixed = mixed_blocks
+            .iter()
+            .find(|b| b.text == "OutsideMixed")
+            .expect("OutsideMixed");
+        assert_eq!(outside_mixed.details_id, 0);
+
+        let unclosed_mixed = "<details><summary>Unclosed</summary><p>OnceOnly</p>\n\nTail\n";
+        let unclosed_blocks = decode_blocks(render_markdown(unclosed_mixed).unwrap().as_bytes());
+        assert!(
+            unclosed_blocks
+                .iter()
+                .all(|b| b.kind != super::BLOCK_KIND_DETAILS_SUMMARY)
+        );
+        assert_eq!(
+            unclosed_blocks
+                .iter()
+                .filter(|b| b.text.contains("OnceOnly"))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn details_html_before_close_stays_inside_collapsed_fold() {
+        let html_before_close =
+            "<details>\n<summary>Fold</summary>\n\n<p>InsideHtml</p>\n</details>\n\nAfterFold\n";
+        let blocks = decode_blocks(render_markdown(html_before_close).unwrap().as_bytes());
+        let fold_summary = blocks
+            .iter()
+            .find(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY && b.text == "Fold")
+            .expect("Fold summary");
+        let inside_html = blocks
+            .iter()
+            .find(|b| b.text.contains("InsideHtml"))
+            .expect("InsideHtml block");
+        assert_eq!(inside_html.details_id, fold_summary.details_id);
+        let after_fold = blocks
+            .iter()
+            .find(|b| b.text == "AfterFold")
+            .expect("AfterFold");
+        assert_eq!(after_fold.details_id, 0);
+
+        // Streamed oversized HTML (>256 KiB) followed by `</details>` and immediate `<p>AfterStreamed</p>`
+        // keeps the big HTML inside the fold and puts `<p>AfterStreamed</p>` outside.
+        let big_inside = "q".repeat(300 * 1024);
+        let streamed_before_close = format!(
+            "<details>\n<summary>BigFold</summary>\n\n<p>{big_inside}</p>\n</details>\n<p>AfterStreamed</p>\n\nAfterBig\n"
+        );
+        let big_blocks = decode_blocks(render_markdown(&streamed_before_close).unwrap().as_bytes());
+        let big_summary = big_blocks
+            .iter()
+            .find(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY && b.text == "BigFold")
+            .expect("BigFold summary");
+        let first_big_frag = big_blocks
+            .iter()
+            .find(|b| b.text.contains("<p>qqq"))
+            .expect("first fragment of big HTML inside fold");
+        assert_eq!(first_big_frag.details_id, big_summary.details_id);
+        let after_streamed = big_blocks
+            .iter()
+            .find(|b| b.text.contains("AfterStreamed"))
+            .expect("AfterStreamed");
+        assert_eq!(after_streamed.details_id, 0);
+        let after_big = big_blocks
+            .iter()
+            .find(|b| b.text == "AfterBig")
+            .expect("AfterBig");
+        assert_eq!(after_big.details_id, 0);
+
+        // HTML between AND after nested fold closers (no blank lines) must each get their exact fold.
+        let between_closers = "<details>\n<summary>Outer</summary>\n\n<details>\n<summary>Inner</summary>\n\nInnerBody\n\n</details>\n<p>OuterBody</p>\n</details>\n<p>OutsideHtml</p>\n\nAfterOuter\n";
+        let between_blocks = decode_blocks(render_markdown(between_closers).unwrap().as_bytes());
+        let outer_summary = between_blocks
+            .iter()
+            .find(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY && b.text == "Outer")
+            .expect("Outer summary");
+        let outer_body = between_blocks
+            .iter()
+            .find(|b| b.text.contains("OuterBody"))
+            .expect("OuterBody");
+        assert_eq!(outer_body.details_id, outer_summary.details_id);
+        let outside_html = between_blocks
+            .iter()
+            .find(|b| b.text.contains("OutsideHtml"))
+            .expect("OutsideHtml");
+        assert_eq!(outside_html.details_id, 0);
+        let after_outer = between_blocks
+            .iter()
+            .find(|b| b.text == "AfterOuter")
+            .expect("AfterOuter");
+        assert_eq!(after_outer.details_id, 0);
+        // Split HTML source ranges must stay bounded to their own segment (never past `</details>`).
+        assert!(outer_body.source.end_utf16 <= outside_html.source.start_utf16);
+
+        // Complete fold immediately followed by `<p>Outside</p>` in the same HTML block renders
+        // both the collapsible fold and the following paragraph outside it.
+        let complete_then_para =
+            "<details><summary>Q</summary><p>A</p></details>\n<p>Outside</p>\n";
+        let cp_blocks = decode_blocks(render_markdown(complete_then_para).unwrap().as_bytes());
+        let q_summary = cp_blocks
+            .iter()
+            .find(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY && b.text == "Q")
+            .expect("Q summary");
+        let a_body = cp_blocks
+            .iter()
+            .find(|b| b.text == "A")
+            .expect("A inside complete fold");
+        assert_eq!(a_body.details_id, q_summary.details_id);
+        let outside_p = cp_blocks
+            .iter()
+            .find(|b| b.text == "Outside")
+            .expect("Outside paragraph");
+        assert_eq!(outside_p.details_id, 0);
+
+        // CDATA containing `>` and `</details>` must not close an open fold prematurely.
+        let cdata_fold = "<details>\n<summary>SvgFold</summary>\n\n<div><svg><![CDATA[x > </details> z]]></svg></div>\n\nStillInside\n\n</details>\n";
+        let cdata_blocks = decode_blocks(render_markdown(cdata_fold).unwrap().as_bytes());
+        let svg_summary = cdata_blocks
+            .iter()
+            .find(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY && b.text == "SvgFold")
+            .expect("SvgFold summary");
+        let still_inside = cdata_blocks
+            .iter()
+            .find(|b| b.text == "StillInside")
+            .expect("StillInside");
+        assert_eq!(still_inside.details_id, svg_summary.details_id);
+    }
+
+    #[test]
+    fn details_ignores_processing_instruction_close_tag() {
+        let pi_fold = "<details>\n<summary>PiFold</summary>\n\n<?note </details> ?>\n\nInsideAfterPi\n\n</details>\n";
+        let pi_blocks = decode_blocks(render_markdown(pi_fold).unwrap().as_bytes());
+        let pi_summary = pi_blocks
+            .iter()
+            .find(|b| b.kind == super::BLOCK_KIND_DETAILS_SUMMARY && b.text == "PiFold")
+            .expect("PiFold summary");
+        let after_pi = pi_blocks
+            .iter()
+            .find(|b| b.text == "InsideAfterPi")
+            .expect("InsideAfterPi");
+        assert_eq!(after_pi.details_id, pi_summary.details_id);
+    }
+
+    #[test]
+    fn preserves_syntax_highlighting_across_4kib_packet_chunks() {
+        let long_comment = format!("```rust\n// {} fn let 42\n```\n", "a".repeat(4_200));
+        let blocks = decode_blocks(render_markdown(&long_comment).unwrap().as_bytes());
+        let code_chunks: Vec<_> = blocks
+            .iter()
+            .filter(|b| b.kind == super::BLOCK_KIND_CODE)
+            .collect();
+        assert!(
+            code_chunks.len() >= 2,
+            "expected >4 KiB code line to split into at least 2 presentation chunks"
+        );
+        for chunk in &code_chunks {
+            assert!(
+                !chunk.syntax_runs.is_empty(),
+                "expected syntax runs on every chunk of long comment"
+            );
+            for run in &chunk.syntax_runs {
+                assert_eq!(
+                    run.role,
+                    beautyxt_syntax_core::TokenKind::Comment.as_u8(),
+                    "continuation chunk must stay Comment, never Keyword/Number: {run:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn markdown_assist_matches_pulldown_cmark_and_frontmatter_parity() {
+        use beautyxt_syntax_core::markdown_assist::is_utf16_offset_in_markdown_literal_context;
+
+        // Cases where Reading parses the final `- ...` line as literal code or frontmatter:
+        for literal_doc in [
+            "```md\n- item",
+            "```\n    ```\n- literal",
+            "    - literal",
+            "1.  Item\n    ```\n    - literal",
+            "- ```\n  - code",
+            "- item\n  ```\n```\n- fenced text",
+            "- outer\n  - inner\n  ```\n```\n- literal",
+            "10. item\n    > ~~~\n    > - literal",
+            "- - -\n  ```\n- ",
+            "# Heading\n<span>\n- item",
+            "Title\n===\n<span>\n- item",
+            "Title\n-\n  <span>\n- item",
+            "---\nTopic tags:\n  - one\n---   ",
+        ] {
+            let offset = if literal_doc.ends_with("---   ") {
+                23
+            } else {
+                literal_doc.encode_utf16().count()
+            };
+            assert!(
+                is_utf16_offset_in_markdown_literal_context(literal_doc, offset),
+                "expected literal context for: {literal_doc:?}"
+            );
+            let blocks = decode_blocks(render_markdown(literal_doc).unwrap().as_bytes());
+            assert!(
+                blocks.iter().any(|b| matches!(
+                    b.kind,
+                    super::BLOCK_KIND_CODE
+                        | super::BLOCK_KIND_FRONTMATTER
+                        | super::BLOCK_KIND_HTML_LITERAL
+                )),
+                "expected Reading to parse code/frontmatter/html for: {literal_doc:?}"
+            );
+        }
+
+        // Cases where Reading parses the final `- ...` line as a normal list item:
+        for list_doc in [
+            "```\ncode\n```\n- item",
+            "10. ```\n    code\n    ```\n- next",
+            "10. ```\n    code\n- outside",
+            "10. ```\n    code\n    ```\n    - nested",
+            "10. item\n    > ~~~\n    - outside",
+            "---\n\n- item",
+            "---\n# Heading\n- item",
+            "<!--\n```\n-->\n- item",
+            "<pre>\n```\n</pre>\n- item",
+            "<div>\n```\n</div>\n\n- item",
+            "<?note\n```\n?>\n- item",
+            "Paragraph\n01. item",
+        ] {
+            assert!(
+                !is_utf16_offset_in_markdown_literal_context(
+                    list_doc,
+                    list_doc.encode_utf16().count()
+                ),
+                "expected non-literal list context for: {list_doc:?}"
+            );
+            let blocks = decode_blocks(render_markdown(list_doc).unwrap().as_bytes());
+            assert_eq!(
+                blocks.last().expect("last block").kind,
+                super::BLOCK_KIND_LIST_ITEM,
+                "expected Reading last block to be list item for: {list_doc:?}"
+            );
+        }
+
+        // CommonMark §5.2: empty list items and ordered lists not starting at `1` cannot interrupt
+        // a paragraph, so Reading keeps them as Paragraph and Smart Enter must suppress assist.
+        for para_doc in [
+            "Paragraph\n2. ",
+            "Paragraph\n+ ",
+            "Paragraph\n2. item",
+            "Paragraph\n    + ",
+            "Paragraph\n1234567890. ",
+        ] {
+            assert!(
+                is_utf16_offset_in_markdown_literal_context(
+                    para_doc,
+                    para_doc.encode_utf16().count()
+                ),
+                "expected paragraph-continuation suppression for: {para_doc:?}"
+            );
+            let blocks = decode_blocks(render_markdown(para_doc).unwrap().as_bytes());
+            assert_eq!(
+                blocks.last().expect("last block").kind,
+                super::BLOCK_KIND_PARAGRAPH,
+                "expected Reading to keep paragraph continuation for: {para_doc:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn locates_tab_filled_task_markers() {
+        let md = "- [\t] Tab task\n";
+        let blocks = decode_blocks(render_markdown(md).unwrap().as_bytes());
+        assert_eq!(blocks.len(), 1);
+        assert_ne!(blocks[0].flags & super::BLOCK_FLAG_HAS_TASK_MARKER, 0);
+        let offset = usize::try_from(blocks[0].task_marker_source_utf16).unwrap();
+        assert_eq!(&md[offset..offset + 3], "[\t]");
     }
 
     /// Decodes each source-map record independently of block payload fields.
