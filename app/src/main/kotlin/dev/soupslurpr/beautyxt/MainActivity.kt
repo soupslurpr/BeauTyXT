@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,6 +33,7 @@ internal class DocumentActivityModel : ViewModel() {
 /** Hosts one document session while delegating task policy to its concrete entry point. */
 abstract class DocumentActivity : ComponentActivity() {
     private val activityModel by viewModels<DocumentActivityModel>()
+    private val topResumedLostVersion = mutableLongStateOf(0L)
 
     /** Returns the process-owned gate for provider access and document workflows. */
     internal val legacyCleanup: LegacyCleanup
@@ -69,11 +71,19 @@ abstract class DocumentActivity : ComponentActivity() {
                             returnDestination = returnDestination,
                             incomingShare = activityModel.incomingShareState.value,
                             onIncomingShareConsumed = ::consumeIncomingShare,
+                            topResumedLostVersion = topResumedLostVersion.longValue,
                             onDocumentSessionClosed = ::finish
                         )
                     }
                 }
             }
+        }
+    }
+
+    override fun onTopResumedActivityChanged(isTopResumedActivity: Boolean) {
+        super.onTopResumedActivityChanged(isTopResumedActivity)
+        if (!isTopResumedActivity) {
+            topResumedLostVersion.longValue += 1L
         }
     }
 

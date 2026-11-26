@@ -21,7 +21,8 @@ internal enum class SearchRepresentation { Source, Reading, FormulaSource, Diagr
 internal data class ReadingSearchSegment(
     val block: Int, val blockStart: Int, val start: Int, val end: Int,
     val blockEnd: Int = blockStart + end - start, val exact: Boolean = true,
-    val generatedMarker: Boolean = false, val markerStart: Int = 0, val markerEnd: Int = 0
+    val generatedMarker: Boolean = false, val markerStart: Int = 0, val markerEnd: Int = 0,
+    val isFrontmatterKey: Boolean = false
 )
 internal data class IllustrationSearchTarget(
     val block: Int, val start: Int, val end: Int, val run: Int?,
@@ -47,18 +48,26 @@ internal data class ReadingSearchUnits(val units: List<ReadingSearchUnit>, val h
     val coverageGaps: List<IllustrationSearchTarget> = emptyList())
 
 /** Limits consumption inside a rendered selection while leaving the original flow as context. */
-internal fun readingUnitScope(unit: ReadingSearchUnit, selection: DocumentSelection): Utf16Range? {
+internal fun readingUnitScope(
+    unit: ReadingSearchUnit,
+    selection: DocumentSelection,
+    isBlockVisible: ((Int) -> Boolean)? = null
+): Utf16Range? {
     if (selection is DocumentSelection.Label) return unit.illustration?.takeIf {
-        it.block == selection.block && it.start == selection.spanStart && it.run == selection.run
+        (isBlockVisible == null || isBlockVisible(it.block)) &&
+            it.block == selection.block && it.start == selection.spanStart && it.run == selection.run
     }?.let { Utf16Range(selection.range.min.toLong(), selection.range.max.toLong()) }
     if (selection !is DocumentSelection.Reading) return null
     unit.illustration?.let { illustration ->
+        if (isBlockVisible != null && !isBlockVisible(illustration.block)) return null
         return if (selection.start <= ReadingPoint(illustration.block, illustration.start) &&
             selection.end >= ReadingPoint(illustration.block, illustration.end)) Utf16Range(0, unit.text.length.toLong()) else null
     }
     var from: Int? = null
     var to: Int? = null
     for (part in unit.segments) {
+        if (part.isFrontmatterKey) continue
+        if (isBlockVisible != null && !isBlockVisible(part.block)) continue
         val beginning = ReadingPoint(part.block, part.blockStart)
         val ending = ReadingPoint(part.block, part.blockEnd)
         if (selection.end < beginning || selection.start > ending) continue
@@ -121,12 +130,17 @@ internal fun readingSearchUnits(document: MarkdownPreviewDocument, includeSource
     }
     fun beginFlow(index: Int, block: MarkdownRenderBlock) {
         val last = previous
-        val sameQuote = last?.quoteDepth == block.quoteDepth && last.quoteKind == block.quoteKind && !block.startsQuoteAlert
+        val sameContainer =
+            last?.quoteDepth == block.quoteDepth &&
+                last.quoteKind == block.quoteKind &&
+                !block.startsQuoteAlert &&
+                last.detailsId == block.detailsId &&
+                last.detailsParentId == block.detailsParentId
         when {
-            block.continuesPrevious && last?.kind == block.kind -> Unit
-            sameQuote && block.kind in listOf(MarkdownBlockKind.Paragraph, MarkdownBlockKind.Heading) &&
+            block.continuesPrevious && last?.kind == block.kind && sameContainer -> Unit
+            sameContainer && block.kind in listOf(MarkdownBlockKind.Paragraph, MarkdownBlockKind.Heading) &&
                 last.kind in listOf(MarkdownBlockKind.Paragraph, MarkdownBlockKind.Heading) -> text.append("\n\n")
-            sameQuote && block.kind == MarkdownBlockKind.ListItem && last.kind == MarkdownBlockKind.ListItem &&
+            sameContainer && block.kind == MarkdownBlockKind.ListItem && last.kind == MarkdownBlockKind.ListItem &&
                 (!block.startsList || block.listDepth > last.listDepth) -> text.append(readingBlockSeparator(last, block))
             else -> flush()
         }
@@ -180,6 +194,28 @@ internal fun readingSearchUnits(document: MarkdownPreviewDocument, includeSource
                 if (cellIndex > 0) flush()
                 prose(index, block, cell.start, cell.end)
             }
+            previous = block
+        } else if (block.kind == MarkdownBlockKind.Frontmatter) {
+            if (!block.continuesPrevious) {
+                flush()
+                if (block.metadata.isNotEmpty()) {
+                    units += ReadingSearchUnit(
+                        text = block.metadata,
+                        segments = listOf(
+                            ReadingSearchSegment(
+                                block = index,
+                                blockStart = 0,
+                                start = 0,
+                                end = block.metadata.length,
+                                blockEnd = block.metadata.length,
+                                exact = false,
+                                isFrontmatterKey = true
+                            )
+                        )
+                    )
+                }
+            }
+            prose(index, block, 0, block.text.length)
             previous = block
         } else {
             beginFlow(index, block)
@@ -434,7 +470,11 @@ internal fun readingSearchResult(
     }
     val navigation = first?.let { part ->
         val block = document.blocks[part.block]
-        exactReadingSourceRange(block, part.blockStart, part.blockStart)?.start ?: block.source.start
+        if (part.isFrontmatterKey) {
+            block.source.start
+        } else {
+            exactReadingSourceRange(block, part.blockStart, part.blockStart)?.start ?: block.source.start
+        }
     }
     return DocumentSearchResult(hit, source, source?.start ?: owner?.start ?: navigation ?: 0,
         unit.representation, parts, illustration, owner)

@@ -87,4 +87,63 @@ internal class IsolatedExportServiceBinding(context: Context) :
         state.close(this)
         registration.close()
     }
+
+    /**
+     * Retains [lease] until the isolated worker process actually dies so an unconfirmed worker
+     * blocked in I/O or `sync_all()` cannot roll back or truncate the destination after another
+     * window acquires the same inode. Returns true when ownership of [lease] was assumed.
+     */
+    fun retainLeaseUntilWorkerDies(lease: AutoCloseable): Boolean {
+        val remoteBinder = state.currentBinder() ?: return false
+        val closedOnce = java.util.concurrent.atomic.AtomicBoolean(false)
+        lateinit var recipient: IBinder.DeathRecipient
+        lateinit var strongHandle: Pair<IBinder, IBinder.DeathRecipient>
+        fun releaseOnce() {
+            if (closedOnce.compareAndSet(false, true)) {
+                pendingWorkerDeathCleanups.remove(strongHandle)
+                try {
+                    lease.close()
+                } catch (_: Exception) {
+                    // Best-effort lease release after worker death.
+                }
+            }
+        }
+        recipient = IBinder.DeathRecipient {
+            try {
+                remoteBinder.unlinkToDeath(recipient, 0)
+            } catch (_: RuntimeException) {
+                // Ignore unlink failure on dead binder.
+            }
+            releaseOnce()
+        }
+        strongHandle = remoteBinder to recipient
+        pendingWorkerDeathCleanups.add(strongHandle)
+        return try {
+            remoteBinder.linkToDeath(recipient, 0)
+            if (!remoteBinder.isBinderAlive) {
+                try {
+                    remoteBinder.unlinkToDeath(recipient, 0)
+                } catch (_: RuntimeException) {
+                    // Ignore unlink failure on dead binder.
+                }
+                releaseOnce()
+            }
+            true
+        } catch (_: RemoteException) {
+            releaseOnce()
+            true
+        } catch (_: RuntimeException) {
+            releaseOnce()
+            true
+        }
+    }
+
+    private companion object {
+        /**
+         * Retains strong references to pending `(binder, recipient)` pairs until worker death fires,
+         * preventing GC from collecting weak JNI `JavaDeathRecipient` holders before lease cleanup.
+         */
+        val pendingWorkerDeathCleanups: MutableSet<Pair<IBinder, IBinder.DeathRecipient>> =
+            java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
+    }
 }

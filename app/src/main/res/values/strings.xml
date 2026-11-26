@@ -64,6 +64,9 @@
     <string name="appearance_full_width">Use available width</string>
     <string name="appearance_margin">Side margins</string>
     <string name="appearance_wrap">Wrap long lines</string>
+    <string name="appearance_line_numbers">Line numbers</string>
+    <string name="appearance_syntax_highlighting">Syntax highlighting</string>
+    <string name="appearance_keep_screen_on">Keep screen on</string>
     <string name="appearance_tab_width">Tab width</string>
     <string name="appearance_heading_font">Heading font</string>
     <string name="appearance_heading_scale">Heading scale</string>

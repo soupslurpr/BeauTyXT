@@ -165,7 +165,8 @@ internal class ReadingSourceRangeIndex(document: MarkdownPreviewDocument) {
 
 internal fun DocumentSelection.exactSource(
     document: MarkdownPreviewDocument?,
-    sourceIndex: ReadingSourceRangeIndex? = null
+    sourceIndex: ReadingSourceRangeIndex? = null,
+    isBlockVisible: (Int, MarkdownRenderBlock) -> Boolean = { _, _ -> true }
 ): Utf16Range? { return when (this) {
     is DocumentSelection.Source -> range
     is DocumentSelection.Label -> null
@@ -176,6 +177,7 @@ internal fun DocumentSelection.exactSource(
         var ending: Long? = null
         for (index in start.block..end.block) {
             val block = model.blocks[index]
+            if (!isBlockVisible(index, block)) return null
             if (block.illustrationContinuation) continue
             val from = if (index == start.block) start.offset else 0
             val to = if (index == end.block) end.offset else block.text.length
@@ -240,14 +242,19 @@ internal fun excerptFence(text: String, language: String): String {
     return "$fence$language\n$text${if (text.isEmpty() || text.endsWith('\n')) "" else "\n"}$fence"
 }
 
-/** Displayed text only: notes, table headers, and link destinations are never imported here. */
-internal fun selectedReadingText(document: MarkdownPreviewDocument, selection: DocumentSelection.Reading, maximumBytes: Int): String {
+/** Displayed text only: notes, table headers, hidden details bodies, and link destinations are excluded. */
+internal fun selectedReadingText(
+    document: MarkdownPreviewDocument,
+    selection: DocumentSelection.Reading,
+    maximumBytes: Int,
+    isBlockVisible: (Int, MarkdownRenderBlock) -> Boolean = { _, _ -> true }
+): String {
     val output = ExcerptText(maximumBytes)
     val numbers = markdownFootnoteNumbers(document.blocks)
     var previous: MarkdownRenderBlock? = null
     for (index in selection.start.block..selection.end.block) {
         val block = document.blocks[index]
-        if (block.illustrationContinuation) continue
+        if (block.illustrationContinuation || !isBlockVisible(index, block)) continue
         val selected = selection.rangeFor(index, block.text.length)
         val last = previous
         if (last != null) output.append(readingBlockSeparator(last, block))

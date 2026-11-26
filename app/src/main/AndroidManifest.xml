@@ -45,7 +45,19 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <activity
+            android:name=".DocumentWindowActivity"
+            android:autoRemoveFromRecents="true"
+            android:documentLaunchMode="always"
+            android:exported="false"
+            android:launchMode="standard"
+            android:persistableMode="persistNever"
+            android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".ShareActivity"

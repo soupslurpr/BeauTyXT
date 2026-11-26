@@ -64,7 +64,8 @@ internal suspend fun saveExpressiveQrCodeImage(
     destination: Uri,
     grid: QrCodeGrid,
     colors: QrCodeColors,
-    format: QrImageFormat
+    format: QrImageFormat,
+    resolveForbiddenSource: suspend () -> SourceIdentitySnapshot = { SourceIdentitySnapshot() }
 ) {
     if (destination.scheme != ContentResolver.SCHEME_CONTENT ||
         destination.authority.isNullOrBlank()
@@ -73,12 +74,46 @@ internal suspend fun saveExpressiveQrCodeImage(
     }
     withContext(Dispatchers.IO) {
         currentCoroutineContext().ensureActive()
-        prepareQrImage(grid, colors, format).use { input ->
-            currentCoroutineContext().ensureActive()
-            val exporter = IsolatedDocumentExporter(context)
-            TransientDestinationSelection.from(destination).use { selection ->
-                exporter.openDestination(selection).use { output ->
-                    exporter.save(output, input)
+        val exporter = IsolatedDocumentExporter(context.applicationContext)
+        TransientDestinationSelection.from(destination).use { selection ->
+            exporter.openDestination(selection).use { output ->
+                val destinationKeys = writableDocumentKeysForDescriptor(
+                    context = context.applicationContext,
+                    uri = destination,
+                    descriptorIdentityKey = output.fileIdentityKey
+                )
+                // Recheck live source identity (fail-closed) and refresh active leases AFTER open.
+                val forbiddenSource = resolveForbiddenSource()
+                val emptyBeforeAcquire = output.isCurrentlyEmptyRegularFile()
+                if (
+                    forbiddenSource.conflictsWith(
+                        destinationKeys = destinationKeys,
+                        destinationHasRegularInode = output.fileIdentityKey != null,
+                        destinationIsEmpty = emptyBeforeAcquire
+                    )
+                ) {
+                    throw IOException("QR image destination matches the current document source")
+                }
+                val destinationLease = WritableDocumentRegistry.shared.tryAcquireRefreshing(
+                    documentKeys = destinationKeys,
+                    destinationIsEmpty = emptyBeforeAcquire
+                )
+                    ?: throw IOException("QR image destination is already open for writing")
+                val leaseRef = java.util.concurrent.atomic.AtomicReference<AutoCloseable?>(destinationLease)
+                try {
+                    prepareQrImage(grid, colors, format).use { input ->
+                        currentCoroutineContext().ensureActive()
+                        if (emptyBeforeAcquire && !output.isCurrentlyEmptyRegularFile()) {
+                            throw IOException("QR image destination changed before writing")
+                        }
+                        exporter.save(
+                            destination = output,
+                            input = input,
+                            releaseLeaseOnUncertainExit = { leaseRef.getAndSet(null) }
+                        )
+                    }
+                } finally {
+                    leaseRef.getAndSet(null)?.close()
                 }
             }
         }

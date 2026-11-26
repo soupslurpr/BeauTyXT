@@ -79,15 +79,24 @@ internal fun editorInputTransformation(
     canAcceptInput: () -> Boolean,
     onBulkEdit: (EditorBulkEdit) -> Boolean,
     onRejection: (EditorInputRejection) -> Unit,
-    clearRejection: () -> Unit
+    clearRejection: () -> Unit,
+    markdownAssistEnabled: () -> Boolean = { false },
+    hasComposition: () -> Boolean = { false },
+    hasPreviousWindow: () -> Boolean = { false },
+    consumeSuppressMarkdownAssist: () -> Boolean = { false }
 ): InputTransformation = InputTransformation {
     when {
-        !canAcceptInput() -> revertAllChanges()
+        !canAcceptInput() -> {
+            consumeSuppressMarkdownAssist()
+            revertAllChanges()
+        }
         length > MAX_BULK_INPUT_UTF16_UNITS + EDIT_DRAFT_MAX_UTF16_UNITS -> {
+            consumeSuppressMarkdownAssist()
             revertAllChanges()
             onRejection(EditorInputRejection.BulkSize)
         }
         length > EDIT_DRAFT_MAX_UTF16_UNITS -> {
+            consumeSuppressMarkdownAssist()
             val proposal = EditorBulkEdit.create(originalText.toString(), asCharSequence().toString(),
                 originalSelection, selection)
             revertAllChanges()
@@ -98,6 +107,7 @@ internal fun editorInputTransformation(
             }
         }
         else -> {
+            val suppressAssist = consumeSuppressMarkdownAssist()
             // Only small field edits are normalized on the UI thread.
             val changedRanges = List(changes.changeCount) { changes.getRange(it) }
             for (range in changedRanges.asReversed()) {
@@ -107,7 +117,52 @@ internal fun editorInputTransformation(
                     }
                 }
             }
+            if (!suppressAssist && markdownAssistEnabled() && !hasComposition() && changes.changeCount == 1) {
+                val afterText = asCharSequence()
+                val assisted =
+                    computeMarkdownWrapSelection(
+                        textBefore = originalText,
+                        selectionBefore = originalSelection,
+                        textAfter = afterText,
+                        selectionAfter = selection
+                    ) ?: computeMarkdownEnterContinuation(
+                        textBefore = originalText,
+                        selectionBefore = originalSelection,
+                        textAfter = afterText,
+                        selectionAfter = selection,
+                        hasPreviousWindow = hasPreviousWindow()
+                    )
+                if (assisted != null && assisted.text.length <= EDIT_DRAFT_MAX_UTF16_UNITS) {
+                    replace(0, length, assisted.text)
+                    selection = assisted.selection
+                }
+            }
             clearRejection()
         }
+    }
+}
+
+/** One-shot transient gate suppressing Markdown typing assistance during paste or drop insertions. */
+internal class MarkdownAssistSuppression(
+    private val nanoTime: () -> Long = System::nanoTime
+) {
+    private var armedUntilNanos: Long = Long.MIN_VALUE
+
+    fun arm() {
+        armedUntilNanos = nanoTime() + PASTE_ASSIST_SUPPRESSION_WINDOW_NANOS
+    }
+
+    fun clear() {
+        armedUntilNanos = Long.MIN_VALUE
+    }
+
+    fun consume(): Boolean {
+        val deadline = armedUntilNanos
+        armedUntilNanos = Long.MIN_VALUE
+        return deadline != Long.MIN_VALUE && nanoTime() <= deadline
+    }
+
+    private companion object {
+        const val PASTE_ASSIST_SUPPRESSION_WINDOW_NANOS = 250_000_000L
     }
 }

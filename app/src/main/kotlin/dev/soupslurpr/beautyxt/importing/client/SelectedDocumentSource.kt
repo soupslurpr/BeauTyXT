@@ -14,6 +14,7 @@ import dev.soupslurpr.beautyxt.document.DocumentRemovalCapabilities
 import dev.soupslurpr.beautyxt.document.SourceVersion
 import dev.soupslurpr.beautyxt.ipc.acquireResourceWithTimeout
 import dev.soupslurpr.beautyxt.ipc.openProviderDescriptor
+import dev.soupslurpr.beautyxt.ipc.probeProviderDescriptorMetadata
 import java.io.FileDescriptor
 import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
@@ -30,6 +31,131 @@ private const val LINUX_OPEN_PATH_FLAG = 0x20_0000
 /** Reports that a selected source descriptor could not be opened. */
 internal class SelectedDocumentSourceException(cause: Throwable? = null) :
     IOException("selected document descriptor unavailable", cause)
+
+/** Result of probing one opened descriptor's kernel regular-file identity on bounded background I/O. */
+internal sealed interface DescriptorFileIdentity {
+    /** A regular file with a verified process-local kernel `(st_dev, st_ino)` key. */
+    data class Regular(val key: String) : DescriptorFileIdentity
+
+    /** Verified non-regular descriptor (pipe, socket, or virtual stream) with no regular inode. */
+    data object NonRegular : DescriptorFileIdentity
+
+    /** Probe timed out, failed, or observed an unidentifiable regular inode; callers must fail closed. */
+    data object Indeterminate : DescriptorFileIdentity
+}
+
+/** Returns a process-local kernel inode identity key for regular files, or null for pipes/virtual FDs. */
+internal fun regularFileIdentityKey(fileDescriptor: FileDescriptor): String? =
+    try {
+        val stat = Os.fstat(fileDescriptor)
+        if (OsConstants.S_ISREG(stat.st_mode) && stat.st_ino != 0L) {
+            "ino:${stat.st_dev}:${stat.st_ino}"
+        } else {
+            null
+        }
+    } catch (_: Exception) {
+        null
+    } catch (_: LinkageError) {
+        null
+    }
+
+/** Snapshot of kernel identity and change metadata (`st_size`, `st_mtim`, `st_ctim`) for one FD. */
+internal data class DescriptorFileSnapshot(
+    val identity: DescriptorFileIdentity,
+    val sizeBytes: Long? = null,
+    val mtimeSec: Long? = null,
+    val mtimeNsec: Long? = null,
+    val ctimeSec: Long? = null,
+    val ctimeNsec: Long? = null
+)
+
+/** Classifies [fileDescriptor] synchronously with kernel regular-file identity and change metadata. */
+internal fun probeDescriptorFileSnapshot(fileDescriptor: FileDescriptor): DescriptorFileSnapshot =
+    try {
+        val stat = Os.fstat(fileDescriptor)
+        when {
+            OsConstants.S_ISREG(stat.st_mode) && stat.st_ino != 0L ->
+                DescriptorFileSnapshot(
+                    identity = DescriptorFileIdentity.Regular("ino:${stat.st_dev}:${stat.st_ino}"),
+                    sizeBytes = stat.st_size,
+                    mtimeSec = stat.st_mtim.tv_sec,
+                    mtimeNsec = stat.st_mtim.tv_nsec,
+                    ctimeSec = stat.st_ctim.tv_sec,
+                    ctimeNsec = stat.st_ctim.tv_nsec
+                )
+            !OsConstants.S_ISREG(stat.st_mode) ->
+                DescriptorFileSnapshot(identity = DescriptorFileIdentity.NonRegular)
+            else ->
+                DescriptorFileSnapshot(identity = DescriptorFileIdentity.Indeterminate)
+        }
+    } catch (_: Exception) {
+        DescriptorFileSnapshot(identity = DescriptorFileIdentity.Indeterminate)
+    } catch (_: LinkageError) {
+        DescriptorFileSnapshot(identity = DescriptorFileIdentity.Indeterminate)
+    }
+
+/** Runs [probeDescriptorFileSnapshot] on bounded detached background I/O, failing closed on timeout. */
+internal suspend fun probeDescriptorFileSnapshotBounded(
+    descriptor: ParcelFileDescriptor,
+    timeoutMillis: Long = WRITE_PROBE_DESCRIPTOR_OPEN_TIMEOUT_MILLIS
+): DescriptorFileSnapshot =
+    probeProviderDescriptorMetadata(
+        descriptor = descriptor,
+        timeoutMillis = timeoutMillis,
+        defaultValue = DescriptorFileSnapshot(identity = DescriptorFileIdentity.Indeterminate),
+        probe = ::probeDescriptorFileSnapshot
+    )
+
+/** Classifies [fileDescriptor] synchronously as regular-with-inode, non-regular, or indeterminate. */
+internal fun probeDescriptorFileIdentity(fileDescriptor: FileDescriptor): DescriptorFileIdentity =
+    probeDescriptorFileSnapshot(fileDescriptor).identity
+
+/** Runs [probeDescriptorFileIdentity] on bounded detached background I/O, failing closed on timeout. */
+internal suspend fun probeDescriptorFileIdentityBounded(
+    descriptor: ParcelFileDescriptor,
+    timeoutMillis: Long = WRITE_PROBE_DESCRIPTOR_OPEN_TIMEOUT_MILLIS
+): DescriptorFileIdentity =
+    probeProviderDescriptorMetadata(
+        descriptor = descriptor,
+        timeoutMillis = timeoutMillis,
+        defaultValue = DescriptorFileIdentity.Indeterminate,
+        probe = ::probeDescriptorFileIdentity
+    )
+
+/** Returns whether [fileDescriptor] is an empty (0-byte) regular file. */
+internal fun isEmptyRegularFile(fileDescriptor: FileDescriptor): Boolean =
+    try {
+        val stat = Os.fstat(fileDescriptor)
+        OsConstants.S_ISREG(stat.st_mode) && stat.st_size == 0L
+    } catch (_: Exception) {
+        false
+    } catch (_: LinkageError) {
+        false
+    }
+
+/** Runs [isEmptyRegularFile] on bounded detached background I/O so proxy FDs cannot freeze UI or hang past timeout. */
+internal suspend fun isEmptyRegularFileBounded(
+    descriptor: ParcelFileDescriptor,
+    timeoutMillis: Long = WRITE_PROBE_DESCRIPTOR_OPEN_TIMEOUT_MILLIS
+): Boolean =
+    probeProviderDescriptorMetadata(
+        descriptor = descriptor,
+        timeoutMillis = timeoutMillis,
+        defaultValue = false,
+        probe = ::isEmptyRegularFile
+    )
+
+/** Runs [isCompatibleAutosaveDescriptor] on bounded detached background I/O. */
+internal suspend fun isCompatibleAutosaveDescriptorBounded(
+    descriptor: ParcelFileDescriptor,
+    timeoutMillis: Long = WRITE_PROBE_DESCRIPTOR_OPEN_TIMEOUT_MILLIS
+): Boolean =
+    probeProviderDescriptorMetadata(
+        descriptor = descriptor,
+        timeoutMillis = timeoutMillis,
+        defaultValue = false,
+        probe = ::isCompatibleAutosaveDescriptor
+    )
 
 /** Returns whether one descriptor meets the observable native autosave preconditions. */
 internal fun isCompatibleAutosaveDescriptor(fileDescriptor: FileDescriptor): Boolean {
@@ -51,16 +177,26 @@ internal fun isCompatibleAutosaveDescriptor(fileDescriptor: FileDescriptor): Boo
 /** Retains one exact content URI and its transient capability without persisting it. */
 internal class SelectedDocumentSource private constructor(
     uri: Uri,
+    internal val applicationContext: Context,
     private val contentResolver: ContentResolver,
     private val isDocumentUri: Boolean
 ) : AutoCloseable {
     private val ownershipLock = Any()
     private var selectedUri: Uri? = uri
     private var currentSourceVersion: SourceVersion? = null
+    private var hasCompletedReadOpen = false
+    private var observedReadFileIdentityKey: String? = null
+    private var observedWriteFileIdentityKey: String? = null
 
     val uri: Uri
         get() = synchronized(ownershipLock) {
             checkNotNull(selectedUri) { "selected document source is closed" }
+        }
+
+    /** Returns the kernel `(st_dev, st_ino)` identity key observed on an opened regular FD, preferring `rw`. */
+    val fileIdentityKey: String?
+        get() = synchronized(ownershipLock) {
+            observedWriteFileIdentityKey ?: observedReadFileIdentityKey
         }
 
     /** Returns the exact expected source version, or null before its first save. */
@@ -99,20 +235,75 @@ internal class SelectedDocumentSource private constructor(
         timeoutMillis = SOURCE_DESCRIPTOR_OPEN_TIMEOUT_MILLIS
     )
 
+    /** Opens a read descriptor for verification without mutating the source's baseline identity. */
+    suspend fun openReadDescriptorForProbe(): ParcelFileDescriptor = openDescriptor(
+        mode = READ_DESCRIPTOR_MODE,
+        timeoutMillis = SOURCE_DESCRIPTOR_OPEN_TIMEOUT_MILLIS,
+        recordObservedIdentity = false
+    )
+
     /** Opens a fresh caller-owned read-write descriptor for one source save. */
     suspend fun openReadWriteDescriptor(): ParcelFileDescriptor = openDescriptor(
         mode = READ_WRITE_DESCRIPTOR_MODE,
         timeoutMillis = SOURCE_DESCRIPTOR_OPEN_TIMEOUT_MILLIS
     )
 
-    /** Returns whether the provider currently exposes a compatible autosave descriptor. */
+    /** Opens a read-write descriptor for verification without mutating the source's baseline identity. */
+    suspend fun openReadWriteDescriptorForProbe(): ParcelFileDescriptor = openDescriptor(
+        mode = READ_WRITE_DESCRIPTOR_MODE,
+        timeoutMillis = SOURCE_DESCRIPTOR_OPEN_TIMEOUT_MILLIS,
+        recordObservedIdentity = false
+    )
+
+    /**
+     * Returns whether the provider currently exposes a compatible autosave descriptor with a
+     * verified regular-file kernel inode, deriving both checks from the same probe so a timed-out
+     * inode lookup can never leave a writable source protected only by its URI.
+     */
     suspend fun hasCompatibleWriteAccess(): Boolean = try {
-        openDescriptor(
-            mode = READ_WRITE_DESCRIPTOR_MODE,
-            timeoutMillis = WRITE_PROBE_DESCRIPTOR_OPEN_TIMEOUT_MILLIS
-        ).use { descriptor ->
-            isCompatibleAutosaveDescriptor(descriptor.fileDescriptor)
+        val uri =
+            synchronized(ownershipLock) {
+                checkNotNull(selectedUri) { "selected document source is closed" }
+            }
+        acquireResourceWithTimeout(WRITE_PROBE_DESCRIPTOR_OPEN_TIMEOUT_MILLIS) {
+            openProviderDescriptor(
+                resolver = contentResolver,
+                uri = uri,
+                mode = READ_WRITE_DESCRIPTOR_MODE,
+                closeUnclaimed = ::closeDescriptorQuietly
+            )
+        }.use { descriptor ->
+            val verifiedIdentityKey =
+                probeProviderDescriptorMetadata(
+                    descriptor = descriptor,
+                    timeoutMillis = WRITE_PROBE_DESCRIPTOR_OPEN_TIMEOUT_MILLIS,
+                    defaultValue = null
+                ) { fd ->
+                    if (!isCompatibleAutosaveDescriptor(fd)) {
+                        null
+                    } else {
+                        (probeDescriptorFileIdentity(fd) as? DescriptorFileIdentity.Regular)?.key
+                    }
+                }
+            if (verifiedIdentityKey != null) {
+                synchronized(ownershipLock) {
+                    if (
+                        selectedUri != null &&
+                        (!hasCompletedReadOpen || observedReadFileIdentityKey == verifiedIdentityKey)
+                    ) {
+                        observedWriteFileIdentityKey = verifiedIdentityKey
+                        true
+                    } else {
+                        false
+                    }
+                }
+            } else {
+                false
+            }
         }
+    } catch (_: TimeoutCancellationException) {
+        currentCoroutineContext().ensureActive()
+        false
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Exception) {
@@ -135,7 +326,10 @@ internal class SelectedDocumentSource private constructor(
     }
 
     /** Completes one freshly authorized provider removal operation. */
-    suspend fun remove(action: DocumentRemovalAction) {
+    suspend fun remove(
+        action: DocumentRemovalAction,
+        verifyTargetBeforeDispatch: (suspend () -> Unit)? = null
+    ) {
         val uri =
             synchronized(ownershipLock) {
                 checkNotNull(selectedUri) { "selected document source is closed" }
@@ -144,7 +338,8 @@ internal class SelectedDocumentSource private constructor(
             contentResolver = contentResolver,
             uri = uri,
             isDocumentUri = isDocumentUri,
-            action = action
+            action = action,
+            verifyTargetBeforeDispatch = verifyTargetBeforeDispatch
         )
     }
 
@@ -153,11 +348,18 @@ internal class SelectedDocumentSource private constructor(
         synchronized(ownershipLock) {
             selectedUri = null
             currentSourceVersion = null
+            hasCompletedReadOpen = false
+            observedReadFileIdentityKey = null
+            observedWriteFileIdentityKey = null
         }
     }
 
     /** Opens one provider descriptor with bounded, coroutine-aware cancellation. */
-    private suspend fun openDescriptor(mode: String, timeoutMillis: Long): ParcelFileDescriptor {
+    private suspend fun openDescriptor(
+        mode: String,
+        timeoutMillis: Long,
+        recordObservedIdentity: Boolean = true
+    ): ParcelFileDescriptor {
         require(timeoutMillis > 0L) { "descriptor timeout must be positive" }
         val uri =
             synchronized(ownershipLock) {
@@ -184,9 +386,36 @@ internal class SelectedDocumentSource private constructor(
             } catch (failure: Exception) {
                 throw SelectedDocumentSourceException(failure)
             }
+        val identityKey =
+            if (recordObservedIdentity) {
+                try {
+                    (probeDescriptorFileIdentityBounded(descriptor) as? DescriptorFileIdentity.Regular)?.key
+                } catch (failure: Throwable) {
+                    closeDescriptorQuietly(descriptor)
+                    throw failure
+                }
+            } else {
+                null
+            }
         val sourceRemainsOpen =
             synchronized(ownershipLock) {
-                selectedUri != null
+                if (selectedUri != null) {
+                    if (recordObservedIdentity) {
+                        if (mode == READ_WRITE_DESCRIPTOR_MODE) {
+                            if (identityKey != null) {
+                                observedWriteFileIdentityKey = identityKey
+                            }
+                        } else {
+                            hasCompletedReadOpen = true
+                            if (identityKey != null) {
+                                observedReadFileIdentityKey = identityKey
+                            }
+                        }
+                    }
+                    true
+                } else {
+                    false
+                }
             }
         if (!sourceRemainsOpen) {
             closeDescriptorQuietly(descriptor)
@@ -207,6 +436,7 @@ internal class SelectedDocumentSource private constructor(
             val applicationContext = context.applicationContext
             return SelectedDocumentSource(
                 uri = uri,
+                applicationContext = applicationContext,
                 contentResolver = applicationContext.contentResolver,
                 isDocumentUri =
                     try {

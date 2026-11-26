@@ -39,4 +39,24 @@
     <string name="markdown_illustration_rendering">Rendering…</string>
     <string name="markdown_diagram_text_size">Show diagram at text size</string>
     <string name="markdown_diagram_fit_width">Fit diagram to width</string>
+    <string name="markdown_details_default_summary">Details</string>
+    <string name="markdown_details_expanded">Expanded</string>
+    <string name="markdown_details_collapsed">Collapsed</string>
+    <string name="markdown_frontmatter_summary">Properties (%1$d)</string>
+    <string name="markdown_inspector_open">Inspect full screen</string>
+    <string name="markdown_inspector_diagram_title">Diagram</string>
+    <string name="markdown_inspector_table_title">Table</string>
+    <string name="markdown_inspector_zoom_in">Zoom in</string>
+    <string name="markdown_inspector_zoom_out">Zoom out</string>
+    <string name="markdown_inspector_copy_source">Copy source</string>
+    <string name="markdown_inspector_save_image">Save image</string>
+    <string name="markdown_inspector_share_image">Share image</string>
+    <string name="markdown_inspector_image_saved">Image saved.</string>
+    <string name="markdown_inspector_image_failed">Image could not be exported.</string>
+    <string name="markdown_inspector_copied">Copied.</string>
+    <string name="markdown_inspector_copied_markdown">Copied table as Markdown.</string>
+    <string name="markdown_inspector_copied_csv">Copied table as CSV.</string>
+    <string name="markdown_table_copy_markdown">Copy as Markdown</string>
+    <string name="markdown_table_copy_csv">Copy as CSV</string>
+    <string name="markdown_table_copy_limit">This table is too large to copy at once.</string>
 </resources>

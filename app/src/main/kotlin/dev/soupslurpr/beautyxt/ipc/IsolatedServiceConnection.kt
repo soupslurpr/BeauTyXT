@@ -18,6 +18,9 @@ internal class IsolatedServiceConnection<S : Any>(private val unavailable: (Thro
     val isClosed: Boolean get() = synchronized(lock) { closed }
     val remote: S? get() = synchronized(lock) { service }
 
+    /** Returns the live raw Binder before [close] clears it, or null if unavailable. */
+    fun currentBinder(): IBinder? = synchronized(lock) { binder }
+
     suspend fun awaitService(): S {
         val result = connected.await()
         return synchronized(lock) {

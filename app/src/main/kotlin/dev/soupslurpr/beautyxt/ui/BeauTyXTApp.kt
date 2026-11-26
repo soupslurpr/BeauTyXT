@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
@@ -39,12 +40,15 @@ import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import dev.soupslurpr.beautyxt.BeauTyXTApplication
+import dev.soupslurpr.beautyxt.ClipboardPasteResult
 import dev.soupslurpr.beautyxt.CreateDocumentDestinationContract
 import dev.soupslurpr.beautyxt.DocumentSessionReturnDestination
 import dev.soupslurpr.beautyxt.InitialDocumentAction
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.SelectedDestinationResult
+import dev.soupslurpr.beautyxt.createNewDocumentWindowIntent
 import dev.soupslurpr.beautyxt.mayHaveAmbientTreeAccessForUri
+import dev.soupslurpr.beautyxt.readClipboardTextForPaste
 import dev.soupslurpr.beautyxt.document.DocumentFormat
 import dev.soupslurpr.beautyxt.exporting.client.DocumentExportException
 import dev.soupslurpr.beautyxt.exporting.client.IsolatedDocumentExporter
@@ -63,6 +67,7 @@ import dev.soupslurpr.beautyxt.sharing.incomingSharedTextTitle
 import dev.soupslurpr.beautyxt.transfer.client.IsolatedTransferProcessor
 import dev.soupslurpr.beautyxt.transfer.client.NfcTransferProcessor
 import dev.soupslurpr.beautyxt.transfer.client.ReceivedTransferText
+import dev.soupslurpr.beautyxt.ui.autosave.LeasedEditorDocumentSource
 import dev.soupslurpr.beautyxt.ui.autosave.NewDocumentFolderClient
 import dev.soupslurpr.beautyxt.ui.editor.CloseRequestResult
 import dev.soupslurpr.beautyxt.ui.editor.DocumentEditor
@@ -74,7 +79,9 @@ import dev.soupslurpr.beautyxt.ui.editor.SaveDestinationPurpose
 import dev.soupslurpr.beautyxt.ui.editor.SaveDestinationRequest
 import dev.soupslurpr.beautyxt.ui.editor.SelectedEditorDocumentSource
 import dev.soupslurpr.beautyxt.ui.editor.ShareStatus
+import dev.soupslurpr.beautyxt.ui.editor.WritableDocumentRegistry
 import dev.soupslurpr.beautyxt.ui.editor.createImportedEditorSession
+import dev.soupslurpr.beautyxt.ui.editor.writableDocumentKeys
 import dev.soupslurpr.beautyxt.ui.transfer.NfcReadScreen
 import dev.soupslurpr.beautyxt.ui.transfer.NfcWriteScreen
 import dev.soupslurpr.beautyxt.ui.transfer.QrScannerScreen
@@ -97,11 +104,13 @@ internal fun BeauTyXTApp(
     initialDocumentAction: InitialDocumentAction = InitialDocumentAction.Incoming,
     incomingShare: IncomingDocumentShare? = null,
     onIncomingShareConsumed: (IncomingDocumentShare) -> Unit = {},
+    topResumedLostVersion: Long = 0L,
     onDocumentSessionClosed: () -> Unit = {}
 ) {
     val keepsContentUntilExit = LocalDocumentNavigationBack.current != null
     val context = LocalContext.current
     val resources = LocalResources.current
+    val windowInfo = LocalWindowInfo.current
     val applicationContext = context.applicationContext
     val importer = remember(applicationContext) { IsolatedDocumentImporter(applicationContext) }
     val exporter = remember(applicationContext) { IsolatedDocumentExporter(applicationContext) }
@@ -167,7 +176,7 @@ internal fun BeauTyXTApp(
                 }
             )
         }
-    LaunchedEffect(initialDocumentAction, initialActionConsumed) {
+    LaunchedEffect(initialDocumentAction, initialActionConsumed, windowInfo.isWindowFocused) {
         if (initialActionConsumed) {
             return@LaunchedEffect
         }
@@ -180,11 +189,32 @@ internal fun BeauTyXTApp(
             InitialDocumentAction.OpeningSelectedDocument,
             InitialDocumentAction.Unrestorable -> Unit
 
+            InitialDocumentAction.PasteClipboard -> {
+                if (!windowInfo.isWindowFocused) {
+                    return@LaunchedEffect
+                }
+                when (val pasted = readClipboardTextForPaste(context)) {
+                    is ClipboardPasteResult.Ready ->
+                        session.openPastedText(pasted.text, pasted.format)
+
+                    ClipboardPasteResult.Empty ->
+                        session.failInitialOpen(UiText.Resource(R.string.home_paste_empty))
+
+                    ClipboardPasteResult.TooLarge ->
+                        session.failInitialOpen(UiText.Resource(R.string.home_paste_too_large))
+                }
+            }
+
             InitialDocumentAction.ScanQr -> isQrScannerVisible = hasCamera
 
             InitialDocumentAction.ReadNfc -> isNfcReaderVisible = nfcAdapter != null
         }
         initialActionConsumed = true
+    }
+    LaunchedEffect(topResumedLostVersion) {
+        if (topResumedLostVersion > 0L) {
+            session.checkpointPendingEdit()
+        }
     }
     LaunchedEffect(incomingShare) {
         val share = incomingShare ?: return@LaunchedEffect
@@ -306,6 +336,7 @@ internal fun BeauTyXTApp(
         session.openSelectedDocument {
             createIncomingSourceEditor(
                 share = share,
+                context = applicationContext,
                 importer = importer,
                 exporter = exporter,
                 markdownRenderer = markdownRenderer,
@@ -326,6 +357,7 @@ internal fun BeauTyXTApp(
             session.openIncomingRequestedSource {
                 createIncomingSourceEditor(
                     share = source,
+                    context = applicationContext,
                     importer = importer,
                     exporter = exporter,
                     markdownRenderer = markdownRenderer,
@@ -398,10 +430,19 @@ internal fun BeauTyXTApp(
         session.reloadEditorSource(currentEditor) { encodedUri ->
             val reloadUri = encodedUri.toUri()
             val autosaveStore = (applicationContext as? BeauTyXTApplication)?.newDocumentAutosave
+            val replacesWritableOwnerId =
+                if (!currentEditor.isViewOnly) {
+                    currentEditor.writableLeaseOwnerId
+                } else {
+                    null
+                }
             val treeGrantLease = autosaveStore?.tryAcquireLeaseForDocumentUri(reloadUri)
+            var unclaimedImported: dev.soupslurpr.beautyxt.importing.client.ImportedDocument? = null
             try {
-                createImportedEditorSession(
-                    importedDocument = importer.open(reloadUri),
+                val imported = importer.open(reloadUri)
+                unclaimedImported = imported
+                val sessionResult = createImportedEditorSession(
+                    importedDocument = imported,
                     sourceFormat = currentEditor.documentFormat,
                     exporter = exporter,
                     markdownRenderer = markdownRenderer,
@@ -410,9 +451,18 @@ internal fun BeauTyXTApp(
                     readOnlyImporter = { sourceUri ->
                         importer.open(uri = sourceUri, allowSourceWriteAccess = false)
                     },
-                    treeGrantLease = treeGrantLease
+                    treeGrantLease = treeGrantLease,
+                    context = applicationContext,
+                    replacesWritableOwnerId = replacesWritableOwnerId
                 )
+                unclaimedImported = null
+                sessionResult
             } catch (failure: Throwable) {
+                try {
+                    unclaimedImported?.close()
+                } catch (closeFailure: Throwable) {
+                    failure.addSuppressed(closeFailure)
+                }
                 try {
                     treeGrantLease?.close()
                 } catch (closeFailure: Throwable) {
@@ -559,6 +609,14 @@ internal fun BeauTyXTApp(
                     }
                 },
                 onReloadSource = ::reloadCurrentSource,
+                onOpenNewWindow = {
+                    session.checkpointPendingEdit()
+                    try {
+                        context.startActivity(createNewDocumentWindowIntent(context))
+                    } catch (_: Exception) {
+                        // Ignore unavailable multi-window launch targets.
+                    }
+                },
                 scanQrEnabled = hasCamera && session.incomingShare == null,
                 onScanQr = ::showQrScanner,
                 writeNfcEnabled = nfcAdapter != null,
@@ -691,6 +749,7 @@ internal fun isDirectSourceRequest(share: IncomingDocumentShare?): Boolean =
 /** Creates one source-backed editor for an Android view, edit, or confirmed share request. */
 private suspend fun createIncomingSourceEditor(
     share: IncomingDocumentShare.Source,
+    context: Context,
     importer: IsolatedDocumentImporter,
     exporter: IsolatedDocumentExporter,
     markdownRenderer: IsolatedMarkdownRenderer,
@@ -719,15 +778,17 @@ private suspend fun createIncomingSourceEditor(
             },
         readOnlyImporter = { uri ->
             importer.open(uri = uri, allowSourceWriteAccess = false)
-        }
+        },
+        context = context
     )
 }
 
-/** Returns discovery hints for provider-reported plain text and Markdown files. */
+/** Returns discovery hints for provider-reported plain text, code, config, and Markdown files. */
 internal fun openDocumentMimeTypes(): Array<String> = arrayOf(
     TEXT_MIME_TYPE_PATTERN,
     APPLICATION_MARKDOWN_MIME_TYPE,
     APPLICATION_X_MARKDOWN_MIME_TYPE,
+    *dev.soupslurpr.beautyxt.document.TEXT_BASED_APPLICATION_MIME_TYPES.toTypedArray(),
     BINARY_MIME_TYPE
 )
 
@@ -758,6 +819,19 @@ private suspend fun saveSelectedDestination(
         session.failSaveDestination(request.format, CURRENT_SOURCE_DESTINATION_MESSAGE)
         return
     }
+    val originalSourceSnapshot = session.currentSourceIdentitySnapshot(request)
+    val resolveCurrentSourceIdentity: suspend () -> dev.soupslurpr.beautyxt.ui.editor.SourceIdentitySnapshot = {
+        originalSourceSnapshot?.let { captured ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                dev.soupslurpr.beautyxt.ui.editor.resolveSourceIdentitySnapshot(
+                    context = applicationContext,
+                    uri = captured.encodedUri.toUri(),
+                    knownFileIdentityKey = captured.fileIdentityKey,
+                    preferWriteProbe = captured.isWritable
+                )
+            }
+        } ?: dev.soupslurpr.beautyxt.ui.editor.SourceIdentitySnapshot()
+    }
     if (request.purpose == SaveDestinationPurpose.SourceReplacement) {
         saveSelectedSource(
             session = session,
@@ -765,58 +839,120 @@ private suspend fun saveSelectedDestination(
             importer = importer,
             exporter = exporter,
             format = request.format,
-            uri = uri
+            uri = uri,
+            resolveCurrentSourceIdentity = resolveCurrentSourceIdentity
         )
         return
     }
-    val selection = TransientDestinationSelection.from(uri)
-    val destination =
-        try {
+    var unclaimedCopyLease: AutoCloseable? = null
+    var destination: dev.soupslurpr.beautyxt.exporting.client.TransientExportDestination? = null
+    try {
+        val selection = TransientDestinationSelection.from(uri)
+        destination =
             try {
-                exporter.openDestination(selection)
-            } finally {
-                selection.close()
+                try {
+                    exporter.openDestination(selection)
+                } finally {
+                    selection.close()
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: DocumentExportException) {
+                session.failSaveDestination(request.format, failure.failure.userMessage)
+                return
+            } catch (_: Exception) {
+                session.failSaveDestination(
+                    request.format,
+                    UiText.Resource(R.string.operation_destination_unavailable)
+                )
+                return
             }
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (failure: DocumentExportException) {
-            session.failSaveDestination(request.format, failure.failure.userMessage)
+        val openedDestination = checkNotNull(destination)
+        val actualDestinationKeys = dev.soupslurpr.beautyxt.ui.editor.writableDocumentKeysForDescriptor(
+            context = applicationContext,
+            uri = uri,
+            descriptorIdentityKey = openedDestination.fileIdentityKey
+        )
+        // Recheck live source identity (fail-closed on indeterminate probes) and refresh active
+        // leases AFTER opening the destination descriptor so atomic replacements cannot slip past.
+        val currentSourceIdentity = resolveCurrentSourceIdentity()
+        val emptyBeforeAcquire = openedDestination.isCurrentlyEmptyRegularFile()
+        if (
+            currentSourceIdentity.conflictsWith(
+                destinationKeys = actualDestinationKeys,
+                destinationHasRegularInode = openedDestination.fileIdentityKey != null,
+                destinationIsEmpty = emptyBeforeAcquire
+            )
+        ) {
+            session.failSaveDestination(request.format, CURRENT_SOURCE_DESTINATION_MESSAGE)
             return
-        } catch (_: Exception) {
+        }
+        val copyLease = WritableDocumentRegistry.shared.acquireRefreshingWithCancelCleanup(
+            documentKeys = actualDestinationKeys,
+            destinationIsEmpty = emptyBeforeAcquire
+        )
+        if (copyLease == null) {
             session.failSaveDestination(
-                request.format,
-                UiText.Resource(R.string.operation_destination_unavailable)
+                format = request.format,
+                message = UiText.Resource(R.string.operation_destination_unavailable)
             )
             return
         }
-    var accepted = false
-    try {
-        accepted =
-            session.saveSelectedDestination(
+        unclaimedCopyLease = copyLease
+        // Re-verify an empty destination did not gain concurrent content while probing/acquiring.
+        if (emptyBeforeAcquire && !openedDestination.isCurrentlyEmptyRegularFile()) {
+            session.failSaveDestination(
                 format = request.format,
-                destinationOwner = destination
-            ) { snapshot, expectedBytes ->
-                exporter.save(
-                    destination = destination,
-                    snapshot = snapshot,
-                    expectedBytes = expectedBytes
-                )
-            }
-    } finally {
-        if (!accepted) {
-            destination.close()
+                message = UiText.Resource(R.string.operation_destination_unavailable)
+            )
+            return
         }
+        val copyLeaseRef = java.util.concurrent.atomic.AtomicReference<AutoCloseable?>(unclaimedCopyLease)
+        unclaimedCopyLease = null
+        val leaseCleanup = AutoCloseable { copyLeaseRef.getAndSet(null)?.close() }
+        val combinedOwner = checkNotNull(
+            dev.soupslurpr.beautyxt.ui.editor.combineCloseables(openedDestination, leaseCleanup)
+        )
+        destination = null
+        var accepted = false
+        try {
+            accepted =
+                session.saveSelectedDestination(
+                    format = request.format,
+                    destinationOwner = combinedOwner
+                ) { snapshot, expectedBytes ->
+                    if (emptyBeforeAcquire && !openedDestination.isCurrentlyEmptyRegularFile()) {
+                        throw DocumentExportException(
+                            dev.soupslurpr.beautyxt.exporting.client.DocumentExportFailure.DESTINATION_UNAVAILABLE
+                        )
+                    }
+                    exporter.save(
+                        destination = openedDestination,
+                        snapshot = snapshot,
+                        expectedBytes = expectedBytes,
+                        releaseLeaseOnUncertainExit = { copyLeaseRef.getAndSet(null) }
+                    )
+                }
+        } finally {
+            if (!accepted) {
+                combinedOwner.close()
+            }
+        }
+    } finally {
+        destination?.close()
+        unclaimedCopyLease?.close()
     }
 }
 
-/** Retains one selected replacement destination as the autosave source. */
+/** Retains one selected replacement destination as the autosave source after verifying its exact descriptor. */
 private suspend fun saveSelectedSource(
     session: BeauTyXTSession,
     applicationContext: Context,
     importer: IsolatedDocumentImporter,
     exporter: IsolatedDocumentExporter,
     format: DocumentFormat,
-    uri: Uri
+    uri: Uri,
+    resolveCurrentSourceIdentity: suspend () -> dev.soupslurpr.beautyxt.ui.editor.SourceIdentitySnapshot
 ) {
     val sourceMetadata =
         querySelectedDocumentMetadata(
@@ -834,30 +970,131 @@ private suspend fun saveSelectedSource(
             return
         }
     var unclaimedSource: SelectedDocumentSource? = selectedSource
-    val documentSource =
-        try {
-            SelectedEditorDocumentSource.takeCreatedOwnership(
-                selectedSource = checkNotNull(unclaimedSource),
-                exporter = exporter,
-                readOnlyImporter = { sourceUri ->
-                    importer.open(uri = sourceUri, allowSourceWriteAccess = false)
-                }
-            ).also { unclaimedSource = null }
-        } finally {
-            unclaimedSource?.close()
-        }
-    var accepted = false
+    var unclaimedInitialDescriptor: android.os.ParcelFileDescriptor? = null
+    var unclaimedWriteLease: dev.soupslurpr.beautyxt.ui.editor.WritableDocumentLease? = null
     try {
-        accepted =
-            session.saveSelectedSource(
+        // Open the actual non-truncating `rw` descriptor BEFORE adopting the replacement source
+        // so any alias or lease conflict is rejected cleanly without disturbing the current source.
+        val initialDescriptor =
+            try {
+                selectedSource.openReadWriteDescriptor()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                session.failSaveDestination(
+                    format = format,
+                    message = UiText.Resource(R.string.operation_destination_unavailable)
+                )
+                return
+            }
+        unclaimedInitialDescriptor = initialDescriptor
+        // Verify the descriptor matches the export worker's autosave contract (seekable regular
+        // rw file with a verified kernel inode, initially empty for a new source baseline).
+        val verifiedSourceMetadata =
+            dev.soupslurpr.beautyxt.ipc.probeProviderDescriptorMetadata(
+                descriptor = initialDescriptor,
+                timeoutMillis = 5_000L,
+                defaultValue = false to null
+            ) { fd ->
+                val compatible = dev.soupslurpr.beautyxt.importing.client.isCompatibleAutosaveDescriptor(fd) &&
+                    dev.soupslurpr.beautyxt.importing.client.isEmptyRegularFile(fd)
+                if (compatible) {
+                    val identity = dev.soupslurpr.beautyxt.importing.client.probeDescriptorFileIdentity(fd)
+                    if (identity is dev.soupslurpr.beautyxt.importing.client.DescriptorFileIdentity.Regular) {
+                        true to identity.key
+                    } else {
+                        false to null
+                    }
+                } else {
+                    false to null
+                }
+            }
+        val (isCompatibleEmptySource, openedIdentityKey) = verifiedSourceMetadata
+        if (!isCompatibleEmptySource || openedIdentityKey == null) {
+            session.failSaveDestination(
                 format = format,
-                documentSource = documentSource,
-                sourceDisplayName = sourceMetadata.displayName,
-                sourceMetadata = sourceMetadata
+                message = UiText.Resource(R.string.operation_destination_unavailable)
             )
-    } finally {
-        if (!accepted) {
-            documentSource.close()
+            return
         }
+        val actualDestinationKeys = dev.soupslurpr.beautyxt.ui.editor.writableDocumentKeysForDescriptor(
+            context = applicationContext,
+            uri = uri,
+            descriptorIdentityKey = openedIdentityKey
+        )
+        val currentSourceIdentity = resolveCurrentSourceIdentity()
+        if (
+            currentSourceIdentity.conflictsWith(
+                destinationKeys = actualDestinationKeys,
+                destinationHasRegularInode = true,
+                destinationIsEmpty = true
+            )
+        ) {
+            session.failSaveDestination(format, CURRENT_SOURCE_DESTINATION_MESSAGE)
+            return
+        }
+        val acquiredLease = WritableDocumentRegistry.shared.acquireRefreshingWithCancelCleanup(
+            documentKeys = actualDestinationKeys,
+            liveProbe = {
+                dev.soupslurpr.beautyxt.ui.editor.probeWritableFileIdentity(applicationContext, uri)
+            },
+            destinationIsEmpty = true
+        )
+        if (acquiredLease == null) {
+            session.failSaveDestination(
+                format = format,
+                message = UiText.Resource(R.string.operation_destination_unavailable)
+            )
+            return
+        }
+        unclaimedWriteLease = acquiredLease
+        // Re-verify the leased descriptor is still empty on bounded background I/O after
+        // lease-refresh suspension so a destination populated concurrently is rejected before adoption.
+        val stillEmpty = dev.soupslurpr.beautyxt.importing.client.isEmptyRegularFileBounded(
+            initialDescriptor
+        )
+        if (!stillEmpty) {
+            session.failSaveDestination(
+                format = format,
+                message = UiText.Resource(R.string.operation_destination_unavailable)
+            )
+            return
+        }
+        val rawSource = SelectedEditorDocumentSource.takeCreatedOwnership(
+            selectedSource = checkNotNull(unclaimedSource),
+            exporter = exporter,
+            readOnlyImporter = { sourceUri ->
+                importer.open(uri = sourceUri, allowSourceWriteAccess = false)
+            },
+            writeLease = acquiredLease,
+            initialReadWriteDescriptor = unclaimedInitialDescriptor
+        ).also {
+            unclaimedSource = null
+            unclaimedInitialDescriptor = null
+        }
+        val lease = checkNotNull(unclaimedWriteLease).also { unclaimedWriteLease = null }
+        val documentSource = LeasedEditorDocumentSource(rawSource, lease)
+        var accepted = false
+        try {
+            accepted =
+                session.saveSelectedSource(
+                    format = format,
+                    documentSource = documentSource,
+                    sourceDisplayName = sourceMetadata.displayName,
+                    sourceMetadata = sourceMetadata
+                )
+        } finally {
+            if (!accepted) {
+                documentSource.close()
+            }
+        }
+    } finally {
+        try {
+            unclaimedInitialDescriptor?.close()
+        } catch (_: Exception) {
+            // Ignore close failure on rejected initial descriptor.
+        }
+        unclaimedWriteLease?.close()
+        unclaimedSource?.close()
     }
 }

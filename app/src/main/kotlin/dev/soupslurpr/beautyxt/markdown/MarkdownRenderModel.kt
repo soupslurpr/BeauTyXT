@@ -14,7 +14,9 @@ internal enum class MarkdownBlockKind(val protocolValue: Int) {
     Rule(5),
     HtmlLiteral(6),
     TableRow(7),
-    Footnote(8);
+    Footnote(8),
+    Frontmatter(9),
+    DetailsSummary(10);
 
     companion object {
         /** Returns the block kind for one validated protocol value. */
@@ -23,6 +25,34 @@ internal enum class MarkdownBlockKind(val protocolValue: Int) {
                 ?: throw MarkdownProtocolException("unsupported Markdown block kind $value")
     }
 }
+
+/** Identifies one closed semantic syntax-highlight role shared across Reading, Source, and PDF. */
+internal enum class SyntaxTokenRole(val protocolValue: Int) {
+    Keyword(1),
+    StringLiteral(2),
+    Comment(3),
+    Number(4),
+    Type(5),
+    Function(6),
+    Attribute(7),
+    Operator(8),
+    DiffAdded(9),
+    DiffRemoved(10),
+    DiffHeader(11);
+
+    companion object {
+        fun fromProtocolValue(value: Int): SyntaxTokenRole =
+            entries.firstOrNull { role -> role.protocolValue == value }
+                ?: throw MarkdownProtocolException("unsupported syntax token role $value")
+    }
+}
+
+/** Contains one bounded, non-overlapping UTF-16 syntax highlight run inside a code block. */
+internal data class MarkdownSyntaxRun(
+    val start: Int,
+    val end: Int,
+    val role: SyntaxTokenRole
+)
 
 /** Identifies the purpose of one inline destination. */
 internal enum class MarkdownInlineDestinationKind {
@@ -106,7 +136,13 @@ internal data class MarkdownRenderBlock(
     // Independent of block kind and metadata (for example, a code language).
     val footnoteLabel: String? = null,
     // The enclosing alert may begin outside this block's innermost quote.
-    val quoteAlertDepth: Int = 0
+    val quoteAlertDepth: Int = 0,
+    val startsFrontmatter: Boolean = false,
+    val detailsId: Int = 0,
+    val detailsParentId: Int = 0,
+    val detailsInitiallyOpen: Boolean = false,
+    val taskMarkerSourceUtf16: Long? = null,
+    val syntaxRuns: List<MarkdownSyntaxRun> = emptyList()
 )
 
 /** Contains one half-open rendered cell range, including an empty cell. */
@@ -136,5 +172,7 @@ internal data class MarkdownPreviewDocument(
     val spanCount: Int,
     val containsRawHtml: Boolean,
     val inputUtf16Length: Long = inputByteLength,
-    val sourceMapCount: Int = blocks.sumOf { block -> block.sourceMaps.size }
+    val sourceMapCount: Int = blocks.sumOf { block -> block.sourceMaps.size },
+    val syntaxRunCount: Int = blocks.sumOf { block -> block.syntaxRuns.size },
+    val syntaxTruncated: Boolean = false
 )

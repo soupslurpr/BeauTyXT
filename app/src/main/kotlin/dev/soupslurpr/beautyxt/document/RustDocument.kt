@@ -269,6 +269,41 @@ internal class RustDocument private constructor(private var nativeHandle: Long) 
             RustDocumentSnapshot(NativeDocument.captureRange(handle, expectedRevision, range.start, range.end))
         }
 
+    override fun convertLineEndings(expectedRevision: Long, target: DocumentLineEnding): DocumentMetrics {
+        require(expectedRevision >= 0) { "expected revision must be nonnegative" }
+        val wire = when (target) {
+            DocumentLineEnding.Lf -> 0
+            DocumentLineEnding.CrLf -> 1
+            DocumentLineEnding.Cr -> 2
+        }
+        return withOpenHandle { handle ->
+            DocumentMetricsPacketDecoder.decode(
+                NativeDocument.convertLineEndings(handle, expectedRevision, wire)
+            )
+        }
+    }
+
+    override fun capturePreviewSnapshot(
+        expectedRevision: Long,
+        range: Utf16Range,
+        replacement: String
+    ): EditorDocumentSnapshot {
+        require(expectedRevision >= 0) { "expected revision must be nonnegative" }
+        require(replacement.hasWellFormedUtf16()) { "preview replacement contains an unpaired surrogate" }
+        require('\r' !in replacement) { "preview replacement contains a carriage return" }
+        return withOpenHandle { handle ->
+            RustDocumentSnapshot(
+                NativeDocument.capturePreviewSnapshot(
+                    handle = handle,
+                    expectedRevision = expectedRevision,
+                    startUtf16 = range.start,
+                    endUtf16 = range.end,
+                    replacement = replacement
+                )
+            )
+        }
+    }
+
     /** Closes the native document exactly once. */
     override fun close() {
         synchronized(documentLock) {

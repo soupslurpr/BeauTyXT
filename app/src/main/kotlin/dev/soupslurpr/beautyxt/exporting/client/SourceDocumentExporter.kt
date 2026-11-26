@@ -11,6 +11,14 @@ internal interface SourceDocumentExporter {
         expectedSourceVersion: SourceVersion?
     ): SourceSaveReceipt
 
+    /** Conditionally replaces one source, retaining any in-flight write pin until worker exit on uncertain completion. */
+    suspend fun saveSource(
+        source: TransientSourceDescriptor,
+        stagedPackage: StagedSourceSavePackage,
+        expectedSourceVersion: SourceVersion?,
+        releaseLeaseOnUncertainExit: (() -> AutoCloseable?)?
+    ): SourceSaveReceipt = saveSource(source, stagedPackage, expectedSourceVersion)
+
     /** Verifies one exact source version through a read-only isolated probe. */
     suspend fun verifySource(
         source: TransientSourceDescriptor,

@@ -94,6 +94,7 @@ internal suspend fun readMarkdownPrintBlock(
 
     val text = StringBuilder(textLength)
     val spans = ArrayList<MarkdownInlineSpan>()
+    val syntaxRuns = ArrayList<dev.soupslurpr.beautyxt.markdown.MarkdownSyntaxRun>()
     val alignments = ArrayList<MarkdownTableAlignment>()
     val separators = ArrayList<Int>()
     var columnOffset = 0
@@ -105,6 +106,22 @@ internal suspend fun readMarkdownPrintBlock(
         val end = if (fragmentIndex == nextIndex) nextOffset else fragment.text.length
         val textOffset = text.length
         text.append(fragment.text, start, end)
+        fragment.syntaxRuns.forEach { run ->
+            val clippedStart = maxOf(start, run.start)
+            val clippedEnd = minOf(end, run.end)
+            if (clippedStart >= clippedEnd) return@forEach
+            val rebased = dev.soupslurpr.beautyxt.markdown.MarkdownSyntaxRun(
+                start = textOffset + clippedStart - start,
+                end = textOffset + clippedEnd - start,
+                role = run.role
+            )
+            val previous = syntaxRuns.lastOrNull()
+            if (previous != null && previous.end == rebased.start && previous.role == rebased.role) {
+                syntaxRuns[syntaxRuns.lastIndex] = previous.copy(end = rebased.end)
+            } else {
+                syntaxRuns += rebased
+            }
+        }
         fragment.spans.forEach { span ->
             val clippedStart = maxOf(start, span.start)
             val clippedEnd = minOf(end, span.end)
@@ -157,6 +174,7 @@ internal suspend fun readMarkdownPrintBlock(
             text = text.toString(),
             continuesPrevious = first.continuesPrevious || startOffset > 0,
             spans = spans,
+            syntaxRuns = syntaxRuns,
             source = MarkdownSourceRange(first.source.start, blocks[endExclusive - 1].source.end),
             sourceMaps = emptyList(),
             tableAlignments = alignments,

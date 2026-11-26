@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLocale
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
@@ -58,6 +59,8 @@ import dev.soupslurpr.beautyxt.document.DocumentRemovalAction
 import dev.soupslurpr.beautyxt.document.DocumentRemovalCapabilities
 import dev.soupslurpr.beautyxt.ui.UiText
 import dev.soupslurpr.beautyxt.ui.asString
+import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceButtons
+import dev.soupslurpr.beautyxt.ui.designsystem.SingleChoiceOption
 import java.text.NumberFormat
 
 private val FileInfoHorizontalPadding = 24.dp
@@ -102,43 +105,70 @@ internal fun FileInfoSheet(session: EditorSession, onDismiss: () -> Unit) {
             session.refreshDocumentRemovalCapabilities()
         }
     }
+    val readingTimeMinutes = estimatedReadingTimeMinutes(metrics.wordCount)
     val documentEntries =
-        listOf(
-            FileInfoEntry(
-                label = stringResource(R.string.file_info_format),
-                value = stringResource(
-                    if (session.documentFormat ==
-                        DocumentFormat.Markdown
-                    ) {
-                        R.string.format_markdown
-                    } else {
-                        R.string.format_plain_text
-                    }
+        buildList {
+            add(
+                FileInfoEntry(
+                    label = stringResource(R.string.file_info_format),
+                    value = stringResource(
+                        if (session.documentFormat ==
+                            DocumentFormat.Markdown
+                        ) {
+                            R.string.format_markdown
+                        } else {
+                            R.string.format_plain_text
+                        }
+                    )
                 )
-            ),
-            FileInfoEntry(
-                label = stringResource(R.string.file_info_size),
-                value = Formatter.formatFileSize(context, metrics.serializedByteLength),
-                supportingText = fileInfoExactBytes(
-                    context,
-                    metrics.serializedByteLength,
-                    numberFormat
-                )
-            ),
-            FileInfoEntry(
-                label = stringResource(R.string.file_info_lines),
-                value = numberFormat.format(metrics.lineCount)
-            ),
-            FileInfoEntry(
-                label = stringResource(R.string.file_info_words),
-                value = numberFormat.format(metrics.wordCount),
-                supportingText = stringResource(R.string.file_info_word_description)
-            ),
-            FileInfoEntry(
-                label = stringResource(R.string.file_info_characters),
-                value = numberFormat.format(metrics.characterLength)
             )
-        )
+            add(
+                FileInfoEntry(
+                    label = stringResource(R.string.file_info_size),
+                    value = Formatter.formatFileSize(context, metrics.serializedByteLength),
+                    supportingText = fileInfoExactBytes(
+                        context,
+                        metrics.serializedByteLength,
+                        numberFormat
+                    )
+                )
+            )
+            add(
+                FileInfoEntry(
+                    label = stringResource(R.string.file_info_lines),
+                    value = numberFormat.format(metrics.lineCount)
+                )
+            )
+            add(
+                FileInfoEntry(
+                    label = stringResource(R.string.file_info_words),
+                    value = numberFormat.format(metrics.wordCount),
+                    supportingText = stringResource(R.string.file_info_word_description)
+                )
+            )
+            if (readingTimeMinutes != null) {
+                add(
+                    FileInfoEntry(
+                        label = stringResource(R.string.file_info_reading_time),
+                        value = if (readingTimeMinutes == 0) {
+                            stringResource(R.string.file_info_reading_time_less_than_min)
+                        } else {
+                            pluralStringResource(
+                                R.plurals.file_info_reading_time_minutes,
+                                readingTimeMinutes,
+                                readingTimeMinutes
+                            )
+                        }
+                    )
+                )
+            }
+            add(
+                FileInfoEntry(
+                    label = stringResource(R.string.file_info_characters),
+                    value = numberFormat.format(metrics.characterLength)
+                )
+            )
+        }
     val encodingEntries =
         listOf(
             FileInfoEntry(
@@ -254,6 +284,45 @@ internal fun FileInfoSheet(session: EditorSession, onDismiss: () -> Unit) {
                 title = stringResource(R.string.file_info_text_format),
                 entries = encodingEntries
             )
+            if (!session.isViewOnly) {
+                val isUniformLf = metrics.insertedLineEnding == DocumentLineEnding.Lf &&
+                    !metrics.hasCrlfLineEndings && !metrics.hasCrLineEndings
+                val isUniformCrLf = metrics.insertedLineEnding == DocumentLineEnding.CrLf &&
+                    !metrics.hasLfLineEndings && !metrics.hasCrLineEndings
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = stringResource(R.string.file_info_convert_line_endings),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Spacer(Modifier.height(8.dp))
+                SingleChoiceButtons(
+                    choices = listOf(
+                        SingleChoiceOption(
+                            label = "LF",
+                            selected = isUniformLf,
+                            onClick = { session.convertLineEndings(DocumentLineEnding.Lf) },
+                            enabled = session.canConvertLineEndings && !isUniformLf
+                        ),
+                        SingleChoiceOption(
+                            label = "CRLF",
+                            selected = isUniformCrLf,
+                            onClick = { session.convertLineEndings(DocumentLineEnding.CrLf) },
+                            enabled = session.canConvertLineEndings && !isUniformCrLf
+                        )
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                session.lineEndingConversionMessage?.let { message ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = message.asString(),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                    )
+                }
+            }
             Spacer(Modifier.height(FileInfoSectionSpacing))
             FileInfoSection(
                 title = stringResource(R.string.file_info_source),
@@ -594,6 +663,13 @@ private fun FileInfoFact(entry: FileInfoEntry) {
             }
         }
     }
+}
+
+/** Estimates reading time in whole minutes at 200 WPM; returns 0 for `< 1 min`, null for 0 words. */
+internal fun estimatedReadingTimeMinutes(wordCount: Long): Int? {
+    if (wordCount <= 0L) return null
+    if (wordCount < 200L) return 0
+    return ((wordCount + 199L) / 200L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 }
 
 /** Returns every serialized line-ending style currently present. */

@@ -25,7 +25,8 @@ internal object MarkdownProtocol {
     const val RESULT_INTERNAL = 10
 
     const val DOCUMENT_FLAG_RAW_HTML = 1
-    const val DOCUMENT_FLAGS_MASK = DOCUMENT_FLAG_RAW_HTML
+    const val DOCUMENT_FLAG_SYNTAX_TRUNCATED = 1 shl 1
+    const val DOCUMENT_FLAGS_MASK = DOCUMENT_FLAG_RAW_HTML or DOCUMENT_FLAG_SYNTAX_TRUNCATED
 
     const val MIN_INPUT_BYTES = 0L
     const val MAX_INPUT_BYTES = 16L * 1024L * 1024L
@@ -37,6 +38,7 @@ internal object MarkdownProtocol {
     const val MAX_BLOCK_COUNT = 16_384L
     const val MAX_SPAN_COUNT = 131_072L
     const val MAX_SOURCE_MAP_COUNT = 262_144L + MAX_BLOCK_COUNT
+    const val MAX_SYNTAX_RUN_COUNT = 65_536L
 
     const val RESULT_VALUE_COUNT = 5
     const val RESULT_INPUT_BYTES_INDEX = 0

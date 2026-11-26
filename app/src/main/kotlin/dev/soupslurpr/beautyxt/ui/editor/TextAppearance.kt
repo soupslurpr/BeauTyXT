@@ -34,6 +34,9 @@ internal enum class AppearanceOption(
     FullWidth("full_width", R.string.appearance_full_width, 0f, 1f, 1f, 0f),
     Margin("margin", R.string.appearance_margin, 0f, 96f, 4f, 24f),
     Wrap("wrap", R.string.appearance_wrap, 0f, 1f, 1f, 1f),
+    LineNumbers("line_numbers", R.string.appearance_line_numbers, 0f, 1f, 1f, 1f),
+    SyntaxHighlighting("syntax_highlighting", R.string.appearance_syntax_highlighting, 0f, 1f, 1f, 1f, 1f),
+    KeepScreenOn("keep_screen_on", R.string.appearance_keep_screen_on, 0f, 1f, 1f, 0f, 0f),
     TabWidth("tab_width", R.string.appearance_tab_width, 1f, 16f, 1f, 4f),
     HeadingFont("heading_font", R.string.appearance_heading_font, 0f, 2f, 1f, 0f),
     HeadingScale("heading_scale", R.string.appearance_heading_scale, 75f, 200f, 5f, 100f),
@@ -66,7 +69,18 @@ internal enum class AppearanceOption(
     }
 
     companion object {
-        private val discreteOptions = setOf(Font, Weight, FullWidth, Wrap, TabWidth, HeadingFont, CodeFont)
+        private val discreteOptions = setOf(
+            Font,
+            Weight,
+            FullWidth,
+            Wrap,
+            LineNumbers,
+            SyntaxHighlighting,
+            KeepScreenOn,
+            TabWidth,
+            HeadingFont,
+            CodeFont
+        )
     }
 }
 
@@ -78,9 +92,11 @@ internal data class TextAppearance(val custom: Map<AppearanceOption, Float> = em
         number != option.default(group) &&
             (option != AppearanceOption.ColumnWidth || value(AppearanceOption.FullWidth, group) == 0f) &&
             when (option) {
-                AppearanceOption.Wrap, AppearanceOption.TabWidth -> group == AppearanceGroup.Source
+                AppearanceOption.Wrap, AppearanceOption.TabWidth, AppearanceOption.LineNumbers ->
+                    group == AppearanceGroup.Source
                 AppearanceOption.ParagraphSpacing, AppearanceOption.HeadingScale, AppearanceOption.HeadingFont,
                 AppearanceOption.CodeScale, AppearanceOption.CodeFont -> group == AppearanceGroup.Markdown
+                AppearanceOption.SyntaxHighlighting, AppearanceOption.KeepScreenOn -> false
                 else -> true
             }
     })

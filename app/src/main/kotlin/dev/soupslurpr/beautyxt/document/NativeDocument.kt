@@ -158,4 +158,39 @@ internal object NativeDocument {
     /** Closes a native document handle. */
     @JvmStatic
     external fun close(handle: Long)
+
+    /** Converts all serialized line endings uniformly as one Undo-able revision. */
+    @JvmStatic
+    external fun convertLineEndings(handle: Long, expectedRevision: Long, targetLineEnding: Int): ByteArray
+
+    /** Captures an ephemeral snapshot with one uncommitted draft range applied. */
+    @JvmStatic
+    external fun capturePreviewSnapshot(
+        handle: Long,
+        expectedRevision: Long,
+        startUtf16: Long,
+        endUtf16: Long,
+        replacement: String
+    ): Long
+
+    /** Resolves one filename or extension to its `beautyxt-syntax-core` language id. */
+    @JvmStatic
+    external fun syntaxLanguageForFilename(filename: String): Int
+
+    /** Advances cross-line syntax state over a bounded lookback prefix without allocating tokens. */
+    @JvmStatic
+    external fun advanceSyntaxState(languageId: Int, entryState: Long, text: String): Long
+
+    /** Highlights a bounded text chunk and returns `[exitState, packedToken...]`. */
+    @JvmStatic
+    external fun highlightSyntax(
+        languageId: Int,
+        entryState: Long,
+        text: String,
+        maxTokens: Int
+    ): LongArray
+
+    /** Returns whether [offsetUtf16] lies inside leading YAML frontmatter or Markdown code. */
+    @JvmStatic
+    external fun isMarkdownLiteralContext(text: String, offsetUtf16: Int): Boolean
 }

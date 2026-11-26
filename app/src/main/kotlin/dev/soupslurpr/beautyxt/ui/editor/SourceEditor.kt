@@ -16,15 +16,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -74,6 +77,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.ScrollAxisRange
 import androidx.compose.ui.semantics.horizontalScrollAxisRange
@@ -81,13 +85,22 @@ import androidx.compose.ui.semantics.error
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
-import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.pluralStringResource
@@ -100,6 +113,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -539,8 +553,15 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
                             .toDp()
                     }
                 }
-            val gutterWidth = lineNumberGutterWidth(measuredLabelWidth)
+            val showLineNumbers =
+                appearance.value(AppearanceOption.LineNumbers, AppearanceGroup.Source) == 1f
+            val gutterWidth = if (showLineNumbers) lineNumberGutterWidth(measuredLabelWidth) else 0.dp
             val column = appearance.textColumn(AppearanceGroup.Source, maxWidth, gutterWidth)
+            val syntaxLanguageId = remember(session.documentFormat, session.title) {
+                resolveSourceSyntaxLanguageId(session.documentFormat, session.title)
+            }
+            val syntaxEnabled =
+                appearance.value(AppearanceOption.SyntaxHighlighting, AppearanceGroup.Source) == 1f
             val startPadding = column.textStart - column.gutter
             val endPadding = (maxWidth - column.textStart - column.textWidth).coerceAtLeast(0.dp)
             val viewportPixels = with(density) {
@@ -585,7 +606,10 @@ private fun EditorBlockList(session: EditorSession, modifier: Modifier = Modifie
                             editorBlock = editorBlock,
                             lineNumberStyle = lineNumberStyle,
                             lineNumberWidth = gutterWidth,
-                            useLineNumberGutter = column.gutter > 0.dp,
+                            showLineNumbers = showLineNumbers,
+                            useLineNumberGutter = showLineNumbers && column.gutter > 0.dp,
+                            syntaxLanguageId = syntaxLanguageId,
+                            syntaxEnabled = syntaxEnabled,
                             generation = generation,
                             horizontal = horizontal,
                             matchRange = visibleMatchRange,
@@ -849,6 +873,63 @@ private fun EditorNoticeRow(message: String, modifier: Modifier = Modifier) {
     }
 }
 
+/** Displays a compact, non-focusable Markdown formatting strip docked above the IME. */
+@Composable
+private fun MarkdownFormattingStrip(
+    onAction: (MarkdownFormatAction) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val actions = listOf(
+        Triple(MarkdownFormatAction.Bold, "B", R.string.markdown_format_bold),
+        Triple(MarkdownFormatAction.Italic, "I", R.string.markdown_format_italic),
+        Triple(MarkdownFormatAction.Code, "</>", R.string.markdown_format_code),
+        Triple(MarkdownFormatAction.Link, "[]()", R.string.markdown_format_link),
+        Triple(MarkdownFormatAction.Heading, "H", R.string.markdown_format_heading),
+        Triple(MarkdownFormatAction.BulletList, "•", R.string.markdown_format_bullet),
+        Triple(MarkdownFormatAction.Checklist, "☑", R.string.markdown_format_checklist),
+        Triple(MarkdownFormatAction.Quote, ">", R.string.markdown_format_quote),
+        Triple(MarkdownFormatAction.Indent, "⇥", R.string.markdown_format_indent),
+        Triple(MarkdownFormatAction.Outdent, "⇤", R.string.markdown_format_outdent)
+    )
+    Surface(
+        modifier = modifier
+            .focusProperties { canFocus = false }
+            .registerBottomOverlayObstruction("markdown-format-strip"),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 2.dp
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                actions.forEach { (action, glyph, labelRes) ->
+                    val label = stringResource(labelRes)
+                    TextButton(
+                        onClick = { onAction(action) },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .focusProperties { canFocus = false }
+                            .semantics { contentDescription = label },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = glyph,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** Displays one selectable Rust render block in the read-only fallback viewport. */
 @Composable
 private fun ReadOnlyBlock(
@@ -857,7 +938,10 @@ private fun ReadOnlyBlock(
     editorBlock: EditorRenderBlock,
     lineNumberStyle: TextStyle,
     lineNumberWidth: Dp,
+    showLineNumbers: Boolean,
     useLineNumberGutter: Boolean,
+    syntaxLanguageId: Int,
+    syntaxEnabled: Boolean,
     matchRange: Utf16Range?,
     generation: Any,
     horizontal: SourceHorizontalViewport?,
@@ -881,14 +965,31 @@ private fun ReadOnlyBlock(
         block.continuesAtStart
     ).asString()
     val text: @Composable (Modifier) -> Unit = { cell ->
-        ReadOnlyBlockText(block.text, revision, block.globalUtf16Start, highlights, highlightRange,
-            generation, horizontal, onTextMeasurement, onRelease, cell)
+        ReadOnlyBlockText(
+            session = session,
+            text = block.text,
+            revision = revision,
+            globalStart = block.globalUtf16Start,
+            highlights = highlights,
+            highlightRange = highlightRange,
+            syntaxLanguageId = syntaxLanguageId,
+            syntaxEnabled = syntaxEnabled,
+            generation = generation,
+            horizontal = horizontal,
+            onMeasurement = onTextMeasurement,
+            onRelease = onRelease,
+            modifier = cell
+        )
     }
     val blockModifier =
         Modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) {}
-    if (useLineNumberGutter) {
+    if (!showLineNumbers) {
+        Box(modifier = blockModifier) {
+            text(Modifier.fillMaxWidth())
+        }
+    } else if (useLineNumberGutter) {
         Row(modifier = blockModifier, verticalAlignment = Alignment.Top) {
             LineNumber(
                 logicalLine = block.logicalLine,
@@ -919,11 +1020,14 @@ private fun ReadOnlyBlock(
 /** Displays selectable block text and reports its origin for viewport restoration. */
 @Composable
 private fun ReadOnlyBlockText(
+    session: EditorSession,
     text: String,
     revision: Long,
     globalStart: Long,
     highlights: List<TextRange>,
     highlightRange: TextRange?,
+    syntaxLanguageId: Int,
+    syntaxEnabled: Boolean,
     generation: Any,
     horizontal: SourceHorizontalViewport?,
     onMeasurement: (BlockTextMeasurement) -> Unit,
@@ -942,9 +1046,27 @@ private fun ReadOnlyBlockText(
         offset = { (it as? SelectionPoint.Source)?.offset?.takeIf { offset -> offset in globalStart..globalStart + text.length }?.let { (it - globalStart).toInt() } },
         sourceFindDecoration = SourceFindDecoration(revision, text), clipBounds = { clip })
     val styles = findHighlightStyles()
+    val syntaxRuns = rememberReadOnlySourceSyntaxRuns(
+        session = session,
+        revision = revision,
+        globalStart = globalStart,
+        text = text,
+        languageId = syntaxLanguageId,
+        enabled = syntaxEnabled
+    )
+    val syntaxPalette = if (syntaxEnabled && syntaxRuns.isNotEmpty()) {
+        rememberSyntaxHighlightPalette()
+    } else {
+        null
+    }
     val renderedText =
-        remember(text, highlights, highlightRange, styles, appearance) {
-            sourceDisplayText(findHighlightedText(text, highlights, highlightRange, styles), appearance)
+        remember(text, highlights, highlightRange, styles, appearance, syntaxRuns, syntaxPalette) {
+            sourceDisplayText(
+                text = findHighlightedText(text, highlights, highlightRange, styles),
+                appearance = appearance,
+                syntaxRuns = syntaxRuns,
+                syntaxPalette = syntaxPalette
+            )
         }
     val content: @Composable () -> Unit = {
         Text(
@@ -979,7 +1101,7 @@ private fun ReadOnlyBlockText(
 }
 
 /** Displays one stable multiline text field backed by a bounded Rust window. */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ActiveEditWindowEditor(
     session: EditorSession,
@@ -1003,9 +1125,20 @@ private fun ActiveEditWindowEditor(
         mutableStateOf<TextLayoutResult?>(null)
     }
     val textFieldState = draft.textFieldState
-    val clipboard = LocalClipboard.current
+    val baseClipboard = LocalClipboard.current
     val clipboardSelection = remember(draft) { SourceClipboardSelection() }
-    val sourceClipboard = remember(clipboard, clipboardSelection) { SourceAppearanceClipboard(clipboard, clipboardSelection) }
+    val fieldClipboard = remember(baseClipboard, clipboardSelection) {
+        sourceTabPreservingClipboard(baseClipboard, clipboardSelection)
+    }
+    val hasActiveFocus = draft.isEditorFocused && windowInfo.isWindowFocused
+    DisposableEffect(clipboardSelection, hasActiveFocus) {
+        if (!hasActiveFocus) {
+            clipboardSelection.clear()
+        }
+        onDispose {
+            clipboardSelection.clear()
+        }
+    }
     val selectionInset = with(LocalDensity.current) { 16.dp.toPx() }
     var viewportClip by remember(draft) { mutableStateOf<Rect?>(null) }
     var bottomClearancePx by remember(draft.scrollState) { mutableFloatStateOf(0f) }
@@ -1051,23 +1184,77 @@ private fun ActiveEditWindowEditor(
         blockUtf16End = edit.snapshot.range.end
     )
     val highlightStyles = findHighlightStyles()
-    val outputTransformation = remember(edit, highlights, currentHighlight, highlightStyles, appearance, clipboardSelection) {
-        sourceAppearanceTransformation(appearance, clipboardSelection, edit.snapshot.text, highlights,
-            currentHighlight, highlightStyles)
-    }
     val hasChanges = draft.hasChanges
     val hasComposition by
         remember(edit.generation, textFieldState) {
             derivedStateOf { textFieldState.composition != null }
         }
+    val syntaxLanguageId = remember(session.documentFormat, session.title) {
+        resolveSourceSyntaxLanguageId(session.documentFormat, session.title)
+    }
+    val syntaxEnabled =
+        appearance.value(AppearanceOption.SyntaxHighlighting, AppearanceGroup.Source) == 1f
+    val highlightedSyntax = rememberActiveSourceSyntaxRuns(
+        session = session,
+        revision = edit.snapshot.metrics.revision,
+        windowStart = edit.snapshot.range.start,
+        text = textFieldState.text.toString(),
+        languageId = syntaxLanguageId,
+        enabled = syntaxEnabled
+    )
+    val syntaxPalette = if (syntaxEnabled) rememberSyntaxHighlightPalette() else null
+    val appearanceState = rememberUpdatedState(appearance)
+    val expectedTextState = rememberUpdatedState(edit.snapshot.text)
+    val highlightsState = rememberUpdatedState(highlights)
+    val currentHighlightState = rememberUpdatedState(currentHighlight)
+    val highlightStylesState = rememberUpdatedState(highlightStyles)
+    val highlightedSyntaxState = rememberUpdatedState(highlightedSyntax)
+    val syntaxPaletteState = rememberUpdatedState(syntaxPalette)
+    val outputTransformation = remember(clipboardSelection, textFieldState) {
+        sourceAppearanceTransformation(
+            appearanceState = { appearanceState.value },
+            clipboardSelection = clipboardSelection,
+            expectedTextState = { expectedTextState.value },
+            highlightsState = { highlightsState.value },
+            currentState = { currentHighlightState.value },
+            stylesState = { highlightStylesState.value },
+            highlightedSyntaxState = { highlightedSyntaxState.value },
+            syntaxPaletteState = { syntaxPaletteState.value },
+            hasCompositionState = { textFieldState.composition != null }
+        )
+    }
     val canAcceptInput = session.canApplyEditorInput(draft)
+    val isMarkdownEditable =
+        session.documentFormat == dev.soupslurpr.beautyxt.document.DocumentFormat.Markdown &&
+            !session.isViewOnly
+    val applyLocalEdit: ((CharSequence, TextRange) -> LocalEditResult?) -> Boolean = { transform ->
+        if (!canAcceptInput || hasComposition) {
+            false
+        } else {
+            val result = transform(textFieldState.text, textFieldState.selection)
+            if (result != null && result.text.length <= EDIT_DRAFT_MAX_UTF16_UNITS) {
+                textFieldState.edit {
+                    replace(0, length, result.text)
+                    selection = result.selection
+                }
+                true
+            } else {
+                false
+            }
+        }
+    }
+    val assistSuppression = remember(draft) { MarkdownAssistSuppression() }
     val inputTransformation =
-        remember(draft) {
+        remember(draft, isMarkdownEditable) {
             editorInputTransformation(
                 canAcceptInput = { session.canApplyEditorInput(draft) },
                 onBulkEdit = { proposal -> session.requestBulkEdit(draft, proposal) },
                 onRejection = draft::reportInputRejection,
-                clearRejection = draft::clearInputRejection
+                clearRejection = draft::clearInputRejection,
+                markdownAssistEnabled = { isMarkdownEditable },
+                hasComposition = { draft.textFieldState.composition != null },
+                hasPreviousWindow = { draft.edit.snapshot.hasPrevious },
+                consumeSuppressMarkdownAssist = assistSuppression::consume
             )
         }
     val isBusy =
@@ -1371,7 +1558,50 @@ private fun ActiveEditWindowEditor(
                 .imePadding()
     ) {
         val controlsMaxHeight = recoveryPanelMaxHeight(maxHeight)
-        val column = appearance.textColumn(AppearanceGroup.Source, maxWidth)
+        val showLineNumbers =
+            appearance.value(AppearanceOption.LineNumbers, AppearanceGroup.Source) == 1f
+        val lineNumberStyle =
+            MaterialTheme.typography.labelMedium.copy(
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        val textMeasurer = rememberTextMeasurer()
+        val maxLineNumber = remember(
+            showLineNumbers,
+            edit.snapshot.metrics.lineCount,
+            edit.snapshot.start.line,
+            textFieldState.text.length
+        ) {
+            if (!showLineNumbers) {
+                1L
+            } else {
+                var newlines = 0L
+                val current = textFieldState.text
+                for (i in 0 until current.length) {
+                    if (current[i] == '\n') newlines += 1L
+                }
+                maxOf(edit.snapshot.metrics.lineCount, edit.snapshot.start.line + 1L + newlines)
+                    .coerceAtLeast(1L)
+            }
+        }
+        val measuredLabelWidth = remember(showLineNumbers, maxLineNumber, lineNumberStyle, textMeasurer, density) {
+            if (!showLineNumbers) {
+                0.dp
+            } else {
+                with(density) {
+                    textMeasurer
+                        .measure(
+                            text = maxLineNumber.toString(),
+                            style = lineNumberStyle,
+                            maxLines = 1
+                        ).size.width
+                        .toDp()
+                }
+            }
+        }
+        val gutterWidth = if (showLineNumbers) lineNumberGutterWidth(measuredLabelWidth) else 0.dp
+        val column = appearance.textColumn(AppearanceGroup.Source, maxWidth, gutterWidth)
+        val activeGutterWidth = if (showLineNumbers) column.gutter else 0.dp
         val columnModifier = Modifier.padding(start = column.textStart).width(column.textWidth)
         val resolvedSourceStyle = sourceStyle.copy(
             color = if (sourceStyle.color == Color.Unspecified) MaterialTheme.colorScheme.onSurface else sourceStyle.color
@@ -1379,17 +1609,74 @@ private fun ActiveEditWindowEditor(
         val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
         val cursorColor = if (fieldMessage != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
         Column(modifier = Modifier.fillMaxSize()) {
-            Box(
-                columnModifier
+            Row(
+                modifier = Modifier
+                    .padding(start = (column.textStart - activeGutterWidth).coerceAtLeast(0.dp))
+                    .width(column.textWidth + activeGutterWidth)
                     .weight(1f)
-                    .clipToBounds()
-                    .nestedScroll(bottomClearanceConnection)
-                    .onGloballyPositioned { viewportClip = it.boundsInWindow() }
-                    .then(if (wraps) Modifier else Modifier.horizontalScroll(horizontalScroll))
             ) {
-                CompositionLocalProvider(LocalClipboard provides sourceClipboard) {
-                    BasicTextField(
-                        state = textFieldState,
+                if (activeGutterWidth > 0.dp) {
+                    val topPaddingPx = with(density) { 16.dp.toPx() }
+                    val gutterEndGapPx = with(density) { 12.dp.toPx() }
+                    val startingLogicalLine = edit.snapshot.start.line + 1L
+                    androidx.compose.foundation.Canvas(
+                        modifier = Modifier
+                            .width(activeGutterWidth)
+                            .fillMaxHeight()
+                            .clipToBounds()
+                    ) {
+                        val layout = textLayoutResult ?: return@Canvas
+                        if (layout.lineCount <= 0) return@Canvas
+                        val scrollY = draft.scrollState.value.toFloat() + bottomClearancePx
+                        val text = layout.layoutInput.text
+                        val firstVisual = layout.getLineForVerticalPosition(
+                            (scrollY - topPaddingPx).coerceAtLeast(0f)
+                        )
+                        val lastVisual = layout.getLineForVerticalPosition(
+                            (scrollY - topPaddingPx + size.height).coerceAtLeast(0f)
+                        )
+                        val firstStart = layout.getLineStart(firstVisual).coerceIn(0, text.length)
+                        var logicalLine = startingLogicalLine
+                        for (i in 0 until firstStart) {
+                            if (text[i] == '\n') logicalLine += 1L
+                        }
+                        for (visualLine in firstVisual..lastVisual) {
+                            val lineStart = layout.getLineStart(visualLine).coerceIn(0, text.length)
+                            val isLogicalStart =
+                                visualLine == 0 || (lineStart > 0 && text[lineStart - 1] == '\n')
+                            if (visualLine > firstVisual && isLogicalStart) {
+                                logicalLine += 1L
+                            }
+                            if (isLogicalStart) {
+                                val measured = textMeasurer.measure(
+                                    text = logicalLine.toString(),
+                                    style = lineNumberStyle,
+                                    maxLines = 1
+                                )
+                                val drawY = topPaddingPx + layout.getLineBaseline(visualLine) -
+                                    scrollY - measured.firstBaseline
+                                val drawX = (size.width - gutterEndGapPx - measured.size.width)
+                                    .coerceAtLeast(0f)
+                                drawText(
+                                    textLayoutResult = measured,
+                                    topLeft = Offset(drawX, drawY)
+                                )
+                            }
+                        }
+                    }
+                }
+                Box(
+                    Modifier
+                        .width(column.textWidth)
+                        .fillMaxHeight()
+                        .clipToBounds()
+                        .nestedScroll(bottomClearanceConnection)
+                        .onGloballyPositioned { viewportClip = it.boundsInWindow() }
+                        .then(if (wraps) Modifier else Modifier.horizontalScroll(horizontalScroll))
+                ) {
+                CompositionLocalProvider(LocalClipboard provides fieldClipboard) {
+                BasicTextField(
+                    state = textFieldState,
                         modifier =
                             Modifier
                                 .widthIn(min = column.textWidth)
@@ -1403,7 +1690,15 @@ private fun ActiveEditWindowEditor(
                                     val clip = content.clipEntry.clipData
                                     val text = if (content.source == TransferableContent.Source.Clipboard && clip.itemCount == 1)
                                         clip.getItemAt(0).text else null
-                                    if (text == null || text.length <= EDIT_DRAFT_MAX_UTF16_UNITS) content else {
+                                    if (text == null || text.length <= EDIT_DRAFT_MAX_UTF16_UNITS) {
+                                        if (content.source == TransferableContent.Source.Clipboard ||
+                                            content.source == TransferableContent.Source.DragAndDrop ||
+                                            content.source == TransferableContent.Source.Keyboard
+                                        ) {
+                                            assistSuppression.arm()
+                                        }
+                                        content
+                                    } else {
                                         if (session.canApplyEditorInput(draft)) {
                                             val proposal = EditorBulkEdit.insertion(textFieldState.text.toString(),
                                                 textFieldState.selection, text.toString())
@@ -1418,11 +1713,86 @@ private fun ActiveEditWindowEditor(
                                     }
                                 })
                                 .onPreviewKeyEvent { event ->
-                                    handleEditorHistoryShortcut(
-                                        event = event,
-                                        onUndo = session::requestUndo,
-                                        onRedo = session::requestRedo
-                                    )
+                                    if (event.type == KeyEventType.KeyDown) {
+                                        val isPasteKey =
+                                            ((event.isCtrlPressed || event.isMetaPressed) &&
+                                                !event.isAltPressed && event.key == Key.V) ||
+                                                (event.isShiftPressed && !event.isCtrlPressed &&
+                                                    !event.isAltPressed && event.key == Key.Insert) ||
+                                                event.key == Key.Paste
+                                        if (isPasteKey) {
+                                            assistSuppression.arm()
+                                        } else if (
+                                            event.key != Key.CtrlLeft && event.key != Key.CtrlRight &&
+                                            event.key != Key.ShiftLeft && event.key != Key.ShiftRight &&
+                                            event.key != Key.AltLeft && event.key != Key.AltRight &&
+                                            event.key != Key.MetaLeft && event.key != Key.MetaRight
+                                        ) {
+                                            assistSuppression.clear()
+                                        }
+                                    }
+                                    if (
+                                        handleEditorHistoryShortcut(
+                                            event = event,
+                                            onUndo = session::requestUndo,
+                                            onRedo = session::requestRedo
+                                        )
+                                    ) {
+                                        true
+                                    } else if (event.type == KeyEventType.KeyDown && canAcceptInput && !hasComposition) {
+                                        when {
+                                            event.key == Key.Tab && !event.isCtrlPressed && !event.isAltPressed && !event.isMetaPressed ->
+                                                applyLocalEdit { text, sel ->
+                                                    indentSelectedLines(
+                                                        text = text,
+                                                        start = sel.min,
+                                                        end = sel.max,
+                                                        outdent = event.isShiftPressed,
+                                                        hasPreviousWindow = edit.snapshot.hasPrevious
+                                                    )
+                                                }
+                                            event.isAltPressed && !event.isCtrlPressed && !event.isMetaPressed &&
+                                                (event.key == Key.DirectionUp || event.key == Key.DirectionDown) ->
+                                                applyLocalEdit { text, sel ->
+                                                    moveSelectedLines(
+                                                        text = text,
+                                                        selection = sel,
+                                                        moveUp = event.key == Key.DirectionUp,
+                                                        hasPreviousWindow = edit.snapshot.hasPrevious,
+                                                        hasNextWindow = edit.snapshot.hasNext
+                                                    )
+                                                }
+                                            (event.isCtrlPressed || event.isMetaPressed) && !event.isAltPressed && !event.isShiftPressed &&
+                                                event.key == Key.D ->
+                                                applyLocalEdit { text, sel ->
+                                                    duplicateSelectedLines(
+                                                        text = text,
+                                                        selection = sel,
+                                                        hasPreviousWindow = edit.snapshot.hasPrevious,
+                                                        hasNextWindow = edit.snapshot.hasNext
+                                                    )
+                                                }
+                                            isMarkdownEditable && (event.isCtrlPressed || event.isMetaPressed) &&
+                                                !event.isAltPressed && !event.isShiftPressed -> when (event.key) {
+                                                Key.B -> applyLocalEdit { text, sel ->
+                                                    applyMarkdownFormatAction(text, sel, MarkdownFormatAction.Bold)
+                                                }
+                                                Key.I -> applyLocalEdit { text, sel ->
+                                                    applyMarkdownFormatAction(text, sel, MarkdownFormatAction.Italic)
+                                                }
+                                                Key.E -> applyLocalEdit { text, sel ->
+                                                    applyMarkdownFormatAction(text, sel, MarkdownFormatAction.Code)
+                                                }
+                                                Key.K -> applyLocalEdit { text, sel ->
+                                                    applyMarkdownFormatAction(text, sel, MarkdownFormatAction.Link)
+                                                }
+                                                else -> false
+                                            }
+                                            else -> false
+                                        }
+                                    } else {
+                                        false
+                                    }
                                 }
                                 .onFocusChanged { focusState ->
                                     if (focusState.isFocused) {
@@ -1481,6 +1851,31 @@ private fun ActiveEditWindowEditor(
                         }
                     )
                 }
+                }
+            }
+            val showMarkdownStrip =
+                isMarkdownEditable &&
+                    WindowInsets.isImeVisible &&
+                    !session.isFindVisible &&
+                    session.documentSelection == null &&
+                    !hasBottomBanners &&
+                    this@BoxWithConstraints.maxHeight >= 220.dp
+            if (showMarkdownStrip) {
+                MarkdownFormattingStrip(
+                    onAction = { action ->
+                        applyLocalEdit { text, sel ->
+                            applyMarkdownFormatAction(
+                                text = text,
+                                selection = sel,
+                                action = action,
+                                hasPreviousWindow = edit.snapshot.hasPrevious
+                            )
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = bottomOverlayDp)
+                )
             }
             if (hasBottomBanners) {
                 Column(modifier = Modifier.padding(bottom = bottomOverlayDp)) {

@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import dev.soupslurpr.beautyxt.markdown.MarkdownSyntaxRun
 
 internal val LocalDocumentAppearances = staticCompositionLocalOf { DocumentAppearances() }
 
@@ -148,11 +149,17 @@ internal fun tabCanDisplayAsSpace(
     return characters.isBoundary(spaceIndex) && characters.isBoundary(spaceIndex + 1)
 }
 
-internal fun sourceDisplayText(text: AnnotatedString, appearance: TextAppearance): AnnotatedString {
+internal fun sourceDisplayText(
+    text: AnnotatedString,
+    appearance: TextAppearance,
+    syntaxRuns: List<MarkdownSyntaxRun> = emptyList(),
+    syntaxPalette: SyntaxHighlightPalette? = null
+): AnnotatedString {
     val raw = text.text
     val wordSpacing = appearance.value(AppearanceOption.WordSpacing, AppearanceGroup.Source) != 0f
     val hasTab = '\t' in raw
-    if (!wordSpacing && !hasTab) return text
+    val hasSyntax = syntaxPalette != null && syntaxRuns.isNotEmpty()
+    if (!wordSpacing && !hasTab && !hasSyntax) return text
     val spaceStyle = if (wordSpacing) appearanceSpaceStyle(appearance, AppearanceGroup.Source) else null
     val tabStyle = if (hasTab) tabDisplayStyle(appearance.value(AppearanceOption.TabWidth, AppearanceGroup.Source)) else null
     var display: CharArray? = null
@@ -161,7 +168,19 @@ internal fun sourceDisplayText(text: AnnotatedString, appearance: TextAppearance
         cachedBreakIterator ?: java.text.BreakIterator.getCharacterInstance(java.util.Locale.ROOT)
             .also { cachedBreakIterator = it }
     }
-    val spans = ArrayList<AnnotatedString.Range<SpanStyle>>(text.spanStyles.size)
+    val spans = ArrayList<AnnotatedString.Range<SpanStyle>>(
+        text.spanStyles.size + if (hasSyntax) syntaxRuns.size else 0
+    )
+    if (syntaxPalette != null && syntaxRuns.isNotEmpty()) {
+        syntaxRuns.forEach { run ->
+            val start = run.start.coerceIn(0, raw.length)
+            val end = run.end.coerceIn(start, raw.length)
+            if (start < end) {
+                spans.add(AnnotatedString.Range(syntaxPalette.styleFor(run.role), start, end))
+            }
+        }
+    }
+    // Keep existing Find highlights on top of syntax styles.
     spans.addAll(text.spanStyles)
     for (index in raw.indices) {
         when (raw[index]) {
@@ -188,8 +207,45 @@ internal fun sourceAppearanceTransformation(
     expectedText: String,
     highlights: List<TextRange>,
     current: TextRange?,
-    styles: FindHighlightStyles
+    styles: FindHighlightStyles,
+    highlightedSyntax: HighlightedSourceText? = null,
+    syntaxPalette: SyntaxHighlightPalette? = null,
+    hasComposition: Boolean = false
+): OutputTransformation = sourceAppearanceTransformation(
+    appearanceState = { appearance },
+    clipboardSelection = clipboardSelection,
+    expectedTextState = { expectedText },
+    highlightsState = { highlights },
+    currentState = { current },
+    stylesState = { styles },
+    highlightedSyntaxState = { highlightedSyntax },
+    syntaxPaletteState = { syntaxPalette },
+    hasCompositionState = { hasComposition }
+)
+
+/**
+ * Snapshot-backed output styling keeps BasicTextField's OutputTransformation identity stable
+ * so async syntax highlighting, Find highlights, and IME composition never restart InputConnection.
+ */
+internal fun sourceAppearanceTransformation(
+    appearanceState: () -> TextAppearance,
+    clipboardSelection: SourceClipboardSelection,
+    expectedTextState: () -> String,
+    highlightsState: () -> List<TextRange>,
+    currentState: () -> TextRange?,
+    stylesState: () -> FindHighlightStyles,
+    highlightedSyntaxState: () -> HighlightedSourceText?,
+    syntaxPaletteState: () -> SyntaxHighlightPalette?,
+    hasCompositionState: () -> Boolean
 ): OutputTransformation = OutputTransformation {
+    val appearance = appearanceState()
+    val expectedText = expectedTextState()
+    val highlights = highlightsState()
+    val current = currentState()
+    val styles = stylesState()
+    val highlightedSyntax = highlightedSyntaxState()
+    val syntaxPalette = syntaxPaletteState()
+    val hasComposition = hasCompositionState()
     val raw = originalText
     clipboardSelection.capture(raw, originalSelection)
     val decorateFind = (highlights.isNotEmpty() || current != null) && raw.contentEquals(expectedText)
@@ -239,6 +295,24 @@ internal fun sourceAppearanceTransformation(
             when (raw[index]) {
                 '\t' -> if (skipped == null || index !in skipped) addStyle(tabStyle, index, index + 1)
                 ' ' -> if (wordSpacing) addStyle(spaceStyle, index, index + 1)
+            }
+        }
+    }
+    if (!hasComposition && syntaxPalette != null && highlightedSyntax != null &&
+        highlightedSyntax.runs.isNotEmpty()
+    ) {
+        val exactMatch = raw.contentEquals(highlightedSyntax.text)
+        val stablePrefixEnd = if (exactMatch) {
+            raw.length
+        } else {
+            val limit = minOf(raw.length, highlightedSyntax.text.length)
+            var common = 0
+            while (common < limit && raw[common] == highlightedSyntax.text[common]) common++
+            common
+        }
+        highlightedSyntax.runs.forEach { run ->
+            if (run.end <= stablePrefixEnd && run.start < run.end) {
+                addStyle(syntaxPalette.styleFor(run.role), run.start, run.end)
             }
         }
     }

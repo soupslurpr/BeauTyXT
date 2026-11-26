@@ -6,18 +6,22 @@ import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
-private val PACKET_MAGIC = "BTXTMDR6".toByteArray(StandardCharsets.US_ASCII)
-private const val PACKET_VERSION = 6L
+private val PACKET_MAGIC = "BTXTMDR7".toByteArray(StandardCharsets.US_ASCII)
+private const val PACKET_VERSION = 7L
 private const val PACKET_HEADER_BYTES = 80L
-private const val BLOCK_HEADER_BYTES = 72L
+private const val BLOCK_HEADER_BYTES = 88L
 private const val SPAN_HEADER_BYTES = 24L
 private const val SOURCE_MAP_HEADER_BYTES = 24L
+private const val SYNTAX_RUN_BYTES = 8L
 private const val MAX_METADATA_BYTES = 4L * 1024L
 private const val MAX_LINK_DESTINATION_BYTES = 4L * 1024L
 private const val MAX_QUOTE_DEPTH = 32L
 private const val MAX_LIST_DEPTH = 32L
+private const val MAX_DETAILS_GROUPS = 1_024
 private const val DOCUMENT_FLAG_RAW_HTML = 1L
-private const val DOCUMENT_FLAGS_ALLOWED = DOCUMENT_FLAG_RAW_HTML
+private const val DOCUMENT_FLAG_SYNTAX_TRUNCATED = 1L shl 1
+private const val DOCUMENT_FLAGS_ALLOWED =
+    DOCUMENT_FLAG_RAW_HTML or DOCUMENT_FLAG_SYNTAX_TRUNCATED
 private const val BLOCK_FLAG_CONTINUATION = 1L
 private const val BLOCK_FLAG_ORDERED_LIST = 1L shl 1
 private const val BLOCK_FLAG_TASK_CHECKED = 1L shl 2
@@ -33,6 +37,9 @@ private const val BLOCK_FLAG_QUOTE_ALERT_START = 1L shl 11
 private const val BLOCK_FLAG_TABLE_START = 1L shl 12
 private const val BLOCK_FLAG_LIST_ITEM_CONTINUATION = 1L shl 13
 private const val BLOCK_FLAG_LIST_START = 1L shl 14
+private const val BLOCK_FLAG_FRONTMATTER_START = 1L shl 15
+private const val BLOCK_FLAG_DETAILS_OPEN = 1L shl 16
+private const val BLOCK_FLAG_HAS_TASK_MARKER = 1L shl 17
 private const val BLOCK_FLAGS_QUOTE_KIND =
     BLOCK_FLAG_QUOTE_NOTE or
         BLOCK_FLAG_QUOTE_TIP or
@@ -49,7 +56,11 @@ private const val BLOCK_FLAGS_ALLOWED =
         BLOCK_FLAGS_QUOTE_KIND or
         BLOCK_FLAG_QUOTE_ALERT_START or
         BLOCK_FLAG_TABLE_START or
-        BLOCK_FLAG_LIST_ITEM_CONTINUATION or BLOCK_FLAG_LIST_START
+        BLOCK_FLAG_LIST_ITEM_CONTINUATION or
+        BLOCK_FLAG_LIST_START or
+        BLOCK_FLAG_FRONTMATTER_START or
+        BLOCK_FLAG_DETAILS_OPEN or
+        BLOCK_FLAG_HAS_TASK_MARKER
 internal const val MARKDOWN_SPAN_STYLE_EMPHASIS = 1
 internal const val MARKDOWN_SPAN_STYLE_STRONG = 1 shl 1
 internal const val MARKDOWN_SPAN_STYLE_CODE = 1 shl 2
@@ -100,7 +111,7 @@ internal object MarkdownPacketDecoder {
             allowedFlags = DOCUMENT_FLAGS_ALLOWED,
             field = "document flags"
         )
-        reader.requireZeroUnsignedInt("header reserved field")
+        val syntaxRunCount = reader.readUnsignedInt("syntax run count")
         val inputBytes = reader.readSupportedUnsignedLong("input byte count")
         if (inputBytes > MarkdownProtocol.MAX_INPUT_BYTES) {
             throw MarkdownProtocolException("Markdown input byte count exceeds its limit")
@@ -116,6 +127,9 @@ internal object MarkdownPacketDecoder {
         }
         if (spanCount > MarkdownProtocol.MAX_SPAN_COUNT) {
             throw MarkdownProtocolException("Markdown span count exceeds its limit")
+        }
+        if (syntaxRunCount > MarkdownProtocol.MAX_SYNTAX_RUN_COUNT) {
+            throw MarkdownProtocolException("Markdown syntax run count exceeds its limit")
         }
         val textBytes = reader.readSupportedUnsignedLong("text byte count")
         val auxiliaryBytes = reader.readSupportedUnsignedLong("auxiliary byte count")
@@ -135,7 +149,10 @@ internal object MarkdownPacketDecoder {
                     checkedMultiply(blockCount, BLOCK_HEADER_BYTES),
                     checkedAdd(
                         checkedMultiply(spanCount, SPAN_HEADER_BYTES),
-                        checkedMultiply(sourceMapCount, SOURCE_MAP_HEADER_BYTES)
+                        checkedAdd(
+                            checkedMultiply(sourceMapCount, SOURCE_MAP_HEADER_BYTES),
+                            checkedMultiply(syntaxRunCount, SYNTAX_RUN_BYTES)
+                        )
                     )
                 )
             )
@@ -148,6 +165,7 @@ internal object MarkdownPacketDecoder {
         val blocks = ArrayList<MarkdownRenderBlock>(blockCount.toInt())
         var decodedSpanCount = 0L
         var decodedSourceMapCount = 0L
+        var decodedSyntaxRunCount = 0L
         var decodedTextBytes = 0L
         var decodedAuxiliaryBytes = 0L
         repeat(blockCount.toInt()) {
@@ -155,12 +173,15 @@ internal object MarkdownPacketDecoder {
                 reader = reader,
                 inputUtf16Length = inputUtf16Length,
                 remainingSpans = spanCount - decodedSpanCount,
-                remainingSourceMaps = sourceMapCount - decodedSourceMapCount
+                remainingSourceMaps = sourceMapCount - decodedSourceMapCount,
+                remainingSyntaxRuns = syntaxRunCount - decodedSyntaxRunCount
             )
             blocks += decoded.block
             decodedSpanCount = checkedAdd(decodedSpanCount, decoded.spanCount)
             decodedSourceMapCount =
                 checkedAdd(decodedSourceMapCount, decoded.sourceMapCount)
+            decodedSyntaxRunCount =
+                checkedAdd(decodedSyntaxRunCount, decoded.syntaxRunCount)
             decodedTextBytes = checkedAdd(decodedTextBytes, decoded.textBytes)
             decodedAuxiliaryBytes =
                 checkedAdd(decodedAuxiliaryBytes, decoded.auxiliaryBytes)
@@ -171,6 +192,7 @@ internal object MarkdownPacketDecoder {
         if (
             decodedSpanCount != spanCount ||
             decodedSourceMapCount != sourceMapCount ||
+            decodedSyntaxRunCount != syntaxRunCount ||
             decodedTextBytes != textBytes ||
             decodedAuxiliaryBytes != auxiliaryBytes
         ) {
@@ -186,7 +208,9 @@ internal object MarkdownPacketDecoder {
             blocks = blocks,
             spanCount = spanCount.toInt(),
             sourceMapCount = sourceMapCount.toInt(),
-            containsRawHtml = containsRawHtml
+            syntaxRunCount = syntaxRunCount.toInt(),
+            containsRawHtml = containsRawHtml,
+            syntaxTruncated = documentFlags and DOCUMENT_FLAG_SYNTAX_TRUNCATED != 0L
         )
     }
 
@@ -195,7 +219,8 @@ internal object MarkdownPacketDecoder {
         reader: MarkdownPacketReader,
         inputUtf16Length: Long,
         remainingSpans: Long,
-        remainingSourceMaps: Long
+        remainingSourceMaps: Long,
+        remainingSyntaxRuns: Long
     ): DecodedBlock {
         val kindValue = reader.readUnsignedInt("block kind")
         if (kindValue > Int.MAX_VALUE.toLong()) {
@@ -217,6 +242,17 @@ internal object MarkdownPacketDecoder {
         val sourceEnd = reader.readSupportedUnsignedLong("block source end")
         val blockSourceMapCount = reader.readUnsignedInt("block source-map count")
         val quoteAlertDepth = reader.readUnsignedInt("quote alert depth")
+        val detailsField = reader.readUnsignedInt("details field")
+        val detailsId = (detailsField and 0xffffL).toInt()
+        val detailsParentId = ((detailsField shr 16) and 0xffffL).toInt()
+        val blockSyntaxRunCount = reader.readUnsignedInt("block syntax run count")
+        val taskMarkerSourceUtf16Raw = reader.readSupportedUnsignedLong("task marker source offset")
+        if (detailsId > MAX_DETAILS_GROUPS || detailsParentId > MAX_DETAILS_GROUPS ||
+            (detailsId == 0 && detailsParentId != 0) ||
+            (detailsId != 0 && detailsParentId >= detailsId)
+        ) {
+            throw MarkdownProtocolException("Markdown details container hierarchy is invalid")
+        }
         if (textByteLength > MarkdownProtocol.MAX_BLOCK_TEXT_BYTES) {
             throw MarkdownProtocolException("Markdown block text exceeds its limit")
         }
@@ -236,6 +272,9 @@ internal object MarkdownPacketDecoder {
         if (blockSourceMapCount > MarkdownProtocol.MAX_SOURCE_MAP_COUNT) {
             throw MarkdownProtocolException("Markdown block source-map count exceeds its limit")
         }
+        if (blockSyntaxRunCount > MarkdownProtocol.MAX_SYNTAX_RUN_COUNT) {
+            throw MarkdownProtocolException("Markdown block syntax run count exceeds its limit")
+        }
         if (blockSpanCount > remainingSpans) {
             throw MarkdownProtocolException(
                 "Markdown block span count exceeds the remaining aggregate"
@@ -246,8 +285,30 @@ internal object MarkdownPacketDecoder {
                 "Markdown block source-map count exceeds the remaining aggregate"
             )
         }
+        if (blockSyntaxRunCount > remainingSyntaxRuns) {
+            throw MarkdownProtocolException(
+                "Markdown block syntax run count exceeds the remaining aggregate"
+            )
+        }
         if (sourceStart >= sourceEnd || sourceEnd > inputUtf16Length) {
             throw MarkdownProtocolException("Markdown block source range is invalid")
+        }
+        val hasTaskMarker = blockFlags and BLOCK_FLAG_HAS_TASK_MARKER != 0L
+        val taskMarkerSourceUtf16 = if (hasTaskMarker) {
+            if (kind != MarkdownBlockKind.ListItem ||
+                blockFlags and BLOCK_FLAG_CONTINUATION != 0L ||
+                (blockFlags and (BLOCK_FLAG_TASK_CHECKED or BLOCK_FLAG_TASK_UNCHECKED) == 0L) ||
+                taskMarkerSourceUtf16Raw < sourceStart ||
+                checkedAdd(taskMarkerSourceUtf16Raw, 3L) > sourceEnd
+            ) {
+                throw MarkdownProtocolException("Markdown task marker source offset is invalid")
+            }
+            taskMarkerSourceUtf16Raw
+        } else {
+            if (taskMarkerSourceUtf16Raw != 0L) {
+                throw MarkdownProtocolException("Markdown task marker offset must be zero when absent")
+            }
+            null
         }
         val text = reader.readUtf8(textByteLength, "block text")
         val metadata = reader.readUtf8(metadataByteLength, "block metadata")
@@ -291,6 +352,16 @@ internal object MarkdownPacketDecoder {
             sourceMaps += sourceMap
             previousRenderedEnd = sourceMap.renderedEnd
         }
+        val syntaxRuns = ArrayList<MarkdownSyntaxRun>(blockSyntaxRunCount.toInt())
+        var previousSyntaxEnd = 0
+        repeat(blockSyntaxRunCount.toInt()) {
+            val run = decodeSyntaxRun(reader, text, previousSyntaxEnd)
+            syntaxRuns += run
+            previousSyntaxEnd = run.end
+        }
+        if (blockSyntaxRunCount != 0L && kind != MarkdownBlockKind.Code) {
+            throw MarkdownProtocolException("Markdown syntax runs are only valid on code blocks")
+        }
         val quoteKind = markdownQuoteKind(blockFlags)
         val tableAlignments = markdownTableAlignments(kind, tableSeparators.size + 1, metadata)
         validateBlockFields(
@@ -301,6 +372,7 @@ internal object MarkdownPacketDecoder {
             quoteAlertDepth = quoteAlertDepth,
             listDepth = listDepth,
             listNumber = listNumber,
+            detailsId = detailsId,
             text = text,
             metadata = metadata
         )
@@ -332,14 +404,52 @@ internal object MarkdownPacketDecoder {
                     startsList = blockFlags and BLOCK_FLAG_LIST_START != 0L,
                     tableCellSeparators = tableSeparators,
                     footnoteLabel = footnoteLabel,
-                    quoteAlertDepth = quoteAlertDepth.toInt()
+                    quoteAlertDepth = quoteAlertDepth.toInt(),
+                    startsFrontmatter = blockFlags and BLOCK_FLAG_FRONTMATTER_START != 0L,
+                    detailsId = detailsId,
+                    detailsParentId = detailsParentId,
+                    detailsInitiallyOpen = blockFlags and BLOCK_FLAG_DETAILS_OPEN != 0L,
+                    taskMarkerSourceUtf16 = taskMarkerSourceUtf16,
+                    syntaxRuns = syntaxRuns
                 ),
             textBytes = textByteLength,
             auxiliaryBytes = checkedAdd(checkedAdd(metadataByteLength, destinationBytes),
                 checkedAdd(footnoteLabelByteLength, checkedMultiply(tableSeparatorCount, Int.SIZE_BYTES.toLong()))),
             spanCount = blockSpanCount,
-            sourceMapCount = blockSourceMapCount
+            sourceMapCount = blockSourceMapCount,
+            syntaxRunCount = blockSyntaxRunCount
         )
+    }
+
+    /** Decodes and validates one non-overlapping UTF-16 syntax highlight run. */
+    private fun decodeSyntaxRun(
+        reader: MarkdownPacketReader,
+        text: String,
+        previousEnd: Int
+    ): MarkdownSyntaxRun {
+        val raw = reader.readBytes(SYNTAX_RUN_BYTES.toInt(), "syntax run")
+        val buf = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN)
+        val start = buf.int.toLong() and UNSIGNED_INT_MASK
+        val len = buf.short.toInt() and 0xffff
+        val roleByte = buf.get().toInt() and 0xff
+        val reserved = buf.get().toInt() and 0xff
+        if (reserved != 0) {
+            throw MarkdownProtocolException("Markdown syntax run reserved byte must be zero")
+        }
+        val role = SyntaxTokenRole.fromProtocolValue(roleByte)
+        if (len <= 0 || start > Int.MAX_VALUE.toLong()) {
+            throw MarkdownProtocolException("Markdown syntax run range is invalid")
+        }
+        val end = start + len.toLong()
+        if (end > text.length.toLong() || start < previousEnd.toLong()) {
+            throw MarkdownProtocolException("Markdown syntax run range is invalid")
+        }
+        val startIndex = start.toInt()
+        val endIndex = end.toInt()
+        if (!text.isUtf16ScalarBoundary(startIndex) || !text.isUtf16ScalarBoundary(endIndex)) {
+            throw MarkdownProtocolException("Markdown syntax run divides a Unicode character")
+        }
+        return MarkdownSyntaxRun(startIndex, endIndex, role)
     }
 
     /** Checks task-marker invariants before the presentation layer strips the marker. */
@@ -500,6 +610,7 @@ internal object MarkdownPacketDecoder {
         quoteAlertDepth: Long,
         listDepth: Long,
         listNumber: Long,
+        detailsId: Int,
         text: String,
         metadata: String
     ) {
@@ -567,11 +678,23 @@ internal object MarkdownPacketDecoder {
         ) {
             throw MarkdownProtocolException("Markdown HTML block lacks its literal flag")
         }
+        if (flags and BLOCK_FLAG_FRONTMATTER_START != 0L &&
+            (kind != MarkdownBlockKind.Frontmatter || flags and BLOCK_FLAG_CONTINUATION != 0L)
+        ) {
+            throw MarkdownProtocolException("Markdown frontmatter start conflicts with its block")
+        }
+        if (flags and BLOCK_FLAG_DETAILS_OPEN != 0L && kind != MarkdownBlockKind.DetailsSummary) {
+            throw MarkdownProtocolException("Markdown details open flag conflicts with its block")
+        }
+        if (kind == MarkdownBlockKind.DetailsSummary && detailsId == 0) {
+            throw MarkdownProtocolException("Markdown details summary lacks a container id")
+        }
         if (
             metadata.isNotEmpty() &&
             kind != MarkdownBlockKind.Code &&
             kind != MarkdownBlockKind.Footnote &&
-            kind != MarkdownBlockKind.TableRow
+            kind != MarkdownBlockKind.TableRow &&
+            kind != MarkdownBlockKind.Frontmatter
         ) {
             throw MarkdownProtocolException("Markdown metadata conflicts with the block kind")
         }
@@ -614,7 +737,8 @@ private data class DecodedBlock(
     val textBytes: Long,
     val auxiliaryBytes: Long,
     val spanCount: Long,
-    val sourceMapCount: Long
+    val sourceMapCount: Long,
+    val syntaxRunCount: Long
 )
 
 /** Holds one decoded span plus its variable payload length. */

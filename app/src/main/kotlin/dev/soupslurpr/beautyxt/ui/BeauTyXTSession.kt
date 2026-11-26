@@ -155,6 +155,38 @@ internal constructor(
         incomingShare = null
     }
 
+    /** Creates a transient editor immediately for user-initiated clipboard paste. */
+    fun openPastedText(text: String, format: DocumentFormat): Boolean {
+        if (closeStarted.get() || editor != null || isOpenBusy) {
+            return false
+        }
+        val share = IncomingDocumentShare.Text(text = text, format = format)
+        val replacement =
+            try {
+                createTransientTextEditor(share)
+            } catch (_: Exception) {
+                openStatus = OpenStatus.Failed(NEW_DOCUMENT_FAILURE_MESSAGE)
+                return false
+            } catch (_: LinkageError) {
+                openStatus = OpenStatus.Failed(NEW_DOCUMENT_FAILURE_MESSAGE)
+                return false
+            }
+        if (closeStarted.get()) {
+            replacement.close()
+            return false
+        }
+        editor = replacement
+        openStatus = OpenStatus.Idle
+        return true
+    }
+
+    /** Reports an initial-action failure (for example empty or oversized clipboard paste). */
+    fun failInitialOpen(message: UiText) {
+        if (!closeStarted.get() && editor == null && !isOpenBusy) {
+            openStatus = OpenStatus.Failed(message)
+        }
+    }
+
     /** Creates a transient editor only after direct shared text is confirmed. */
     fun openIncomingText(): Boolean {
         val share = incomingShare as? IncomingDocumentShare.Text ?: return false
@@ -277,6 +309,28 @@ internal constructor(
             destination.request == request &&
             editor === destination.editor &&
             destination.editor.matchesDocumentSourceUri(encodedUri)
+    }
+
+    /** Captures the active save request's source URI, observed inode, and write capability before handoff. */
+    fun currentSourceIdentitySnapshot(
+        request: SaveDestinationRequest
+    ): dev.soupslurpr.beautyxt.ui.editor.CapturedSourceIdentity? {
+        val destination = activeSaveDestination ?: return null
+        if (closeStarted.get() || destination.request != request || editor !== destination.editor) {
+            return null
+        }
+        return destination.editor.currentSourceIdentitySnapshot()
+    }
+
+    suspend fun currentSourceCanonicalKeys(
+        request: SaveDestinationRequest,
+        context: android.content.Context
+    ): Set<String> {
+        val destination = activeSaveDestination ?: return emptySet()
+        if (closeStarted.get() || destination.request != request || editor !== destination.editor) {
+            return emptySet()
+        }
+        return destination.editor.currentSourceCanonicalKeys(context)
     }
 
     /** Consumes one cancelled picker result only for its active format and generation. */

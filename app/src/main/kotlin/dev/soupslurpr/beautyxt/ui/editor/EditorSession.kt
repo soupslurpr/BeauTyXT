@@ -1,5 +1,6 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
+import androidx.core.net.toUri
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Stable
@@ -600,7 +601,7 @@ internal sealed interface SourceConflictComparisonState {
     /** Holds one bounded diff frozen against an exact local revision and external version. */
     data class Ready(
         val localRevision: Long,
-        val externalVersion: SourceVersion,
+        val externalVersion: SourceVersion? = null,
         val diff: DocumentDiff
     ) : SourceConflictComparisonState
 
@@ -680,7 +681,8 @@ internal constructor(
                 hasUnsavedChanges -> UiText.Resource(R.string.export_copy_unsaved_changes)
                 else -> null
             }
-        })
+        },
+        resolveSourceIdentity = ::currentSourceIdentityCheck)
     private var nextSaveGeneration = FIRST_SAVE_GENERATION
     private var activeSaveGeneration: Long? = null
     private var activeSaveJob: Job? = null
@@ -695,6 +697,8 @@ internal constructor(
     private var nextMarkdownPreviewGeneration = FIRST_MARKDOWN_PREVIEW_GENERATION
     private var activeMarkdownPreviewGeneration: Long? = null
     private var markdownPreviewJob: Job? = null
+    private var liveSplitPreviewGeneration = FIRST_MARKDOWN_PREVIEW_GENERATION
+    private var liveSplitPreviewJob: Job? = null
     private var markdownPreviewReturnTarget: MarkdownPreviewReturnTarget? = null
     private var pendingReadingLocation: DocumentLocation? = null
     private var pendingReadingSelection: DocumentSelection.Source? = null
@@ -824,13 +828,140 @@ internal constructor(
 
     private var selectionReadingCache: Triple<dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument, Long, dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument>? = null
     private var readingSearchCache: ReadingSearchCacheEntry? = null
+    /** In-memory per-session `<details>` expansion overrides for primary Reading mode (never persisted). */
+    val readingDetailsExpanded = androidx.compose.runtime.mutableStateMapOf<String, Boolean>()
+    /** In-memory per-session Properties card expansion state for primary Reading mode (never persisted). */
+    var readingFrontmatterExpanded by mutableStateOf(false)
+    internal data class PendingIllustrationImageSave(
+        val saveId: Long,
+        val drawing: dev.soupslurpr.beautyxt.illustration.NativeIllustration,
+        val colors: dev.soupslurpr.beautyxt.illustration.IllustrationColors,
+        val format: QrImageFormat,
+        val suggestedTitle: String
+    )
+
+    var isIllustrationImageSaving by mutableStateOf(false)
+        private set
+    var illustrationImageSaveOutcome by mutableStateOf<Pair<Long, Boolean>?>(null)
+        private set
+    var illustrationImagePickerRequest by mutableStateOf<PendingIllustrationImageSave?>(null)
+        private set
+    private var pendingIllustrationImageSave: PendingIllustrationImageSave? = null
+    private var nextIllustrationImageSaveId = 1L
+
+    /** Queues an illustration Save image picker request retained by the session across layout changes. */
+    fun requestIllustrationImageSave(
+        drawing: dev.soupslurpr.beautyxt.illustration.NativeIllustration,
+        colors: dev.soupslurpr.beautyxt.illustration.IllustrationColors,
+        format: QrImageFormat,
+        suggestedTitle: String
+    ): Long {
+        val saveId = nextIllustrationImageSaveId++
+        val request = PendingIllustrationImageSave(
+            saveId = saveId,
+            drawing = drawing,
+            colors = colors,
+            format = format,
+            suggestedTitle = suggestedTitle
+        )
+        pendingIllustrationImageSave = request
+        illustrationImageSaveOutcome = null
+        illustrationImagePickerRequest = request
+        return saveId
+    }
+
+    fun consumeIllustrationImagePickerRequest(request: PendingIllustrationImageSave) {
+        if (illustrationImagePickerRequest?.saveId == request.saveId) {
+            illustrationImagePickerRequest = null
+        }
+    }
+
+    fun failIllustrationImagePickerLaunch(request: PendingIllustrationImageSave) {
+        if (pendingIllustrationImageSave?.saveId == request.saveId) {
+            pendingIllustrationImageSave = null
+            illustrationImageSaveOutcome = request.saveId to false
+        }
+        consumeIllustrationImagePickerRequest(request)
+    }
+
+    /** Handles the editor-level picker result on the session's retained scope, rejecting the active source. */
+    fun onIllustrationImageDestinationSelected(
+        context: android.content.Context,
+        selected: dev.soupslurpr.beautyxt.SelectedDestinationResult?
+    ) {
+        val pending = pendingIllustrationImageSave ?: return
+        pendingIllustrationImageSave = null
+        if (selected == null) return
+        val appContext = context.applicationContext
+        if (
+            dev.soupslurpr.beautyxt.mayHaveAmbientTreeAccessForUri(appContext, selected.uri) &&
+            !selected.offersWrite
+        ) {
+            illustrationImageSaveOutcome = pending.saveId to false
+            return
+        }
+        if (matchesDocumentSourceUri(selected.uri.toString())) {
+            illustrationImageSaveOutcome = pending.saveId to false
+            return
+        }
+        isIllustrationImageSaving = true
+        illustrationImageSaveOutcome = null
+        val sourceEncodedUri = ownedDocumentSource?.encodedShareUri()
+        val sourceFileIdentityKey = ownedDocumentSource?.fileIdentityKey
+        val sourceIsWritable = !isViewOnly
+        operationScope.launch {
+            try {
+                val saved = try {
+                    saveIllustrationImage(
+                        context = appContext,
+                        destination = selected.uri,
+                        drawing = pending.drawing,
+                        colors = pending.colors,
+                        format = pending.format,
+                        resolveForbiddenSource = {
+                            sourceEncodedUri?.let { raw ->
+                                resolveSourceIdentitySnapshot(
+                                    context = appContext,
+                                    uri = raw.toUri(),
+                                    knownFileIdentityKey = sourceFileIdentityKey,
+                                    preferWriteProbe = sourceIsWritable
+                                )
+                            } ?: SourceIdentitySnapshot()
+                        }
+                    )
+                    true
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    false
+                }
+                illustrationImageSaveOutcome = pending.saveId to saved
+            } finally {
+                isIllustrationImageSaving = false
+            }
+        }
+    }
+
+    internal fun readingBlockVisibilityPredicate(): (Int, dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock) -> Boolean {
+        val layout = (markdownPreviewStatus as? MarkdownPreviewStatus.Ready)
+            ?.takeIf { it.revision == state.metrics?.revision }
+            ?.layout
+            ?: return { _, _ -> true }
+        val overrides = readingDetailsExpanded.toMap()
+        val frontmatterExpanded = readingFrontmatterExpanded
+        return { _, block ->
+            val frontmatterVisible =
+                block.kind != dev.soupslurpr.beautyxt.markdown.MarkdownBlockKind.Frontmatter ||
+                    frontmatterExpanded
+            frontmatterVisible && isMarkdownBlockVisibleInDetails(layout, block, overrides)
+        }
+    }
 
     fun readingDocumentForSelection(): dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument? {
         val ready = (markdownPreviewStatus as? MarkdownPreviewStatus.Ready)
             ?.takeIf { it.revision == state.metrics?.revision } ?: return null
-        val version = ready.layout.illustrationCache.version
+        val (version, cache) = ready.layout.illustrationCache.snapshotWithVersion()
         selectionReadingCache?.takeIf { it.first === ready.document && it.second == version }?.let { return it.third }
-        val cache = ready.layout.illustrationCache.snapshot()
         return ready.document.copy(blocks = ready.document.blocks.indices.map { index ->
             ready.layout.illustrations.decorate(index) { request -> cache[request]
                 ?: dev.soupslurpr.beautyxt.illustration.IllustrationResult.Pending(request.kind) }
@@ -844,11 +975,10 @@ internal constructor(
         if (selected == null && scope == null) return
         val ready = (markdownPreviewStatus as? MarkdownPreviewStatus.Ready)
             ?.takeIf { it.revision == state.metrics?.revision } ?: return
-        val version = ready.layout.illustrationCache.version
+        val (version, cache) = ready.layout.illustrationCache.snapshotWithVersion()
         validatedReadingProjectionVersion?.let {
             if (it.first === ready.document && it.second == version) return
         }
-        val cache = ready.layout.illustrationCache.snapshot()
         val decorated = selectionReadingCache?.takeIf {
             it.first === ready.document && it.second == version
         }?.third
@@ -1047,7 +1177,12 @@ internal constructor(
                 val text = state.readSourceRange(selected.revision, selected.range)
                 ExcerptText(maximumBytes).apply { append(text) }.toString()
             }
-            is DocumentSelection.Reading -> selectedReadingText(checkNotNull(readingDocumentForSelection()), selected, maximumBytes)
+            is DocumentSelection.Reading -> selectedReadingText(
+                document = checkNotNull(readingDocumentForSelection()),
+                selection = selected,
+                maximumBytes = maximumBytes,
+                isBlockVisible = readingBlockVisibilityPredicate()
+            )
             is DocumentSelection.Label -> ExcerptText(maximumBytes).apply {
                 append(selected.text.substring(selected.range.min, selected.range.max))
             }.toString()
@@ -1098,6 +1233,11 @@ internal constructor(
         val selected = documentSelection ?: return null
         if (selected.revision != state.metrics?.revision || state.hasActiveDraftChanges) return null
         var context = readingDocumentForSelection()
+        val isReadingBlockVisible = if (selected is DocumentSelection.Reading) {
+            readingBlockVisibilityPredicate()
+        } else {
+            { _, _ -> true }
+        }
         var owned: CapturedDocumentRevision? = null
         try {
             when (selected) {
@@ -1116,7 +1256,12 @@ internal constructor(
                 is DocumentSelection.Reading, is DocumentSelection.Label -> {
                     withContext(Dispatchers.Default) {
                         val text = if (selected is DocumentSelection.Reading)
-                            selectedReadingText(checkNotNull(context), selected, MAX_EXCERPT_MARKDOWN_BYTES)
+                            selectedReadingText(
+                                document = checkNotNull(context),
+                                selection = selected,
+                                maximumBytes = MAX_EXCERPT_MARKDOWN_BYTES,
+                                isBlockVisible = isReadingBlockVisible
+                            )
                         else (selected as DocumentSelection.Label).text.substring(selected.range.min, selected.range.max)
                         owned = captureGeneratedExcerpt(text)
                     }
@@ -1130,7 +1275,8 @@ internal constructor(
             }
             return ExcerptCapture(selected.revision, checkNotNull(owned), selected is DocumentSelection.Source,
                 if (selected is DocumentSelection.Source) documentFormat else DocumentFormat.PlainText,
-                context, reading, (selected as? DocumentSelection.Label)?.let { it.text.substring(it.range.min, it.range.max) })
+                context, reading, (selected as? DocumentSelection.Label)?.let { it.text.substring(it.range.min, it.range.max) },
+                isReadingBlockVisible = isReadingBlockVisible)
                 .also { owned = null }
         } finally { owned?.close() }
     }
@@ -1144,7 +1290,7 @@ internal constructor(
                 findInputFocus = FindInputFocus.Query
                 findFocusIntentVersion++
                 findFocusRequest++
-                if (!isFindVisible && !openFind(documentSelection?.exactSource(readingDocumentForSelection())?.start ?: currentDocumentLocation().offset)) return@launch
+                if (!isFindVisible && !openFind(documentSelection?.exactSource(readingDocumentForSelection(), isBlockVisible = readingBlockVisibilityPredicate())?.start ?: currentDocumentLocation().offset)) return@launch
                 isFindRegex = false
                 isFindWholeWord = false
                 capturedFindScope = null
@@ -1208,6 +1354,143 @@ internal constructor(
 
     var presentation by mutableStateOf(EditorPresentation.Text)
         private set
+
+    /** Tracks whether the current Reading view performed an edit (task toggle or line-ending conversion). */
+    var hasReadingMutation by mutableStateOf(false)
+        private set
+
+    /** Controls wide-screen side-by-side Source + live Reading Split View (orthogonal to presentation). */
+    var isSplitViewEnabled by mutableStateOf(false)
+        private set
+
+    /** Dedicated live preview state for Split View so draft overlays never leak into full-screen Reading. */
+    var splitPreviewStatus by mutableStateOf<MarkdownPreviewStatus>(MarkdownPreviewStatus.Idle)
+        private set
+
+    val canToggleSplitView: Boolean
+        get() = markdownRenderer != null &&
+            !closeStarted.get() &&
+            !isSourceReloading &&
+            !isClosePending &&
+            !isGoToLineDialogVisible &&
+            !isDiscardConfirmationVisible &&
+            state.status == EditorDocumentStatus.Ready &&
+            state.metrics != null
+
+    /** Toggles Split View, switching out of full-screen Reading when turning Split View on. */
+    fun toggleSplitView(): Boolean {
+        if (!canToggleSplitView) return false
+        if (isSplitViewEnabled) {
+            updateSplitViewEnabled(false)
+            return true
+        }
+        if (presentation == EditorPresentation.MarkdownPreview) {
+            showTextEditor()
+        }
+        updateSplitViewEnabled(true)
+        return true
+    }
+
+    /** Enables or disables Split View cleanly without disturbing Source composition. */
+    fun updateSplitViewEnabled(enabled: Boolean) {
+        if (isSplitViewEnabled == enabled) return
+        isSplitViewEnabled = enabled
+        if (!enabled) {
+            cancelLiveSplitPreview()
+        }
+    }
+
+    /** Retries the live Split View render against the current active draft (if any). */
+    fun retrySplitPreview() {
+        val draft = activeDraft
+        scheduleLiveSplitPreview(
+            draftRange = draft?.edit?.snapshot?.range,
+            draftText = draft?.textFieldState?.text?.toString(),
+            debounceMs = 0L
+        )
+    }
+
+    /** Schedules a debounced, non-mutating live Markdown preview render for Split View. */
+    fun scheduleLiveSplitPreview(
+        draftRange: Utf16Range? = null,
+        draftText: String? = null,
+        debounceMs: Long = 300L
+    ) {
+        val renderer = markdownRenderer ?: return
+        if (!isSplitViewEnabled || presentation != EditorPresentation.Text || closeStarted.get()) {
+            return
+        }
+        val expectedBaseRevision = state.metrics?.revision ?: return
+        val expectedDraftGeneration = activeDraft?.edit?.generation
+        val generation = Math.incrementExact(liveSplitPreviewGeneration)
+        liveSplitPreviewGeneration = generation
+        liveSplitPreviewJob?.cancel()
+        liveSplitPreviewJob = operationScope.launch {
+            if (debounceMs > 0L) {
+                delay(debounceMs)
+            }
+            if (
+                liveSplitPreviewGeneration != generation ||
+                !isSplitViewEnabled ||
+                presentation != EditorPresentation.Text ||
+                closeStarted.get()
+            ) {
+                return@launch
+            }
+            val currentRevision = state.metrics?.revision ?: return@launch
+            if (currentRevision != expectedBaseRevision) return@launch
+            if (expectedDraftGeneration != null && activeDraft?.edit?.generation != expectedDraftGeneration) {
+                return@launch
+            }
+            if (splitPreviewStatus !is MarkdownPreviewStatus.Ready) {
+                splitPreviewStatus = MarkdownPreviewStatus.Rendering(currentRevision)
+            }
+            try {
+                val rendered = state.renderMarkdownForSplitPreview(
+                    renderer = renderer,
+                    draftRange = draftRange,
+                    draftText = draftText
+                ) ?: return@launch
+                if (
+                    liveSplitPreviewGeneration != generation ||
+                    !isSplitViewEnabled ||
+                    presentation != EditorPresentation.Text ||
+                    closeStarted.get() ||
+                    state.metrics?.revision != expectedBaseRevision ||
+                    (expectedDraftGeneration != null && activeDraft?.edit?.generation != expectedDraftGeneration)
+                ) {
+                    return@launch
+                }
+                splitPreviewStatus = MarkdownPreviewStatus.Ready(
+                    revision = rendered.revision,
+                    document = rendered.document,
+                    layout = rendered.layout,
+                    scrollRestoration = null
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: MarkdownRenderException) {
+                if (liveSplitPreviewGeneration == generation && isSplitViewEnabled) {
+                    splitPreviewStatus = MarkdownPreviewStatus.Failed(
+                        markdownPreviewFailureMessage(failure.failure)
+                    )
+                }
+            } catch (_: Exception) {
+                if (liveSplitPreviewGeneration == generation && isSplitViewEnabled) {
+                    splitPreviewStatus = MarkdownPreviewStatus.Failed(
+                        MARKDOWN_PREVIEW_FAILURE_MESSAGE
+                    )
+                }
+            }
+        }
+    }
+
+    private fun cancelLiveSplitPreview() {
+        liveSplitPreviewGeneration = Math.incrementExact(liveSplitPreviewGeneration)
+        liveSplitPreviewJob?.cancel()
+        liveSplitPreviewJob = null
+        splitPreviewStatus = MarkdownPreviewStatus.Idle
+    }
 
     /** Returns whether Back should leave a nested preview for its source editor. */
     val returnsToSourceOnBack: Boolean
@@ -1396,21 +1679,46 @@ internal constructor(
             }
         }
 
+    val canToggleReadingTask: Boolean
+        get() = !closeStarted.get() &&
+            !isViewOnly &&
+            !isSourceReloading &&
+            !isClosePending &&
+            presentation == EditorPresentation.MarkdownPreview &&
+            activeDraft == null &&
+            pendingEditWindowAction == null &&
+            !isSaveBusy &&
+            !isShareBusy &&
+            !isPrintBusy &&
+            !isQrShareBusy &&
+            !isNfcWriteBusy &&
+            state.status == EditorDocumentStatus.Ready &&
+            (
+                history.headRevision == null ||
+                    state.metrics?.revision == history.headRevision
+                )
+
     val canUndo: Boolean
         get() {
             historyVersion
-            val draft = activeDraft ?: return false
-            return canRequestHistoryAction(draft) &&
-                (draft.hasChanges || (history.undoEntry != null))
+            val draft = activeDraft
+            if (draft != null) {
+                return canRequestHistoryAction(draft) &&
+                    (draft.hasChanges || (history.undoEntry != null))
+            }
+            return canToggleReadingTask && history.undoEntry != null
         }
 
     val canRedo: Boolean
         get() {
             historyVersion
-            val draft = activeDraft ?: return false
-            return canRequestHistoryAction(draft) &&
-                !draft.hasChanges &&
-                (history.redoEntry != null)
+            val draft = activeDraft
+            if (draft != null) {
+                return canRequestHistoryAction(draft) &&
+                    !draft.hasChanges &&
+                    (history.redoEntry != null)
+            }
+            return canToggleReadingTask && history.redoEntry != null
         }
 
     val canRetryEditWindow: Boolean
@@ -1425,6 +1733,49 @@ internal constructor(
         require(encodedUri.isNotBlank()) { "candidate source URI must not be blank" }
         return !closeStarted.get() &&
             ownedDocumentSource?.matchesSourceUri(encodedUri) == true
+    }
+
+    /** Returns the live write lease owner ID held by this session's source, if any. */
+    val writableLeaseOwnerId: java.util.UUID?
+        get() = ownedDocumentSource?.writableLeaseOwnerId
+
+    /** Captures the current source URI, observed inode, and write capability so post-open checks stay valid after handoff. */
+    fun currentSourceIdentitySnapshot(): CapturedSourceIdentity? {
+        if (closeStarted.get()) return null
+        val source = ownedDocumentSource ?: return null
+        val raw = source.encodedShareUri() ?: return null
+        return CapturedSourceIdentity(
+            encodedUri = raw,
+            fileIdentityKey = source.fileIdentityKey,
+            isWritable = !isViewOnly
+        )
+    }
+
+    /** Returns a fail-closed snapshot of the current source's URI, cached inode, and live probe. */
+    suspend fun currentSourceIdentityCheck(context: android.content.Context): SourceIdentitySnapshot {
+        if (closeStarted.get()) return SourceIdentitySnapshot()
+        val source = ownedDocumentSource ?: return SourceIdentitySnapshot()
+        val raw = source.encodedShareUri() ?: return SourceIdentitySnapshot()
+        return resolveSourceIdentitySnapshot(
+            context = context.applicationContext,
+            uri = raw.toUri(),
+            knownFileIdentityKey = source.fileIdentityKey,
+            preferWriteProbe = !isViewOnly
+        )
+    }
+
+    /** Returns all canonical keys (SAF URI + cached and live kernel inodes) of the current source. */
+    suspend fun currentSourceCanonicalKeys(context: android.content.Context): Set<String> {
+        if (closeStarted.get()) return emptySet()
+        val source = ownedDocumentSource ?: return emptySet()
+        val raw = source.encodedShareUri() ?: return emptySet()
+        return writableDocumentKeys(
+            context = context.applicationContext,
+            uri = raw.toUri(),
+            knownFileIdentityKey = source.fileIdentityKey,
+            includeLiveProbe = true,
+            preferWriteProbe = !isViewOnly
+        )
     }
 
     /** Returns whether the next selected destination should become the live source. */
@@ -2292,7 +2643,10 @@ internal constructor(
         pendingReadingLocation = null
         val selectionInSource = when (val selected = documentSelection) {
             is DocumentSelection.Source -> selected
-            is DocumentSelection.Reading -> selected.exactSource(readingDocumentForSelection())?.let {
+            is DocumentSelection.Reading -> selected.exactSource(
+                document = readingDocumentForSelection(),
+                isBlockVisible = readingBlockVisibilityPredicate()
+            )?.let {
                 if (selected.anchor <= selected.focus) DocumentSelection.Source(selected.revision, it.start, it.end)
                 else DocumentSelection.Source(selected.revision, it.end, it.start)
             }
@@ -2626,12 +2980,18 @@ internal constructor(
                 capturedReadingFindScope = selected
                 findReadingProjection = selectedReadingProjection.takeIf { selected is DocumentSelection.Reading }
                 validatedReadingProjectionVersion = null
-                capturedFindScope = selected.exactSource(readingDocumentForSelection())
+                capturedFindScope = selected.exactSource(
+                    document = readingDocumentForSelection(),
+                    isBlockVisible = readingBlockVisibilityPredicate()
+                )
                 isFindScopePaused = false
                 refreshAdvancedFind()
                 return true
             }
-            val range = selected.exactSource(readingDocumentForSelection())
+            val range = selected.exactSource(
+                document = readingDocumentForSelection(),
+                isBlockVisible = readingBlockVisibilityPredicate()
+            )
             if (range != null && range.start < range.end) {
                 capturedReadingFindScope = null
                 findReadingProjection = null
@@ -2910,25 +3270,226 @@ internal constructor(
         )
     }
 
-    /** Queues one session-wide undo after synchronizing the active bounded field. */
+    /** Queues one session-wide undo in Source or Reading mode. */
     fun requestUndo(): Boolean {
-        val draft = activeDraft ?: return false
         if (!canUndo) {
             return false
         }
-        return requestEditWindowAction(draft = draft, action = EditWindowAction.Undo)
+        val draft = activeDraft
+        if (draft != null) {
+            return requestEditWindowAction(draft = draft, action = EditWindowAction.Undo)
+        }
+        return applyReadingHistoryAction(EditWindowAction.Undo)
     }
 
     /** Undoes only the replacement advertised by Find, including repeated or stale taps. */
     fun requestUndoFindReplacement(): Boolean = canUndoFindReplacement && requestUndo()
 
-    /** Queues one session-wide redo after synchronizing the active bounded field. */
+    /** Queues one session-wide redo in Source or Reading mode. */
     fun requestRedo(): Boolean {
-        val draft = activeDraft ?: return false
         if (!canRedo) {
             return false
         }
-        return requestEditWindowAction(draft = draft, action = EditWindowAction.Redo)
+        val draft = activeDraft
+        if (draft != null) {
+            return requestEditWindowAction(draft = draft, action = EditWindowAction.Redo)
+        }
+        return applyReadingHistoryAction(EditWindowAction.Redo)
+    }
+
+    /** Atomically toggles one GFM task-list checkbox in Reading mode with Undo & verified autosave. */
+    fun toggleMarkdownTask(revision: Long, blockIndex: Int): Boolean {
+        if (!canToggleReadingTask) return false
+        val ready = markdownPreviewStatus as? MarkdownPreviewStatus.Ready ?: return false
+        if (ready.revision != revision || state.metrics?.revision != revision) return false
+        val block = ready.document.blocks.getOrNull(blockIndex) ?: return false
+        val markerStart = block.taskMarkerSourceUtf16 ?: return false
+        if (!block.isTaskChecked && !block.isTaskUnchecked) return false
+        val expectedLength = state.metrics?.utf16Length ?: return false
+        if (markerStart + 3L > expectedLength) return false
+        val range = Utf16Range(markerStart, markerStart + 3L)
+        val wasChecked = block.isTaskChecked
+        var observedText: String? = null
+        var replacementText: String? = null
+        var result: DocumentReplacementResult = DocumentReplacementResult.Unavailable
+        launchOperation(
+            operation = { documentState ->
+                val current = try {
+                    documentState.readSourceRange(revision, range)
+                } catch (_: Exception) {
+                    return@launchOperation
+                }
+                val replacement = when {
+                    wasChecked && (current == "[x]" || current == "[X]") -> "[ ]"
+                    !wasChecked && (current == "[ ]" || current == "[\t]") -> "[x]"
+                    else -> return@launchOperation
+                }
+                observedText = current
+                replacementText = replacement
+                result = documentState.replaceDocumentBatch(
+                    revision = revision,
+                    patches = listOf(DocumentPatch(range, current, replacement)),
+                    selectionAfter = Utf16Range(markerStart, markerStart),
+                    openEditWindow = false
+                )
+            },
+            onCompletion = {
+                val completed = result as? DocumentReplacementResult.Applied ?: return@launchOperation
+                val removed = observedText ?: return@launchOperation
+                val inserted = replacementText ?: return@launchOperation
+                if (completed.revision == revision) return@launchOperation
+                val caret = Utf16Range(markerStart, markerStart)
+                val delta = CommittedEditDelta(
+                    revisionBefore = revision,
+                    revisionAfter = completed.revision,
+                    rangeStart = markerStart,
+                    removedText = removed,
+                    insertedText = inserted,
+                    selectionBefore = caret,
+                    selectionAfter = caret
+                )
+                recordCommittedEdit(delta)
+                hasReadingMutation = true
+                recordSourceSaveRequest()
+                val currentReady = markdownPreviewStatus as? MarkdownPreviewStatus.Ready
+                if (currentReady?.revision == revision && blockIndex in currentReady.document.blocks.indices) {
+                    val target = currentReady.document.blocks[blockIndex]
+                    val oldPrefix = if (wasChecked) {
+                        dev.soupslurpr.beautyxt.markdown.MARKDOWN_CHECKED_TASK_PREFIX
+                    } else {
+                        dev.soupslurpr.beautyxt.markdown.MARKDOWN_UNCHECKED_TASK_PREFIX
+                    }
+                    val newPrefix = if (wasChecked) {
+                        dev.soupslurpr.beautyxt.markdown.MARKDOWN_UNCHECKED_TASK_PREFIX
+                    } else {
+                        dev.soupslurpr.beautyxt.markdown.MARKDOWN_CHECKED_TASK_PREFIX
+                    }
+                    if (target.text.startsWith(oldPrefix)) {
+                        val patchedBlock = target.copy(
+                            text = newPrefix + target.text.removePrefix(oldPrefix),
+                            isTaskChecked = !wasChecked,
+                            isTaskUnchecked = wasChecked
+                        )
+                        val updatedBlocks = currentReady.document.blocks.toMutableList().apply {
+                            this[blockIndex] = patchedBlock
+                        }
+                        val updatedItems = currentReady.layout.items.map { item ->
+                            val localIndex = blockIndex - item.firstBlockIndex
+                            if (localIndex in item.blocks.indices) {
+                                item.copy(
+                                    blocks = item.blocks.toMutableList().apply {
+                                        this[localIndex] = patchedBlock
+                                    }
+                                )
+                            } else {
+                                item
+                            }
+                        }
+                        val updatedOwners = currentReady.layout.listContinuationOwners.mapValues { (_, owner) ->
+                            if (owner === target) patchedBlock else owner
+                        }
+                        markdownPreviewStatus = currentReady.copy(
+                            revision = completed.revision,
+                            document = currentReady.document.copy(blocks = updatedBlocks),
+                            layout = currentReady.layout.copy(
+                                items = updatedItems,
+                                listContinuationOwners = updatedOwners,
+                                illustrations = currentReady.layout.illustrations.withUpdatedBlock(
+                                    index = blockIndex,
+                                    updatedBlock = patchedBlock
+                                )
+                            ),
+                            scrollRestoration = null
+                        )
+                        markdownPreviewReturnTarget = markdownPreviewReturnTarget?.let { ret ->
+                            ret.copy(
+                                viewportAnchor = ret.viewportAnchor.copy(revision = completed.revision)
+                            )
+                        }
+                        selectionReadingCache = null
+                        readingSearchCache = null
+                        if (isFindVisible) refreshAdvancedFind()
+                        return@launchOperation
+                    }
+                }
+                rebaseMarkdownPreviewReturnTarget(completed.revision)
+                launchMarkdownPreview(preserveReady = true)
+            }
+        )
+        return true
+    }
+
+    /** Rebases the retained Reading->Source return anchor across in-Reading mutations so switching back to Source preserves scroll position. */
+    private fun rebaseMarkdownPreviewReturnTarget(newRevision: Long) {
+        val current = markdownPreviewReturnTarget ?: return
+        val maxOffset = state.metrics?.utf16Length ?: Long.MAX_VALUE
+        val clampedAnchor = current.viewportAnchor.sourceUtf16Offset.coerceIn(0L, maxOffset)
+        val clampedStart = current.selection.start.coerceIn(0L, maxOffset)
+        val clampedEnd = current.selection.end.coerceIn(clampedStart, maxOffset)
+        markdownPreviewReturnTarget = current.copy(
+            viewportAnchor = current.viewportAnchor.copy(
+                revision = newRevision,
+                sourceUtf16Offset = clampedAnchor
+            ),
+            selection = Utf16Range(clampedStart, clampedEnd)
+        )
+    }
+
+    /** Restores one history entry directly while staying in Reading mode without flicker. */
+    private fun applyReadingHistoryAction(action: EditWindowAction): Boolean {
+        val entry = if (action == EditWindowAction.Undo) history.undoEntry else history.redoEntry
+        val currentRevision = state.metrics?.revision ?: return false
+        if (entry == null || currentRevision != history.headRevision) return false
+        var result: DocumentReplacementResult = DocumentReplacementResult.Unavailable
+        launchOperation(
+            operation = { documentState ->
+                result = documentState.restoreDocumentHistory(
+                    revision = currentRevision,
+                    entry = entry,
+                    undo = action == EditWindowAction.Undo,
+                    openEditWindow = false
+                )
+            },
+            onCompletion = {
+                when (val completed = result) {
+                    is DocumentReplacementResult.Applied -> {
+                        completeHistoryStackMove(action, entry, completed.revision)
+                        recordSourceSaveRequest()
+                        val isFormatOnlyEdit = entry.changes.all { change ->
+                            change.range.start == change.range.end && change.insertedLength == 0L
+                        }
+                        if (isFormatOnlyEdit) {
+                            rebaseMarkdownPreviewReturnTarget(completed.revision)
+                        } else {
+                            val restoredSelection = if (action == EditWindowAction.Undo) {
+                                entry.selectionBefore
+                            } else {
+                                entry.selectionAfter
+                            }
+                            markdownPreviewReturnTarget = MarkdownPreviewReturnTarget(
+                                viewportAnchor = SemanticViewportAnchor(
+                                    revision = completed.revision,
+                                    sourceUtf16Offset = restoredSelection.start,
+                                    viewportTopOffsetPixels = 0
+                                ),
+                                selection = restoredSelection
+                            )
+                        }
+                        launchMarkdownPreview(preserveReady = true)
+                    }
+
+                    DocumentReplacementResult.Failed -> {
+                        if (state.status == EditorDocumentStatus.Stale) {
+                            clearSessionHistory()
+                        }
+                    }
+
+                    DocumentReplacementResult.Unavailable,
+                    DocumentReplacementResult.RejectedBySizeLimit -> Unit
+                }
+            }
+        )
+        return true
     }
 
     /** Retries the last failed bounded editor window without changing its document. */
@@ -3609,6 +4170,327 @@ internal constructor(
         sourceConflictResolution = null
     }
 
+    /** Holds one read-only non-conflict diff against an external file or clipboard text. */
+    var generalComparison by mutableStateOf<GeneralDocumentComparison?>(null)
+        private set
+
+    private var generalComparisonGeneration = 0L
+    private var generalComparisonJob: Job? = null
+
+    /** Holds any transient feedback from a File info line-ending conversion attempt. */
+    var lineEndingConversionMessage by mutableStateOf<UiText?>(null)
+        private set
+
+    val canConvertLineEndings: Boolean
+        get() = !closeStarted.get() &&
+            !isViewOnly &&
+            !isSourceReloading &&
+            !isClosePending &&
+            documentRemovalStatus !is DocumentRemovalStatus.Removing &&
+            documentRemovalStatus !is DocumentRemovalStatus.Succeeded &&
+            activeDraft?.hasChanges != true &&
+            !state.hasActiveDraftChanges &&
+            !isSaveBusy &&
+            !isShareBusy &&
+            !isPrintBusy &&
+            !isQrShareBusy &&
+            !isNfcWriteBusy &&
+            state.status == EditorDocumentStatus.Ready
+
+    /** Atomically converts all serialized line endings to [target] as one Undo-able revision. */
+    fun convertLineEndings(target: dev.soupslurpr.beautyxt.document.DocumentLineEnding): Boolean {
+        if (!canConvertLineEndings) return false
+        val metrics = state.metrics ?: return false
+        val currentRevision = metrics.revision
+        lineEndingConversionMessage = null
+        val draft = activeDraft
+        val reopenEditWindow = presentation == EditorPresentation.Text && draft != null
+        val preservedSelection = when {
+            draft != null -> {
+                val local = draft.textFieldState.selection
+                val start = (draft.edit.snapshot.range.start + local.min).coerceIn(0L, metrics.utf16Length)
+                val end = (draft.edit.snapshot.range.start + local.max).coerceIn(start, metrics.utf16Length)
+                Utf16Range(start, end)
+            }
+            documentSelection is DocumentSelection.Source -> {
+                val range = (documentSelection as DocumentSelection.Source).range
+                val start = range.start.coerceIn(0L, metrics.utf16Length)
+                val end = range.end.coerceIn(start, metrics.utf16Length)
+                Utf16Range(start, end)
+            }
+            else -> {
+                val offset = currentDocumentLocation().offset.coerceIn(0L, metrics.utf16Length)
+                Utf16Range(offset, offset)
+            }
+        }
+        var result: DocumentReplacementResult = DocumentReplacementResult.Unavailable
+        launchOperation(
+            operation = { documentState ->
+                result = documentState.convertLineEndings(
+                    revision = currentRevision,
+                    target = target,
+                    selection = preservedSelection,
+                    openEditWindow = reopenEditWindow
+                )
+            },
+            onCompletion = {
+                when (val completed = result) {
+                    is DocumentReplacementResult.Applied -> {
+                        if (completed.revision != currentRevision) {
+                            val delta = CommittedEditDelta(
+                                revisionBefore = currentRevision,
+                                revisionAfter = completed.revision,
+                                rangeStart = 0L,
+                                removedText = "",
+                                insertedText = "",
+                                selectionBefore = preservedSelection,
+                                selectionAfter = preservedSelection
+                            )
+                            recordCommittedEdit(delta)
+                            recordSourceSaveRequest()
+                            if (presentation == EditorPresentation.MarkdownPreview) {
+                                hasReadingMutation = true
+                                rebaseMarkdownPreviewReturnTarget(completed.revision)
+                                launchMarkdownPreview(preserveReady = true)
+                            } else {
+                                invalidateMarkdownPreview()
+                            }
+                        }
+                    }
+
+                    DocumentReplacementResult.RejectedBySizeLimit -> {
+                        lineEndingConversionMessage = UiText.Resource(
+                            R.string.file_info_convert_line_endings_size_limit
+                        )
+                    }
+
+                    DocumentReplacementResult.Failed,
+                    DocumentReplacementResult.Unavailable -> {
+                        lineEndingConversionMessage = UiText.Resource(
+                            R.string.file_info_convert_line_endings_failed
+                        )
+                    }
+                }
+            }
+        )
+        return true
+    }
+
+    /** Reports one immediate read-only comparison rejection without opening an unauthorized URI. */
+    fun failGeneralComparison(mode: DocumentCompareMode, message: UiText) {
+        if (closeStarted.get()) return
+        generalComparisonGeneration = Math.incrementExact(generalComparisonGeneration)
+        generalComparisonJob?.cancel()
+        generalComparison = GeneralDocumentComparison(
+            mode = mode,
+            state = SourceConflictComparisonState.Failed(message)
+        )
+    }
+
+    /** Compares a user-selected file (read-only) against the current settled document revision. */
+    fun compareWithFile(context: android.content.Context, uri: android.net.Uri): Boolean {
+        if (closeStarted.get() || state.metrics == null) return false
+        val appContext = context.applicationContext
+        val generation = Math.incrementExact(generalComparisonGeneration)
+        generalComparisonGeneration = generation
+        generalComparisonJob?.cancel()
+        generalComparison = GeneralDocumentComparison(
+            mode = DocumentCompareMode.ReadOnlyFile(otherTitle = "", localTitle = title),
+            state = SourceConflictComparisonState.Loading
+        )
+        checkpointPendingEdit()
+        generalComparisonJob = operationScope.launch {
+            try {
+                editSynchronizationDelayJob?.cancel()
+                while (!closeStarted.get() && generation == generalComparisonGeneration) {
+                    val syncJob = editSynchronizationJob ?: break
+                    syncJob.join()
+                }
+                if (closeStarted.get() || generation != generalComparisonGeneration) return@launch
+                val localCapture = state.captureDocumentRevision()
+                if (localCapture == null) {
+                    if (generation == generalComparisonGeneration) {
+                        generalComparison = generalComparison?.copy(
+                            state = SourceConflictComparisonState.Failed(
+                                UiText.Resource(R.string.feedback_compare_failed)
+                            )
+                        )
+                    }
+                    return@launch
+                }
+                localCapture.use { local ->
+                    val imported = dev.soupslurpr.beautyxt.importing.client
+                        .IsolatedDocumentImporter(appContext)
+                        .open(uri, allowSourceWriteAccess = false)
+                    imported.use { otherDoc ->
+                        val otherTitle = otherDoc.metadata.displayName.orEmpty()
+                        otherDoc.captureSnapshot(0L).use { otherSnapshot ->
+                            val diff = withContext(backgroundDispatcher) {
+                                otherSnapshot.diffWith(local.snapshot)
+                            }
+                            if (!closeStarted.get() && generation == generalComparisonGeneration) {
+                                generalComparison = GeneralDocumentComparison(
+                                    mode = DocumentCompareMode.ReadOnlyFile(
+                                        otherTitle = otherTitle,
+                                        localTitle = title
+                                    ),
+                                    state = SourceConflictComparisonState.Ready(
+                                        localRevision = local.metrics.revision,
+                                        externalVersion = otherDoc.sourceVersion,
+                                        diff = diff
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                if (!closeStarted.get() && generation == generalComparisonGeneration) {
+                    generalComparison = generalComparison?.copy(
+                        state = SourceConflictComparisonState.Failed(
+                            UiText.Resource(R.string.feedback_compare_failed)
+                        )
+                    )
+                }
+            }
+        }
+        return true
+    }
+
+    /** Compares plain text from the clipboard (`item.text` only, never `coerceToText`) against this document. */
+    fun compareWithClipboard(context: android.content.Context): Boolean {
+        if (closeStarted.get() || state.metrics == null) return false
+        val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+        val clip = clipboard?.primaryClip
+        val rawText = if (clip != null && clip.itemCount > 0) clip.getItemAt(0)?.text?.toString() else null
+        val mode = DocumentCompareMode.ReadOnlyClipboard(localTitle = title)
+        if (rawText == null) {
+            generalComparison = GeneralDocumentComparison(
+                mode = mode,
+                state = SourceConflictComparisonState.Failed(
+                    UiText.Resource(R.string.compare_clipboard_empty)
+                )
+            )
+            return true
+        }
+        if (rawText.length > 2 * 1024 * 1024) {
+            generalComparison = GeneralDocumentComparison(
+                mode = mode,
+                state = SourceConflictComparisonState.Failed(
+                    UiText.Resource(R.string.compare_clipboard_too_large)
+                )
+            )
+            return true
+        }
+        val generation = Math.incrementExact(generalComparisonGeneration)
+        generalComparisonGeneration = generation
+        generalComparisonJob?.cancel()
+        generalComparison = GeneralDocumentComparison(
+            mode = mode,
+            state = SourceConflictComparisonState.Loading
+        )
+        checkpointPendingEdit()
+        generalComparisonJob = operationScope.launch {
+            try {
+                editSynchronizationDelayJob?.cancel()
+                while (!closeStarted.get() && generation == generalComparisonGeneration) {
+                    val syncJob = editSynchronizationJob ?: break
+                    syncJob.join()
+                }
+                if (closeStarted.get() || generation != generalComparisonGeneration) return@launch
+                val localCapture = state.captureDocumentRevision()
+                if (localCapture == null) {
+                    if (generation == generalComparisonGeneration) {
+                        generalComparison = GeneralDocumentComparison(
+                            mode = mode,
+                            state = SourceConflictComparisonState.Failed(
+                                UiText.Resource(R.string.feedback_compare_failed)
+                            )
+                        )
+                    }
+                    return@launch
+                }
+                localCapture.use { local ->
+                    val diff = withContext(backgroundDispatcher) {
+                        val rawBytes = rawText.toByteArray(Charsets.UTF_8)
+                        dev.soupslurpr.beautyxt.ipc.SealedInput.fromStream(
+                            maxBytes = rawBytes.size.toLong().coerceAtLeast(1L)
+                        ) { output ->
+                            output.write(rawBytes)
+                        }.use { sealed ->
+                            sealed.takeReader().use { reader ->
+                                dev.soupslurpr.beautyxt.document.RustDocument.openSource(
+                                    rawFileDescriptor = reader.fd,
+                                    expectedBytes = rawBytes.size.toLong()
+                                ).use { clipDoc ->
+                                    clipDoc.captureSnapshot(0L).use { clipSnapshot ->
+                                        clipSnapshot.diffWith(local.snapshot)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (!closeStarted.get() && generation == generalComparisonGeneration) {
+                        generalComparison = GeneralDocumentComparison(
+                            mode = mode,
+                            state = SourceConflictComparisonState.Ready(
+                                localRevision = local.metrics.revision,
+                                externalVersion = null,
+                                diff = diff
+                            )
+                        )
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                if (!closeStarted.get() && generation == generalComparisonGeneration) {
+                    generalComparison = GeneralDocumentComparison(
+                        mode = mode,
+                        state = SourceConflictComparisonState.Failed(
+                            UiText.Resource(R.string.feedback_compare_failed)
+                        )
+                    )
+                }
+            }
+        }
+        return true
+    }
+
+    private val illustrationShareLeases = mutableListOf<dev.soupslurpr.beautyxt.sharing.ExcerptShareLease>()
+
+    /** Releases any retained illustration share leases owned by this session before a new share. */
+    fun releaseIllustrationShareLeases() {
+        synchronized(illustrationShareLeases) {
+            illustrationShareLeases.forEach { runCatching { it.close() } }
+            illustrationShareLeases.clear()
+        }
+    }
+
+    /** Retains one active illustration share lease per session until replaced or session closes. */
+    fun retainIllustrationShareLease(lease: dev.soupslurpr.beautyxt.sharing.ExcerptShareLease) {
+        if (closeStarted.get()) {
+            lease.close()
+            return
+        }
+        synchronized(illustrationShareLeases) {
+            while (illustrationShareLeases.isNotEmpty()) {
+                illustrationShareLeases.removeAt(0).close()
+            }
+            illustrationShareLeases.add(lease)
+        }
+    }
+
+    /** Dismisses any active non-conflict comparison sheet and cancels its worker job. */
+    fun dismissGeneralComparison() {
+        generalComparisonGeneration = Math.incrementExact(generalComparisonGeneration)
+        generalComparisonJob?.cancel()
+        generalComparisonJob = null
+        generalComparison = null
+    }
+
     /** Opens a read-only bounded diff between the external file and the settled local revision. */
     fun requestSourceConflictComparison(): Boolean {
         val recoverable = ownedDocumentSource as? ConflictRecoverableEditorDocumentSource
@@ -3726,11 +4608,12 @@ internal constructor(
         ) {
             return false
         }
+        val reviewedVersion = ready.externalVersion ?: return false
         dismissSourceConflictComparison()
         sourceConflictResolution = null
         reviewedSourceOverwrite = ReviewedSourceOverwrite(
             localRevision = ready.localRevision,
-            externalVersion = ready.externalVersion
+            externalVersion = reviewedVersion
         )
         overwriteSourceOnNextSave = true
         sourceSaveRequestVersion = Math.incrementExact(sourceSaveRequestVersion)
@@ -4791,6 +5674,13 @@ internal constructor(
         clearDocumentExperienceReferences()
         replacementFieldState.resetFindInput()
         excerptExport.close()
+        dismissGeneralComparison()
+        cancelLiveSplitPreview()
+        isSplitViewEnabled = false
+        synchronized(illustrationShareLeases) {
+            illustrationShareLeases.forEach { runCatching { it.close() } }
+            illustrationShareLeases.clear()
+        }
         isFindRegex = false
         isFindWholeWord = false
         isFindCaseSensitive = false
@@ -4980,6 +5870,9 @@ internal constructor(
                         )
                 )
         previewReturnsToSource = returnToSource
+        cancelLiveSplitPreview()
+        isSplitViewEnabled = false
+        hasReadingMutation = false
         presentation = EditorPresentation.MarkdownPreview
         isReplaceVisible = false
         refreshAdvancedFind()
@@ -4994,14 +5887,21 @@ internal constructor(
     }
 
     /** Starts one cancellable isolated render for the current immutable revision. */
-    private fun launchMarkdownPreview() {
+    private fun launchMarkdownPreview(preserveReady: Boolean = false) {
         val renderer = markdownRenderer ?: return
         val revision = state.metrics?.revision ?: return
-        invalidateMarkdownPreview()
+        val previousReady = if (preserveReady) {
+            markdownPreviewStatus as? MarkdownPreviewStatus.Ready
+        } else {
+            null
+        }
+        invalidateMarkdownPreview(clearStatus = previousReady == null)
         val generation = nextMarkdownPreviewGeneration
         nextMarkdownPreviewGeneration = Math.incrementExact(nextMarkdownPreviewGeneration)
         activeMarkdownPreviewGeneration = generation
-        markdownPreviewStatus = MarkdownPreviewStatus.Rendering(revision)
+        if (previousReady == null) {
+            markdownPreviewStatus = MarkdownPreviewStatus.Rendering(revision)
+        }
         val operation =
             operationScope.launch(start = CoroutineStart.LAZY) {
                 try {
@@ -5014,18 +5914,22 @@ internal constructor(
                         return@launch
                     }
                     if (rendered?.revision == revision) {
-                            markdownPreviewStatus = MarkdownPreviewStatus.Ready(
-                                revision = rendered.revision,
-                                document = rendered.document,
-                                layout = rendered.layout,
-                                scrollRestoration =
-                                    markdownPreviewReturnTarget
-                                        ?.viewportAnchor
-                                        ?.takeIf { anchor -> anchor.revision == rendered.revision }
-                                        ?.let(::ViewportRestoration)
-                            )
-                            pendingReadingLocation = null
-                            restoreSelectionInReading(markdownPreviewStatus as MarkdownPreviewStatus.Ready)
+                        val scrollRestoration = if (previousReady != null) {
+                            null
+                        } else {
+                            markdownPreviewReturnTarget
+                                ?.viewportAnchor
+                                ?.takeIf { anchor -> anchor.revision == rendered.revision }
+                                ?.let(::ViewportRestoration)
+                        }
+                        markdownPreviewStatus = MarkdownPreviewStatus.Ready(
+                            revision = rendered.revision,
+                            document = rendered.document,
+                            layout = rendered.layout,
+                            scrollRestoration = scrollRestoration
+                        )
+                        pendingReadingLocation = null
+                        restoreSelectionInReading(markdownPreviewStatus as MarkdownPreviewStatus.Ready)
                     } else {
                         publishMarkdownPreviewFailure(generation, UiText.Resource(R.string.operation_preview_revision_changed))
                         return@launch
@@ -5082,13 +5986,15 @@ internal constructor(
     }
 
     /** Cancels and forgets any revision-bound Markdown preview model. */
-    private fun invalidateMarkdownPreview() {
+    private fun invalidateMarkdownPreview(clearStatus: Boolean = true) {
         observedIllustrationRevision = -1L
         observedIllustrationVersion = -1L
         activeMarkdownPreviewGeneration = null
         markdownPreviewJob?.cancel()
         markdownPreviewJob = null
-        markdownPreviewStatus = MarkdownPreviewStatus.Idle
+        if (clearStatus) {
+            markdownPreviewStatus = MarkdownPreviewStatus.Idle
+        }
         selectionReadingCache = null
         readingSearchCache = null
         validatedReadingProjectionVersion = null
@@ -5402,14 +6308,25 @@ internal constructor(
                         findActionMessage = UiText.Resource(R.string.find_scope_lost)
                         return@launch
                     }
+                    val isBlockVisible = readingBlockVisibilityPredicate()
+                    val isBlockIndexVisible: (Int) -> Boolean = { blockIndex ->
+                        searchDocument.blocks.getOrNull(blockIndex)?.let { isBlockVisible(blockIndex, it) } ?: false
+                    }
                     complete = if (selection == null) !units.hasCoverageGaps else units.coverageGaps.none { target ->
-                        readingUnitScope(ReadingSearchUnit("", emptyList(), illustration = target), selection) != null
+                        readingUnitScope(
+                            ReadingSearchUnit("", emptyList(), illustration = target),
+                            selection,
+                            isBlockIndexVisible
+                        ) != null
                     }
                     var searchedUnit = false
                     outer@ for ((unitIndex, unit) in units.units.withIndex()) {
                         if (unitIndex < (continuation?.unit ?: 0)) continue
-                        val unitScope = if (selection != null) readingUnitScope(unit, selection) ?: continue
-                            else Utf16Range(0, unit.text.length.toLong())
+                        val unitScope = if (selection != null) {
+                            readingUnitScope(unit, selection, isBlockIndexVisible) ?: continue
+                        } else {
+                            Utf16Range(0, unit.text.length.toLong())
+                        }
                         var cursor = continuation?.takeIf { it.unit == unitIndex }?.cursor ?: SearchCursor(unitScope.start)
                         if (searchedUnit && findNanoTime() - started > 3_000_000_000L) {
                             findContinuation = FindContinuation(unitIndex, cursor, false)
@@ -5545,8 +6462,21 @@ internal constructor(
         findResultIndex = index
         if (presentation == EditorPresentation.MarkdownPreview) {
             val ready = markdownPreviewStatus as? MarkdownPreviewStatus.Ready ?: return false
-            markdownPreviewStatus = ready.copy(scrollRestoration = ViewportRestoration(SemanticViewportAnchor(revision, target.offset, 0),
-                findRange = result.source ?: result.hit.range))
+            val firstSegment = result.segments.firstOrNull()
+            val targetBlockIndex = firstSegment?.block ?: result.illustration?.block
+            val targetRenderedOffset = if (firstSegment?.isFrontmatterKey == true) {
+                0
+            } else {
+                (firstSegment?.blockStart ?: result.illustration?.start ?: 0).coerceAtLeast(0)
+            }
+            markdownPreviewStatus = ready.copy(
+                scrollRestoration = ViewportRestoration(
+                    anchor = SemanticViewportAnchor(revision, target.offset, 0),
+                    findRange = result.source ?: result.hit.range,
+                    targetBlockIndex = targetBlockIndex,
+                    targetRenderedOffset = targetRenderedOffset
+                )
+            )
             observeMarkdownPreviewViewportAnchor(revision, target.offset)
             locations.record(origin, target, find = true)
             locationVersion++
@@ -6097,7 +7027,12 @@ internal constructor(
             publishSourceSaveFailure(SOURCE_SAVE_TOO_LARGE_MESSAGE)
             return
         }
-        if (isSaveBusy || !isDocumentReadyForSave()) {
+        if (
+            isSaveBusy ||
+            !isDocumentReadyForSave() ||
+            documentRemovalStatus is DocumentRemovalStatus.Removing ||
+            documentRemovalStatus is DocumentRemovalStatus.Succeeded
+        ) {
             return
         }
         val requestedVersion = sourceSaveRequestVersion

@@ -6,6 +6,15 @@
     <string name="file_info_words">Words</string>
     <string name="file_info_word_description">Runs separated by Unicode whitespace</string>
     <string name="file_info_characters">Unicode characters</string>
+    <string name="file_info_reading_time">Reading time</string>
+    <string name="file_info_reading_time_less_than_min">&lt; 1 min</string>
+    <plurals name="file_info_reading_time_minutes">
+        <item quantity="one">%1$d min</item>
+        <item quantity="other">%1$d min</item>
+    </plurals>
+    <string name="file_info_convert_line_endings">Convert line endings</string>
+    <string name="file_info_convert_line_endings_failed">Line endings could not be converted right now.</string>
+    <string name="file_info_convert_line_endings_size_limit">Converting line endings would exceed the file size limit.</string>
     <string name="file_info_encoding">Encoding</string>
     <string name="file_info_utf8_bom">UTF-8 with BOM</string>
     <string name="file_info_utf8">UTF-8</string>

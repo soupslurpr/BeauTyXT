@@ -3,7 +3,7 @@ package dev.soupslurpr.beautyxt.document
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicLong
 
-internal const val MAX_REPLACEMENT_PATCHES = 4096
+internal const val MAX_REPLACEMENT_PATCHES = 32_769
 internal const val MAX_REPLACEMENT_REVIEW_UNITS = 256 * 1024
 internal const val MAX_SEARCH_RESULTS = 4096
 

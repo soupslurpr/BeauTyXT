@@ -25,7 +25,12 @@ import dev.soupslurpr.beautyxt.ui.editor.ConflictRecoverableEditorDocumentSource
 import dev.soupslurpr.beautyxt.ui.editor.ExternalSourceComparisonInput
 import dev.soupslurpr.beautyxt.ui.editor.RemovableEditorDocumentSource
 import dev.soupslurpr.beautyxt.ui.editor.SelectedEditorDocumentSource
+import dev.soupslurpr.beautyxt.ui.editor.WritableDocumentLease
+import dev.soupslurpr.beautyxt.ui.editor.WritableDocumentRegistry
 import dev.soupslurpr.beautyxt.ui.editor.WritableEditorDocumentSource
+import dev.soupslurpr.beautyxt.ui.editor.combineCloseables
+import dev.soupslurpr.beautyxt.ui.editor.probeWritableFileIdentity
+import dev.soupslurpr.beautyxt.ui.editor.writableDocumentKeys
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.cancellation.CancellationException
@@ -108,6 +113,12 @@ internal class LeasedEditorDocumentSource(
         delegate.matchesSourceUri(encodedUri)
 
     override fun encodedShareUri(): String = delegate.encodedShareUri()
+
+    override val fileIdentityKey: String?
+        get() = delegate.fileIdentityKey
+
+    override val writableLeaseOwnerId: java.util.UUID?
+        get() = delegate.writableLeaseOwnerId
 
     override suspend fun saveRevision(snapshot: EditorDocumentSnapshot, expectedBytes: Long) {
         delegate.saveRevision(snapshot, expectedBytes)
@@ -343,7 +354,7 @@ internal class NewDocumentFolderClient(
                 canRetryCreate = false
             )
         }
-        if (childDocumentId.isNullOrBlank() || childDocumentId == treeDocumentId) {
+        if (childDocumentId.isNullOrEmpty() || childDocumentId == treeDocumentId) {
             return NewDocumentCreationResult.Failed(
                 message = UiText.Resource(R.string.autosave_create_incompatible),
                 canRetryCreate = false
@@ -366,6 +377,7 @@ internal class NewDocumentFolderClient(
         }
 
         var unclaimedSource: SelectedDocumentSource? = selectedSource
+        var unclaimedWriteLease: WritableDocumentLease? = null
         try {
             val observedVersion = try {
                 TransientSourceDescriptor.from(selectedSource.openReadDescriptor()).use { descriptor ->
@@ -393,13 +405,34 @@ internal class NewDocumentFolderClient(
                 )
             }
 
+            val createdSourceUri = selectedSource.uri
+            unclaimedWriteLease = WritableDocumentRegistry.shared.tryAcquireRefreshing(
+                documentKeys = writableDocumentKeys(
+                    context = applicationContext,
+                    uri = createdSourceUri,
+                    knownFileIdentityKey = selectedSource.fileIdentityKey,
+                    preferWriteProbe = true
+                ),
+                liveProbe = { probeWritableFileIdentity(applicationContext, createdSourceUri) },
+                destinationIsEmpty = true
+            )
+            if (unclaimedWriteLease == null) {
+                return NewDocumentCreationResult.Failed(
+                    message = UiText.Resource(R.string.autosave_create_incompatible),
+                    canRetryCreate = false
+                )
+            }
+
             val ownedEditorSource = SelectedEditorDocumentSource.takeCreatedOwnership(
                 selectedSource = checkNotNull(unclaimedSource),
                 exporter = exporter,
-                readOnlyImporter = readOnlyImporter
+                readOnlyImporter = readOnlyImporter,
+                writeLease = unclaimedWriteLease
             ).also { unclaimedSource = null }
 
-            val leasedSource = LeasedEditorDocumentSource(ownedEditorSource, lease)
+            val combinedLease = checkNotNull(combineCloseables(lease, unclaimedWriteLease))
+                .also { unclaimedWriteLease = null }
+            val leasedSource = LeasedEditorDocumentSource(ownedEditorSource, combinedLease)
             onCreatedSource(leasedSource)
             return NewDocumentCreationResult.Created(
                 source = leasedSource,
@@ -408,6 +441,7 @@ internal class NewDocumentFolderClient(
                 metadata = metadata
             )
         } finally {
+            unclaimedWriteLease?.close()
             unclaimedSource?.close()
         }
     }

@@ -9,14 +9,18 @@ import androidx.activity.result.contract.ActivityResultContracts
 import dev.soupslurpr.beautyxt.SelectedDestinationResult
 
 /** Captures the MIME type and filename together before opening the system picker. */
-internal data class QrImageDestinationRequest(val title: String, val format: QrImageFormat)
+internal data class QrImageDestinationRequest(
+    val title: String,
+    val format: QrImageFormat,
+    val exactFilename: String? = null
+)
 
 /** Avoids a recomposition race between changing format and launching CreateDocument. */
 internal class QrImageDestinationContract : ActivityResultContract<QrImageDestinationRequest, Uri?>() {
     override fun createIntent(context: Context, input: QrImageDestinationRequest): Intent =
         ActivityResultContracts.CreateDocument(input.format.mimeType).createIntent(
             context,
-            suggestQrImageDestinationName(input.title, input.format)
+            input.exactFilename ?: suggestQrImageDestinationName(input.title, input.format)
         ).addCategory(Intent.CATEGORY_OPENABLE)
 
     override fun parseResult(resultCode: Int, intent: Intent?): Uri? =

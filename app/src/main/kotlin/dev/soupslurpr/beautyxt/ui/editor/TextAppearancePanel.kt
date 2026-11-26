@@ -273,6 +273,9 @@ internal fun TextAppearancePanel(
                             item { AppearanceNumberControl(panelState, AppearanceOption.Size, group, appearance, change,
                                 help = stringResource(R.string.appearance_system_size)) }
                             item { AppearanceNumberControl(panelState, AppearanceOption.Weight, group, appearance, change) }
+                            if (group == AppearanceGroup.Source) {
+                                item { AppearanceSwitchControl(AppearanceOption.SyntaxHighlighting, group, appearance, change) }
+                            }
                             if (group == AppearanceGroup.Markdown) {
                                 item { AppearanceSectionHeading(R.string.appearance_headings) }
                                 item { AppearanceFontControl(AppearanceOption.HeadingFont, group, appearance, change) }
@@ -282,6 +285,7 @@ internal fun TextAppearancePanel(
                                 item { AppearanceFontControl(AppearanceOption.CodeFont, group, appearance, change) }
                                 item { AppearanceNumberControl(panelState, AppearanceOption.CodeScale, group, appearance, change,
                                     help = stringResource(R.string.appearance_code_scale_help)) }
+                                item { AppearanceSwitchControl(AppearanceOption.SyntaxHighlighting, group, appearance, change) }
                             }
                         }
                         1 -> {
@@ -306,10 +310,12 @@ internal fun TextAppearancePanel(
                             item { AppearanceNumberControl(panelState, AppearanceOption.Margin, group, appearance, change,
                                 help = stringResource(R.string.appearance_margin_help)) }
                             if (group == AppearanceGroup.Source) {
+                                item { AppearanceSwitchControl(AppearanceOption.LineNumbers, group, appearance, change) }
                                 item { AppearanceSwitchControl(AppearanceOption.Wrap, group, appearance, change) }
                                 item { AppearanceNumberControl(panelState, AppearanceOption.TabWidth, group, appearance, change,
                                     help = stringResource(R.string.appearance_tabs_help)) }
                             }
+                            item { AppearanceSwitchControl(AppearanceOption.KeepScreenOn, group, appearance, change) }
                         }
                     }
                     item {

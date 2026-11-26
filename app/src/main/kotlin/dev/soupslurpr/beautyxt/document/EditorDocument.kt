@@ -131,4 +131,15 @@ internal interface EditorDocument : AutoCloseable {
     /** Captures only a logical selection, without a BOM or source newline encoding. */
     fun captureRange(expectedRevision: Long, range: Utf16Range): EditorDocumentSnapshot =
         error("selection snapshots are unsupported")
+
+    /** Converts all serialized line endings uniformly as one atomic, Undo-able revision. */
+    fun convertLineEndings(expectedRevision: Long, target: DocumentLineEnding): DocumentMetrics =
+        error("line-ending conversion is unsupported")
+
+    /** Captures an ephemeral snapshot with one uncommitted draft applied, leaving Undo/revision untouched. */
+    fun capturePreviewSnapshot(
+        expectedRevision: Long,
+        range: Utf16Range,
+        replacement: String
+    ): EditorDocumentSnapshot = captureSnapshot(expectedRevision)
 }

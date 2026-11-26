@@ -29,6 +29,7 @@ internal fun documentFormatForMimeType(mimeType: String?): DocumentFormat? = whe
     mimeType.equals("application/markdown", ignoreCase = true) -> DocumentFormat.Markdown
     mimeType.equals("application/x-markdown", ignoreCase = true) -> DocumentFormat.Markdown
     mimeType.startsWith("text/", ignoreCase = true) -> DocumentFormat.PlainText
+    mimeType.lowercase(Locale.ROOT) in TEXT_BASED_APPLICATION_MIME_TYPES -> DocumentFormat.PlainText
     else -> null
 }
 
@@ -36,9 +37,40 @@ internal fun documentFormatForMimeType(mimeType: String?): DocumentFormat? = whe
 internal fun documentFormatForSourceName(sourceName: String): DocumentFormat? {
     val extension = sourceName.substringAfterLast('/').substringAfterLast('.', "")
         .lowercase(Locale.ROOT)
-    return when (extension) {
-        "md", "markdown", "mdown", "mkd" -> DocumentFormat.Markdown
-        "txt", "text", "log", "asc" -> DocumentFormat.PlainText
+    return when {
+        extension in MARKDOWN_EXTENSIONS -> DocumentFormat.Markdown
+        extension in PLAIN_TEXT_AND_CODE_EXTENSIONS -> DocumentFormat.PlainText
         else -> null
     }
 }
+
+private val MARKDOWN_EXTENSIONS = setOf("md", "markdown", "mdown", "mkd")
+
+private val PLAIN_TEXT_AND_CODE_EXTENSIONS = setOf(
+    "txt", "text", "log", "asc",
+    "rs", "kt", "kts", "java",
+    "c", "h", "cpp", "cc", "cxx", "hpp", "hh", "hxx", "cs",
+    "go", "swift", "zig",
+    "js", "mjs", "cjs", "jsx", "ts", "mts", "cts", "tsx",
+    "py", "pyi", "sh", "bash", "zsh", "rb", "lua", "sql",
+    "json", "jsonc", "yaml", "yml", "toml",
+    "xml", "html", "htm", "xhtml", "css", "scss",
+    "diff", "patch",
+    "ini", "cfg", "conf", "csv", "tsv", "gradle", "properties"
+)
+
+internal val TEXT_BASED_APPLICATION_MIME_TYPES = linkedSetOf(
+    "application/json",
+    "application/xml",
+    "application/xhtml+xml",
+    "application/javascript",
+    "application/x-javascript",
+    "application/ecmascript",
+    "application/typescript",
+    "application/x-sh",
+    "application/x-shellscript",
+    "application/yaml",
+    "application/x-yaml",
+    "application/toml",
+    "application/sql"
+)

@@ -232,7 +232,7 @@ internal class AndroidNewDocumentFolderAccess(
                 DocumentsContract.isTreeUri(uri) &&
                 segments.size == 2 &&
                 segments[0] == "tree" &&
-                !DocumentsContract.getTreeDocumentId(uri).isNullOrBlank()
+                !DocumentsContract.getTreeDocumentId(uri).isNullOrEmpty()
         } catch (_: Exception) {
             false
         }

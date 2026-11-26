@@ -4,7 +4,29 @@
     <string name="find_domain_scope">%1$s · %2$s</string>
     <string name="find_clear_query">Clear search</string>
     <string name="document_keyboard_shortcuts">Keyboard shortcuts</string>
-    <string name="document_keyboard_shortcuts_body">Ctrl+F: Find\nCtrl+H: Replace in source\nF3 / Shift+F3: Next / Previous match\nCtrl+G: Go to line in source\nCtrl+Alt+Left / Right: Previous / Next location\n\nIn the Find query:\nEnter / Shift+Enter: Next / Previous match\nCtrl+Enter: Insert line break\n\nCtrl+A / C / X / V: Select all / Copy / Cut / Paste in the focused text or document\nShift+Left / Right: Extend selection\nCtrl+Z: Undo\nCtrl+Shift+Z or Ctrl+Y: Redo\n\nArrow keys adjust a focused selection handle. Escape dismisses Find or the current selection. Apply replacements explicitly with its button.</string>
+    <string name="document_keyboard_shortcuts_body">Ctrl+F: Find\nCtrl+H: Replace in source\nF3 / Shift+F3: Next / Previous match\nCtrl+G: Go to line in source\nCtrl+Alt+Left / Right: Previous / Next location\nCtrl+S: Save\nCtrl+P: Print\nCtrl+Shift+V: Switch Source / Reading\nCtrl+\\: Toggle Split view (wide screens)\nCtrl+Shift+O: Contents\nCtrl+/: Keyboard shortcuts\n\nIn Source editing:\nTab / Shift+Tab: Indent / Outdent lines\nAlt+Up / Down: Move line up / down\nCtrl+D: Duplicate line\nCtrl+B / I / E / K: Bold / Italic / Code / Link (Markdown)\n\nIn the Find query:\nEnter / Shift+Enter: Next / Previous match\nCtrl+Enter: Insert line break\n\nCtrl+A / C / X / V: Select all / Copy / Cut / Paste in the focused text or document\nShift+Left / Right: Extend selection\nCtrl+Z: Undo\nCtrl+Shift+Z or Ctrl+Y: Redo\n\nArrow keys adjust a focused selection handle. Escape dismisses Find or the current selection. Apply replacements explicitly with its button.</string>
+    <string name="editor_split_view_show">Show split view</string>
+    <string name="editor_split_view_hide">Hide split view</string>
+    <string name="editor_new_window">New window</string>
+    <string name="markdown_format_bold">Bold</string>
+    <string name="markdown_format_italic">Italic</string>
+    <string name="markdown_format_code">Code</string>
+    <string name="markdown_format_link">Link</string>
+    <string name="markdown_format_heading">Heading</string>
+    <string name="markdown_format_bullet">Bullet list</string>
+    <string name="markdown_format_checklist">Checklist</string>
+    <string name="markdown_format_quote">Quote</string>
+    <string name="markdown_format_indent">Indent</string>
+    <string name="markdown_format_outdent">Outdent</string>
+    <plurals name="selection_stats_words">
+        <item quantity="one">%1$s word</item>
+        <item quantity="other">%1$s words</item>
+    </plurals>
+    <plurals name="selection_stats_chars">
+        <item quantity="one">%1$s character</item>
+        <item quantity="other">%1$s characters</item>
+    </plurals>
+    <string name="selection_stats_summary">%1$s · %2$s</string>
     <string name="selection_cut">Cut</string>
     <string name="selection_paste">Paste</string>
     <string name="selection_title">Selection</string>
