@@ -37,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -46,6 +47,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.retain.retain
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
@@ -54,6 +56,7 @@ import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
@@ -63,6 +66,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -93,6 +97,7 @@ internal fun DocumentEditor(
     modifier: Modifier = Modifier,
     onCancelSave: () -> Unit = session::cancelSave,
     onReloadSource: () -> Unit = {},
+    onOpenNewWindow: () -> Unit = {},
     scanQrEnabled: Boolean = false,
     onScanQr: () -> Unit = {},
     writeNfcEnabled: Boolean = false,
@@ -116,6 +121,48 @@ internal fun DocumentEditor(
         title = { Text(stringResource(R.string.document_keyboard_shortcuts)) },
         text = { Text(stringResource(R.string.document_keyboard_shortcuts_body), Modifier.verticalScroll(rememberScrollState())) },
         confirmButton = { TextButton({ shortcutsVisible = false }) { Text(stringResource(R.string.action_close)) } })
+    val illustrationImageSaveLauncher =
+        rememberLauncherForActivityResult(
+            AuthorizedQrImageDestinationContract()
+        ) { selected ->
+            session.onIllustrationImageDestinationSelected(context, selected)
+        }
+    LaunchedEffect(session.illustrationImagePickerRequest) {
+        val request = session.illustrationImagePickerRequest ?: return@LaunchedEffect
+        session.consumeIllustrationImagePickerRequest(request)
+        try {
+            illustrationImageSaveLauncher.launch(
+                QrImageDestinationRequest(
+                    title = request.suggestedTitle,
+                    format = request.format,
+                    exactFilename = request.suggestedTitle
+                )
+            )
+        } catch (_: Exception) {
+            session.failIllustrationImagePickerLaunch(request)
+        }
+    }
+    val compareFileLauncher =
+        rememberLauncherForActivityResult(
+            dev.soupslurpr.beautyxt.SelectDocumentContract()
+        ) { resultIntent ->
+            val uri = resultIntent?.data ?: return@rememberLauncherForActivityResult
+            val offersRead =
+                (resultIntent.flags and android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0
+            val appContext = context.applicationContext
+            if (
+                uri.scheme != android.content.ContentResolver.SCHEME_CONTENT ||
+                uri.authority.isNullOrBlank() ||
+                (dev.soupslurpr.beautyxt.mayHaveAmbientTreeAccessForUri(appContext, uri) && !offersRead)
+            ) {
+                session.failGeneralComparison(
+                    mode = DocumentCompareMode.ReadOnlyFile(otherTitle = "", localTitle = session.title),
+                    message = dev.soupslurpr.beautyxt.ui.UiText.Resource(R.string.operation_incoming_content_unavailable)
+                )
+                return@rememberLauncherForActivityResult
+            }
+            session.compareWithFile(context, uri)
+        }
     val readyQrShare = session.qrShareStatus as? QrShareStatus.Ready
     val qrImageColors = scanSafeQrCodeColors(MaterialTheme.colorScheme)
     val qrImageExport = session.qrImageExport
@@ -151,7 +198,10 @@ internal fun DocumentEditor(
                     destination = uri,
                     grid = currentQrShare.grid,
                     colors = qrImageColors,
-                    format = format
+                    format = format,
+                    resolveForbiddenSource = {
+                        session.currentSourceIdentityCheck(applicationContext)
+                    }
                 )
             }
         }
@@ -182,6 +232,21 @@ internal fun DocumentEditor(
     var contentsOpenedAtFindReveal by retain(session) { mutableLongStateOf(0L) }
     val softwareKeyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    val requestCompareFile = {
+        focusManager.clearFocus(force = true)
+        softwareKeyboardController?.hide()
+        try {
+            compareFileLauncher.launch(Unit)
+        } catch (_: Exception) {
+            Unit
+        }
+    }
+    val requestCompareClipboard = {
+        focusManager.clearFocus(force = true)
+        softwareKeyboardController?.hide()
+        session.compareWithClipboard(context)
+        Unit
+    }
     val requestAppearance = {
         session.flushPendingEdit()
         // Keep the field from reclaiming the keyboard as the controls open.
@@ -358,6 +423,9 @@ internal fun DocumentEditor(
             session.sourceConflictComparison != null ->
                 session.dismissSourceConflictComparison()
 
+            session.generalComparison != null ->
+                session.dismissGeneralComparison()
+
             session.saveStatus is SaveStatus.ChoosingFormat ->
                 session.dismissSaveFormatSelection()
 
@@ -445,6 +513,7 @@ internal fun DocumentEditor(
             session.isDiscardConfirmationVisible -> false
             session.sourceConflictResolution != null -> false
             session.sourceConflictComparison != null -> false
+            session.generalComparison != null -> false
             session.saveStatus is SaveStatus.ChoosingFormat -> false
             readyQrShare != null -> false
             session.isFindVisible -> false
@@ -527,6 +596,18 @@ internal fun DocumentEditor(
         delay(timeout)
         session.retireReplacementUndoNotice(revision)
     }
+    val activeAppearanceGroup = if (session.presentation == EditorPresentation.MarkdownPreview) {
+        AppearanceGroup.Markdown
+    } else {
+        AppearanceGroup.Source
+    }
+    val keepScreenOn = appearances[activeAppearanceGroup]
+        .value(AppearanceOption.KeepScreenOn, activeAppearanceGroup) == 1f
+    val hostView = LocalView.current
+    DisposableEffect(hostView, keepScreenOn) {
+        hostView.keepScreenOn = keepScreenOn
+        onDispose { hostView.keepScreenOn = false }
+    }
     CompositionLocalProvider(LocalDocumentAppearances provides appearances) {
         Surface(
             modifier =
@@ -542,6 +623,36 @@ internal fun DocumentEditor(
                                 session.returnToDocumentLocation(true); true
                             }
                             event.isCtrlPressed && event.key == Key.G -> { requestGoToLine(); true }
+                            event.isCtrlPressed && !event.isAltPressed && !event.isShiftPressed && event.key == Key.S -> {
+                                requestSave(); true
+                            }
+                            event.isCtrlPressed && !event.isAltPressed && !event.isShiftPressed && event.key == Key.P -> {
+                                if (session.canStartPrint) session.showPrintSetup()
+                                true
+                            }
+                            event.isCtrlPressed && event.isShiftPressed && !event.isAltPressed && event.key == Key.V -> {
+                                if (session.presentation == EditorPresentation.MarkdownPreview) {
+                                    requestTextEditor()
+                                } else if (session.canShowMarkdownPreview) {
+                                    requestPreview()
+                                }
+                                true
+                            }
+                            event.isCtrlPressed && !event.isAltPressed && !event.isShiftPressed && event.key == Key.Backslash -> {
+                                val currentUsableWidth = with(density) { windowSize.width.toDp() }
+                                if (currentUsableWidth >= 840.dp && session.canToggleSplitView) {
+                                    session.toggleSplitView()
+                                }
+                                true
+                            }
+                            event.isCtrlPressed && event.isShiftPressed && !event.isAltPressed && event.key == Key.O -> {
+                                if (outlineEnabled) requestContents()
+                                true
+                            }
+                            event.isCtrlPressed && !event.isAltPressed && event.key == Key.Slash -> {
+                                shortcutsVisible = !shortcutsVisible
+                                true
+                            }
                             event.key == Key.F3 -> {
                                 if (event.isShiftPressed) session.findPrevious() else session.findNext(); true
                             }
@@ -550,6 +661,32 @@ internal fun DocumentEditor(
                             event.key == Key.Escape &&
                                 (session.documentSelection != null || session.selectionMessage != null) -> {
                                 session.clearDocumentSelection()
+                                true
+                            }
+                            else -> false
+                        }
+                    }
+                    .onKeyEvent { event ->
+                        // Handle Reading-mode Undo/Redo only after focused children (such as text
+                        // fields) and only when Find or modal dialogs/sheets are not active.
+                        val canHandleReadingHistoryShortcut =
+                            session.presentation == EditorPresentation.MarkdownPreview &&
+                                activeSheet == null &&
+                                !session.isFindVisible &&
+                                !session.isGoToLineDialogVisible &&
+                                !session.isDiscardConfirmationVisible &&
+                                !session.isFileInfoVisible &&
+                                session.printSetupDraft == null
+                        if (event.type != KeyEventType.KeyDown || !canHandleReadingHistoryShortcut) {
+                            false
+                        } else when {
+                            event.isCtrlPressed && !event.isAltPressed && event.key == Key.Z -> {
+                                if (event.isShiftPressed) session.requestRedo() else session.requestUndo()
+                                true
+                            }
+                            event.isCtrlPressed && !event.isAltPressed && !event.isShiftPressed &&
+                                event.key == Key.Y -> {
+                                session.requestRedo()
                                 true
                             }
                             else -> false
@@ -668,7 +805,11 @@ internal fun DocumentEditor(
                                         onReadNfc = onReadNfc,
                                         onKeyboardShortcuts = { shortcutsVisible = true },
                                         onTextAppearance = requestAppearance,
-                                        onAppTheme = { isAppThemeVisible = true }
+                                        onAppTheme = { isAppThemeVisible = true },
+                                        onCompareFile = requestCompareFile,
+                                        onCompareClipboard = requestCompareClipboard,
+                                        onToggleSplitView = { session.toggleSplitView() },
+                                        onOpenNewWindow = onOpenNewWindow
                                     ),
                                     availableWidth = usableWidth,
                                     availableHeight = availableTopBarHeight,
@@ -710,17 +851,56 @@ internal fun DocumentEditor(
                             LaunchedEffect(hasBottomOverlay) {
                                 if (!hasBottomOverlay) bottomOverlayState.clear()
                             }
+                            val isSplitViewActive =
+                                wideTools &&
+                                    session.isSplitViewEnabled &&
+                                    session.presentation == EditorPresentation.Text
+                            LaunchedEffect(isSplitViewActive, session, activeDraft) {
+                                if (!isSplitViewActive) return@LaunchedEffect
+                                var isFirstEmission = true
+                                snapshotFlow {
+                                    Triple(
+                                        state.metrics?.revision,
+                                        activeDraft?.edit?.snapshot?.range,
+                                        activeDraft?.textFieldState?.text?.toString()
+                                    )
+                                }.collect { (revision, draftRange, draftText) ->
+                                    if (revision != null) {
+                                        val debounce = if (isFirstEmission) 0L else 300L
+                                        isFirstEmission = false
+                                        session.scheduleLiveSplitPreview(
+                                            draftRange = draftRange,
+                                            draftText = draftText,
+                                            debounceMs = debounce
+                                        )
+                                    }
+                                }
+                            }
                             CompositionLocalProvider(LocalEditorBottomOverlayState provides bottomOverlayState) {
                                 BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
                                     val documentPaneHeight = maxHeight
-                                    EditorBody(
-                                        session,
-                                        activeDraft,
-                                        requestSave,
-                                        restartExplicitSave,
-                                        Modifier.fillMaxSize(),
-                                        documentFocus
-                                    )
+                                    Row(Modifier.fillMaxSize()) {
+                                        EditorBody(
+                                            session,
+                                            activeDraft,
+                                            requestSave,
+                                            restartExplicitSave,
+                                            Modifier.weight(1f).fillMaxHeight(),
+                                            documentFocus
+                                        )
+                                        if (isSplitViewActive) {
+                                            VerticalDivider(
+                                                color = MaterialTheme.colorScheme.outlineVariant
+                                            )
+                                            Box(Modifier.weight(1f).fillMaxHeight()) {
+                                                MarkdownPreviewContent(
+                                                    session = session,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    useSplitPreview = true
+                                                )
+                                            }
+                                        }
+                                    }
                                     if (hasBottomOverlay) {
                                         Box(
                                             modifier = Modifier
@@ -805,6 +985,17 @@ internal fun DocumentEditor(
                                             }
                                         }
                                         if (contentsPane) {
+                                            val outlineLookup by remember(
+                                                readyPreview.layout,
+                                                session.readingDetailsExpanded
+                                            ) {
+                                                derivedStateOf {
+                                                    visibleOutlineLookup(
+                                                        readyPreview.layout,
+                                                        session.readingDetailsExpanded
+                                                    )
+                                                }
+                                            }
                                             DocumentOutlineContent(
                                                 title = session.title,
                                                 entries = readyPreview.layout.outline,
@@ -812,7 +1003,8 @@ internal fun DocumentEditor(
                                                 onSelect = { session.navigateToHeading(readyPreview.revision, it) },
                                                 modifier = Modifier.weight(1f).documentToolFocus(),
                                                 isWidePane = true,
-                                                showTitleHeading = false
+                                                showTitleHeading = false,
+                                                visibleLookup = outlineLookup
                                             )
                                         } else {
                                             EditorFindResults(
@@ -834,6 +1026,17 @@ internal fun DocumentEditor(
                         appearanceStore, storedAppearances, { activeSheet = null }, findShortcut)
                 }
                 if (!wideTools && activeSheet == DocumentToolSheet.Contents && readyPreview != null) {
+                    val outlineLookup by remember(
+                        readyPreview.layout,
+                        session.readingDetailsExpanded
+                    ) {
+                        derivedStateOf {
+                            visibleOutlineLookup(
+                                readyPreview.layout,
+                                session.readingDetailsExpanded
+                            )
+                        }
+                    }
                     DocumentOutlineSheet(
                         title = session.title,
                         entries = readyPreview.layout.outline,
@@ -843,7 +1046,8 @@ internal fun DocumentEditor(
                             session.navigateToHeading(readyPreview.revision, entry)
                         },
                         onFind = findShortcut,
-                        onDismiss = { activeSheet = null }
+                        onDismiss = { activeSheet = null },
+                        visibleLookup = outlineLookup
                     )
                 }
                 if (activeSheet == DocumentToolSheet.Appearance) {
@@ -945,6 +1149,27 @@ internal fun DocumentEditor(
             onReload = { session.requestReloadFromComparison() },
             onOverwriteReviewed = { session.confirmReviewedSourceOverwrite() },
             onDismiss = session::dismissSourceConflictComparison
+        )
+    }
+    session.generalComparison?.let { comparison ->
+        SourceConflictCompareSheet(
+            state = comparison.state,
+            hasNewerLocalEdits = false,
+            canSaveAsNewFile = false,
+            canReload = false,
+            canOverwriteReviewed = false,
+            onRefresh = {
+                when (comparison.mode) {
+                    is DocumentCompareMode.ReadOnlyClipboard -> session.compareWithClipboard(context)
+                    is DocumentCompareMode.ReadOnlyFile -> requestCompareFile()
+                    DocumentCompareMode.SourceConflict -> Unit
+                }
+            },
+            onSaveAsNewFile = {},
+            onReload = {},
+            onOverwriteReviewed = {},
+            onDismiss = session::dismissGeneralComparison,
+            mode = comparison.mode
         )
     }
     if (readyQrShare != null) {

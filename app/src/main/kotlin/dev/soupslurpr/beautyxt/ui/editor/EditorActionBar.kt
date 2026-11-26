@@ -202,7 +202,7 @@ internal fun EditorActionBar(
     modifier: Modifier = Modifier
 ) {
     val isPreview = session.presentation == EditorPresentation.MarkdownPreview
-    val showsHistory = !isPreview && !session.isViewOnly
+    val showsHistory = !session.isViewOnly && (!isPreview || (session.hasReadingMutation && (session.canUndo || session.canRedo)))
     val offersSave = !session.hasDocumentSource || session.isViewOnly
     val modeLabel = when {
         !isPreview -> stringResource(R.string.editor_read)

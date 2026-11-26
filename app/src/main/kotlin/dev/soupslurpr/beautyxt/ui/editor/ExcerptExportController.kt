@@ -56,7 +56,8 @@ internal class ExcerptExportController(
     private val showQr: (QrCodeGrid, Long, DocumentFormat) -> Unit,
     private val writeNfc: (NfcTransferEnvelope, Long, DocumentFormat, String?) -> Unit,
     private val captureDocument: (suspend () -> ExcerptCapture?)? = null,
-    private val documentSaveReminder: () -> UiText? = { null }
+    private val documentSaveReminder: () -> UiText? = { null },
+    private val resolveSourceIdentity: suspend (Context) -> SourceIdentitySnapshot = { SourceIdentitySnapshot() }
 ) : AutoCloseable {
     var exportScope by mutableStateOf(ExportScope.Selection); private set
     var sharesSourceFile by mutableStateOf(false); private set
@@ -395,13 +396,64 @@ internal class ExcerptExportController(
             var ownedPdf: SealedInput? = null
             try {
                 val exporter = IsolatedDocumentExporter(app)
-                if (outputFormat == ExcerptFormat.Pdf) withContext(Dispatchers.IO) {
-                    ownedPdf = checkNotNull(payload.pdf).duplicate()
-                }
                 TransientDestinationSelection.from(uri).use { selection ->
                     exporter.openDestination(selection).use { destination ->
-                        if (outputFormat == ExcerptFormat.Pdf) exporter.save(destination, checkNotNull(ownedPdf))
-                        else payload.text.snapshot.duplicate().use { exporter.save(destination, it, payload.text.metrics.serializedByteLength) }
+                        val destinationKeys = writableDocumentKeysForDescriptor(
+                            context = app,
+                            uri = uri,
+                            descriptorIdentityKey = destination.fileIdentityKey
+                        )
+                        // Recheck live source identity (fail-closed on indeterminate probes) and
+                        // refresh active leases AFTER opening the destination descriptor.
+                        val sourceIdentity = withContext(Dispatchers.IO) { resolveSourceIdentity(app) }
+                        val emptyBeforeAcquire = destination.isCurrentlyEmptyRegularFile()
+                        if (
+                            sourceIdentity.conflictsWith(
+                                destinationKeys = destinationKeys,
+                                destinationHasRegularInode = destination.fileIdentityKey != null,
+                                destinationIsEmpty = emptyBeforeAcquire
+                            )
+                        ) {
+                            if (request == generation) message = UiText.Resource(R.string.excerpt_source_destination)
+                            return@launch
+                        }
+                        val destinationLease =
+                            WritableDocumentRegistry.shared.acquireRefreshingWithCancelCleanup(
+                                documentKeys = destinationKeys,
+                                destinationIsEmpty = emptyBeforeAcquire
+                            )
+                        if (destinationLease == null) {
+                            if (request == generation) message = UiText.Resource(R.string.excerpt_source_destination)
+                            return@launch
+                        }
+                        val leaseRef = java.util.concurrent.atomic.AtomicReference<AutoCloseable?>(destinationLease)
+                        try {
+                            if (outputFormat == ExcerptFormat.Pdf) withContext(Dispatchers.IO) {
+                                ownedPdf = checkNotNull(payload.pdf).duplicate()
+                            }
+                            if (emptyBeforeAcquire && !destination.isCurrentlyEmptyRegularFile()) {
+                                if (request == generation) message = UiText.Resource(R.string.excerpt_source_destination)
+                                return@launch
+                            }
+                            if (outputFormat == ExcerptFormat.Pdf) {
+                                exporter.save(
+                                    destination = destination,
+                                    input = checkNotNull(ownedPdf),
+                                    releaseLeaseOnUncertainExit = { leaseRef.getAndSet(null) }
+                                )
+                            } else {
+                                payload.text.snapshot.duplicate().use {
+                                    exporter.save(
+                                        destination = destination,
+                                        snapshot = it,
+                                        expectedBytes = payload.text.metrics.serializedByteLength,
+                                        releaseLeaseOnUncertainExit = { leaseRef.getAndSet(null) }
+                                    )
+                                }
+                            }
+                        } finally {
+                            leaseRef.getAndSet(null)?.close()
+                        }
                     }
                 }
                 if (request == generation) message = UiText.Resource(R.string.excerpt_saved)

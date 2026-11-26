@@ -4,6 +4,13 @@
     <string name="home_brand_name" translatable="false">BeauTyXT</string>
     <string name="home_tagline">Plain text &amp; Markdown</string>
     <string name="home_new_document">New document</string>
+    <string name="home_paste">Paste</string>
+    <string name="home_paste_empty">Clipboard does not contain plain text.</string>
+    <string name="home_paste_too_large">Clipboard text is too large to paste directly.</string>
+    <string name="shortcut_new_document_short">New</string>
+    <string name="shortcut_open_file_short">Open</string>
+    <string name="shortcut_paste_short">Paste</string>
+    <string name="shortcut_scan_qr_short">Scan QR</string>
     <string name="home_receive_text">Receive</string>
     <string name="home_camera_unavailable">No camera is available on this device</string>
     <string name="home_nfc_unavailable">NFC isn\'t available on this device</string>

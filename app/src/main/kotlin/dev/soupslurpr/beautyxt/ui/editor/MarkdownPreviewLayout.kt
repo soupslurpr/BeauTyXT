@@ -14,6 +14,7 @@ import dev.soupslurpr.beautyxt.markdown.markdownFootnoteLabel
 private const val MAX_MARKDOWN_ALERT_BLOCKS_PER_ITEM = 16
 private const val MAX_MARKDOWN_CODE_BLOCKS_PER_ITEM = 8
 private const val MAX_MARKDOWN_TABLE_ROWS_PER_ITEM = 16
+private const val MAX_MARKDOWN_FRONTMATTER_BLOCKS_PER_ITEM = 64
 
 /** Retains one rendered revision's lazy grouping and precomputed local navigation. */
 internal data class MarkdownPreviewLayout(
@@ -24,6 +25,9 @@ internal data class MarkdownPreviewLayout(
     val listContinuationOwners: Map<Int, MarkdownRenderBlock> = emptyMap(),
     val codeCopies: Map<Int, MarkdownCodeCopy> = emptyMap(),
     val illustrations: MarkdownIllustrationPlan = MarkdownIllustrationPlan(emptyList()),
+    val detailsParentById: Map<Int, Int> = emptyMap(),
+    val detailsDefaultOpenById: Map<Int, Boolean> = emptyMap(),
+    val detailsSummaryKeyById: Map<Int, String> = emptyMap(),
     // Revision-owned and memory-only. Rotation and an unchanged source/preview round trip should
     // not discard already rendered appearances or briefly replace them with raw source again.
     val illustrationCache: IllustrationCache = IllustrationCache()
@@ -33,13 +37,30 @@ internal data class MarkdownPreviewLayout(
 internal fun prepareMarkdownPreview(blocks: List<MarkdownRenderBlock>): MarkdownPreviewLayout {
     val items = markdownPreviewItems(blocks)
     val headings = MarkdownHeadingIndex(markdownPreviewHeadings(items).asIterable())
+    val detailsParentById = LinkedHashMap<Int, Int>()
+    val detailsDefaultOpenById = LinkedHashMap<Int, Boolean>()
+    val detailsSummaryKeyById = LinkedHashMap<Int, String>()
+    val summaryOccurrences = HashMap<String, Int>()
+    blocks.forEach { block ->
+        if (block.kind == MarkdownBlockKind.DetailsSummary && block.detailsId > 0) {
+            detailsParentById[block.detailsId] = block.detailsParentId
+            detailsDefaultOpenById[block.detailsId] = block.detailsInitiallyOpen
+            val signature = "details:${block.detailsParentId}:${block.text.take(64)}"
+            val occurrence = summaryOccurrences.getOrDefault(signature, 0)
+            summaryOccurrences[signature] = occurrence + 1
+            detailsSummaryKeyById[block.detailsId] = "$signature#$occurrence"
+        }
+    }
     return MarkdownPreviewLayout(
         items = items,
         headings = headings,
         footnotes = markdownFootnoteItemTargets(items),
         listContinuationOwners = markdownListContinuationOwners(blocks),
         codeCopies = markdownCodeCopies(blocks),
-        illustrations = MarkdownIllustrationPlan(blocks)
+        illustrations = MarkdownIllustrationPlan(blocks),
+        detailsParentById = detailsParentById,
+        detailsDefaultOpenById = detailsDefaultOpenById,
+        detailsSummaryKeyById = detailsSummaryKeyById
     )
 }
 
@@ -88,21 +109,34 @@ private fun markdownPreviewHeadings(
     }
 }
 
-/** Groups bounded table, code, and GFM-alert runs into lazy preview items. */
+/** Groups bounded table, code, frontmatter, and GFM-alert runs into lazy preview items. */
 internal fun markdownPreviewItems(blocks: List<MarkdownRenderBlock>): List<MarkdownPreviewItem> {
     val items = ArrayList<MarkdownPreviewItem>(blocks.size)
+    val keyOccurrences = HashMap<String, Int>()
     var firstBlockIndex = 0
     while (firstBlockIndex < blocks.size) {
         val firstBlock = blocks[firstBlockIndex]
         var endBlockIndex = firstBlockIndex + 1
+        val isFrontmatter = firstBlock.kind == MarkdownBlockKind.Frontmatter
         val isTable = firstBlock.kind == MarkdownBlockKind.TableRow && firstBlock.quoteDepth == 0
         val isCode = firstBlock.kind == MarkdownBlockKind.Code && firstBlock.quoteDepth == 0
-        val isQuoteAlert = firstBlock.quoteKind != null
-        if (isTable) {
+        val isDetailsSummary = firstBlock.kind == MarkdownBlockKind.DetailsSummary
+        val isQuoteAlert = firstBlock.quoteKind != null && !isDetailsSummary
+        if (isFrontmatter) {
+            while (
+                endBlockIndex < blocks.size &&
+                endBlockIndex - firstBlockIndex < MAX_MARKDOWN_FRONTMATTER_BLOCKS_PER_ITEM &&
+                blocks[endBlockIndex].kind == MarkdownBlockKind.Frontmatter &&
+                !blocks[endBlockIndex].startsFrontmatter
+            ) {
+                endBlockIndex += 1
+            }
+        } else if (isTable) {
             while (
                 endBlockIndex < blocks.size &&
                 endBlockIndex - firstBlockIndex < MAX_MARKDOWN_TABLE_ROWS_PER_ITEM &&
                 blocks[endBlockIndex].kind == MarkdownBlockKind.TableRow &&
+                blocks[endBlockIndex].detailsId == firstBlock.detailsId &&
                 blocks[endBlockIndex].markdownFootnoteLabel() == firstBlock.markdownFootnoteLabel() &&
                 !blocks[endBlockIndex].startsTable &&
                 blocks[endBlockIndex].quoteDepth == 0
@@ -114,6 +148,7 @@ internal fun markdownPreviewItems(blocks: List<MarkdownRenderBlock>): List<Markd
                 endBlockIndex < blocks.size &&
                 endBlockIndex - firstBlockIndex < MAX_MARKDOWN_CODE_BLOCKS_PER_ITEM &&
                 blocks[endBlockIndex].kind == MarkdownBlockKind.Code &&
+                blocks[endBlockIndex].detailsId == firstBlock.detailsId &&
                 blocks[endBlockIndex].markdownFootnoteLabel() == firstBlock.markdownFootnoteLabel() &&
                 blocks[endBlockIndex].quoteDepth == 0 &&
                 blocks[endBlockIndex].continuesPrevious
@@ -124,6 +159,8 @@ internal fun markdownPreviewItems(blocks: List<MarkdownRenderBlock>): List<Markd
             while (
                 endBlockIndex < blocks.size &&
                 endBlockIndex - firstBlockIndex < MAX_MARKDOWN_ALERT_BLOCKS_PER_ITEM &&
+                blocks[endBlockIndex].kind != MarkdownBlockKind.DetailsSummary &&
+                blocks[endBlockIndex].detailsId == firstBlock.detailsId &&
                 blocks[endBlockIndex].quoteKind == firstBlock.quoteKind &&
                 !blocks[endBlockIndex].startsQuoteAlert
             ) {
@@ -135,11 +172,14 @@ internal fun markdownPreviewItems(blocks: List<MarkdownRenderBlock>): List<Markd
                 !firstBlock.startsTable &&
                 firstBlockIndex != 0 &&
                 blocks[firstBlockIndex - 1].kind == MarkdownBlockKind.TableRow &&
+                blocks[firstBlockIndex - 1].detailsId == firstBlock.detailsId &&
                 blocks[firstBlockIndex - 1].markdownFootnoteLabel() == firstBlock.markdownFootnoteLabel() &&
                 blocks[firstBlockIndex - 1].quoteDepth == 0
         val followsSameAlert =
             isQuoteAlert &&
                 firstBlockIndex != 0 &&
+                blocks[firstBlockIndex - 1].kind != MarkdownBlockKind.DetailsSummary &&
+                blocks[firstBlockIndex - 1].detailsId == firstBlock.detailsId &&
                 blocks[firstBlockIndex - 1].quoteKind == firstBlock.quoteKind &&
                 !firstBlock.startsQuoteAlert
         val followsSameCode =
@@ -147,9 +187,19 @@ internal fun markdownPreviewItems(blocks: List<MarkdownRenderBlock>): List<Markd
                 firstBlockIndex != 0 &&
                 firstBlock.continuesPrevious &&
                 blocks[firstBlockIndex - 1].kind == MarkdownBlockKind.Code &&
+                blocks[firstBlockIndex - 1].detailsId == firstBlock.detailsId &&
                 blocks[firstBlockIndex - 1].quoteDepth == 0
         val itemBlocks = blocks.subList(firstBlockIndex, endBlockIndex)
         val precedingBlock = blocks.getOrNull(firstBlockIndex - 1)
+        val keyBase = if (isFrontmatter) {
+            "frontmatter"
+        } else {
+            // Keep LazyColumn keys strictly structural and content-independent so zero authored
+            // text, metadata, or content hashes ever enter SavedStateRegistry.
+            "item:$firstBlockIndex:${firstBlock.kind.ordinal}:${firstBlock.detailsId}"
+        }
+        val keyOccurrence = keyOccurrences.getOrDefault(keyBase, 0)
+        keyOccurrences[keyBase] = keyOccurrence + 1
         items +=
             MarkdownPreviewItem(
                 firstBlockIndex = firstBlockIndex,
@@ -157,6 +207,7 @@ internal fun markdownPreviewItems(blocks: List<MarkdownRenderBlock>): List<Markd
                 isTable = isTable,
                 isCode = isCode,
                 isQuoteAlert = isQuoteAlert,
+                isFrontmatter = isFrontmatter,
                 startsWrappedPreview =
                     markdownHasWrappedPreview(
                         blocks = listOf(firstBlock),
@@ -172,7 +223,8 @@ internal fun markdownPreviewItems(blocks: List<MarkdownRenderBlock>): List<Markd
                         !firstBlock.continuesPrevious &&
                         !followsSameTable &&
                         !followsSameAlert &&
-                        !followsSameCode
+                        !followsSameCode,
+                stableKey = "$keyBase#$keyOccurrence"
             )
         firstBlockIndex = endBlockIndex
     }
@@ -273,12 +325,100 @@ internal data class MarkdownPreviewItem(
     val startsWrappedPreview: Boolean,
     val showsWrappedPreview: Boolean,
     val hasSpacingBefore: Boolean,
+    val isFrontmatter: Boolean = false,
+    val stableKey: String = "item:$firstBlockIndex",
     val tableId: Int = firstBlockIndex,
     val tableColumnCount: Int = 0,
     val tableUsesWideLayout: Boolean = false,
     val tableRowCount: Int = 0,
     val tableFirstLogicalRowIndex: Int = 0
 )
+
+/** Returns whether one details section is expanded under user overrides and HTML default. */
+internal fun isDetailsSectionExpanded(
+    layout: MarkdownPreviewLayout,
+    detailsId: Int,
+    overrides: Map<String, Boolean>
+): Boolean {
+    val key = layout.detailsSummaryKeyById[detailsId] ?: return true
+    return overrides[key] ?: layout.detailsDefaultOpenById[detailsId] ?: false
+}
+
+/** Returns the nesting depth of one block inside active details containers. */
+internal fun markdownDetailsDepth(
+    layout: MarkdownPreviewLayout,
+    block: MarkdownRenderBlock
+): Int {
+    var currentId = if (block.kind == MarkdownBlockKind.DetailsSummary) {
+        block.detailsParentId
+    } else {
+        block.detailsId
+    }
+    var depth = 0
+    var steps = 0
+    while (currentId > 0 && steps < 32) {
+        depth += 1
+        currentId = layout.detailsParentById[currentId] ?: 0
+        steps += 1
+    }
+    return depth
+}
+
+/** Returns whether [block] is visible under the active `<details>` expansion state. */
+internal fun isMarkdownBlockVisibleInDetails(
+    layout: MarkdownPreviewLayout,
+    block: MarkdownRenderBlock,
+    overrides: Map<String, Boolean>
+): Boolean {
+    if (layout.detailsSummaryKeyById.isEmpty()) return true
+    var ancestorId = if (block.kind == MarkdownBlockKind.DetailsSummary) {
+        block.detailsParentId
+    } else {
+        block.detailsId
+    }
+    var steps = 0
+    while (ancestorId > 0 && steps < 32) {
+        if (!isDetailsSectionExpanded(layout, ancestorId, overrides)) {
+            return false
+        }
+        ancestorId = layout.detailsParentById[ancestorId] ?: 0
+        steps += 1
+    }
+    return true
+}
+
+/** Filters preview items to those not hidden inside any collapsed `<details>` container. */
+internal fun visibleMarkdownPreviewItems(
+    layout: MarkdownPreviewLayout,
+    overrides: Map<String, Boolean>
+): List<MarkdownPreviewItem> {
+    if (layout.detailsSummaryKeyById.isEmpty()) return layout.items
+    return layout.items.filter { item ->
+        isMarkdownBlockVisibleInDetails(layout, item.blocks.first(), overrides)
+    }
+}
+
+/** Returns every enclosing `<details>` key that must expand to reveal [blockIndex]. */
+internal fun requiredExpandedDetailsKeysForBlock(
+    layout: MarkdownPreviewLayout,
+    blocks: List<MarkdownRenderBlock>,
+    blockIndex: Int
+): List<String> {
+    val block = blocks.getOrNull(blockIndex) ?: return emptyList()
+    var ancestorId = if (block.kind == MarkdownBlockKind.DetailsSummary) {
+        block.detailsParentId
+    } else {
+        block.detailsId
+    }
+    val keys = ArrayList<String>()
+    var steps = 0
+    while (ancestorId > 0 && steps < 32) {
+        layout.detailsSummaryKeyById[ancestorId]?.let(keys::add)
+        ancestorId = layout.detailsParentById[ancestorId] ?: 0
+        steps += 1
+    }
+    return keys
+}
 
 /** Identifies an exact reading destination within a lazy preview item. */
 internal data class MarkdownReadingTarget(

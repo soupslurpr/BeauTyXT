@@ -13,14 +13,29 @@ internal class IllustrationCache(
     private val byteLimit: Int = MAX_DOCUMENT_ILLUSTRATION_BYTES,
     private val entryLimit: Int = MAX_DOCUMENT_ILLUSTRATIONS
 ) {
+    private val lock = Any()
     private val entries = LinkedHashMap<IllustrationRequest, IllustrationResult>(16, 0.75f, true)
+
+    @Volatile
+    private var currentSnapshot: Map<IllustrationRequest, IllustrationResult> = emptyMap()
+
+    @Volatile
     var retainedBytes: Int = 0
         private set
+
+    @Volatile
     var version: Long = 0
         private set
 
-    operator fun get(request: IllustrationRequest): IllustrationResult? = entries[request]
-    fun snapshot(): Map<IllustrationRequest, IllustrationResult> = entries.toMap()
+    operator fun get(request: IllustrationRequest): IllustrationResult? =
+        synchronized(lock) { entries[request] }
+
+    /** Returns an immutable point-in-time snapshot safe to iterate from any thread. */
+    fun snapshot(): Map<IllustrationRequest, IllustrationResult> = currentSnapshot
+
+    /** Returns a consistent `(version, snapshot)` pair captured atomically under the cache lock. */
+    fun snapshotWithVersion(): Pair<Long, Map<IllustrationRequest, IllustrationResult>> =
+        synchronized(lock) { version to currentSnapshot }
 
     fun put(
         request: IllustrationRequest,
@@ -30,21 +45,47 @@ internal class IllustrationCache(
         check(result !is IllustrationResult.Pending)
         val bytes = (result as? IllustrationResult.Rendered)?.drawing?.packetBytes ?: 0
         if (bytes > byteLimit) return false
-        entries.remove(request)?.let { retainedBytes -= packetBytes(it) }
-        while (entries.size >= entryLimit || retainedBytes > byteLimit - bytes) {
-            val victim = entries.keys.firstOrNull { it !in pinned } ?: return false
-            retainedBytes -= packetBytes(checkNotNull(entries.remove(victim)))
+        synchronized(lock) {
+            // Plan evictions without calling `entries[request]` (which mutates access-ordered LRU
+            // state) so a rejected insertion/replacement leaves entries, LRU order, retainedBytes,
+            // version, and currentSnapshot completely unchanged.
+            val existing = entries.entries.firstOrNull { it.key == request }?.value
+            var projectedCount = entries.size - if (existing != null) 1 else 0
+            var projectedBytes = retainedBytes - (existing?.let(::packetBytes) ?: 0)
+            val victims = ArrayList<IllustrationRequest>()
+            if (projectedCount >= entryLimit || projectedBytes > byteLimit - bytes) {
+                for ((key, value) in entries) {
+                    if (key == request || key in pinned) continue
+                    victims.add(key)
+                    projectedCount -= 1
+                    projectedBytes -= packetBytes(value)
+                    if (projectedCount < entryLimit && projectedBytes <= byteLimit - bytes) {
+                        break
+                    }
+                }
+            }
+            if (projectedCount >= entryLimit || projectedBytes > byteLimit - bytes) {
+                return false
+            }
+            entries.remove(request)?.let { retainedBytes -= packetBytes(it) }
+            for (victim in victims) {
+                retainedBytes -= packetBytes(checkNotNull(entries.remove(victim)))
+            }
+            entries[request] = result
+            retainedBytes += bytes
+            version++
+            currentSnapshot = LinkedHashMap(entries)
+            return true
         }
-        entries[request] = result
-        retainedBytes += bytes
-        version++
-        return true
     }
 
     fun clear() {
-        entries.clear()
-        retainedBytes = 0
-        version++
+        synchronized(lock) {
+            entries.clear()
+            retainedBytes = 0
+            version++
+            currentSnapshot = emptyMap()
+        }
     }
 
     private fun packetBytes(result: IllustrationResult) =

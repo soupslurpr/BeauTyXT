@@ -67,6 +67,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.TextLayoutResult
@@ -738,10 +739,79 @@ internal fun DocumentSelectionActions(
             4.dp
     }
 
+    val selection = session.documentSelection
+    val readingVisibilityKey = if (selection is DocumentSelection.Reading) {
+        session.readingFrontmatterExpanded to session.readingDetailsExpanded.toMap()
+    } else {
+        null
+    }
+    var selectionStats by remember(selection) { mutableStateOf<Pair<Long, Long>?>(null) }
+    LaunchedEffect(session, selection, readingVisibilityKey) {
+        selectionStats = when (selection) {
+            is DocumentSelection.Source -> {
+                try {
+                    val captured = session.state.captureSelectedRevision(selection.revision, selection.range)
+                    captured?.use { it.metrics.wordCount to it.metrics.characterLength }
+                } catch (_: Exception) {
+                    null
+                }
+            }
+
+            is DocumentSelection.Reading -> {
+                val isBlockVisible = session.readingBlockVisibilityPredicate()
+                val document = session.readingDocumentForSelection()
+                if (document == null) {
+                    null
+                } else {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                        countReadingSelectionStats(document, selection, isBlockVisible)
+                    }
+                }
+            }
+
+            is DocumentSelection.Label -> {
+                val slice = selection.text.substring(
+                    selection.range.min.coerceIn(0, selection.text.length),
+                    selection.range.max.coerceIn(0, selection.text.length)
+                )
+                countTextWordsAndChars(slice)
+            }
+
+            null -> null
+        }
+    }
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = SelectionBarPadding),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        selectionStats?.let { (wordCount, charCount) ->
+            val locale = androidx.compose.ui.platform.LocalLocale.current.platformLocale
+            val formatter = remember(locale) { java.text.NumberFormat.getIntegerInstance(locale) }
+            val wordsLabel = pluralStringResource(
+                R.plurals.selection_stats_words,
+                wordCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                formatter.format(wordCount)
+            )
+            val charsLabel = pluralStringResource(
+                R.plurals.selection_stats_chars,
+                charCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                formatter.format(charCount)
+            )
+            Surface(
+                modifier = Modifier
+                    .padding(bottom = 4.dp)
+                    .registerBottomOverlayObstruction("selection-stats-pill"),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+            ) {
+                Text(
+                    text = stringResource(R.string.selection_stats_summary, wordsLabel, charsLabel),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
         if (showInlineLabelField) {
             Surface(
                 modifier = Modifier
@@ -876,7 +946,11 @@ internal fun DocumentSelectionActions(
                         }
                         val secondaryItems = buildList {
                             val readingSelection = session.documentSelection as? DocumentSelection.Reading
-                            if (readingSelection?.exactSource(session.readingDocumentForSelection()) != null) {
+                            if (readingSelection?.exactSource(
+                                    document = session.readingDocumentForSelection(),
+                                    isBlockVisible = session.readingBlockVisibilityPredicate()
+                                ) != null
+                            ) {
                                 add(
                                     SelectionMenuEntry(
                                         label = stringResource(
@@ -1036,6 +1110,72 @@ internal fun DocumentSelectionActions(
 private class LabelSelectionSyncState(initialRange: TextRange) {
     @Volatile
     var lastSynced: TextRange = initialRange
+}
+
+/** Counts non-whitespace word runs and Unicode scalar characters in one string. */
+internal fun countTextWordsAndChars(text: CharSequence): Pair<Long, Long> {
+    var words = 0L
+    var chars = 0L
+    var inWord = false
+    var i = 0
+    while (i < text.length) {
+        val codePoint = Character.codePointAt(text, i)
+        chars += 1L
+        val isWord = !Character.isWhitespace(codePoint)
+        if (isWord && !inWord) {
+            words += 1L
+        }
+        inWord = isWord
+        i += Character.charCount(codePoint)
+    }
+    return words to chars
+}
+
+/** Counts visible words and characters across a Reading-mode selection range. */
+internal fun countReadingSelectionStats(
+    document: dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument,
+    selection: DocumentSelection.Reading,
+    isBlockVisible: (Int, dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock) -> Boolean = { _, _ -> true }
+): Pair<Long, Long> {
+    var totalWords = 0L
+    var totalChars = 0L
+    var inWord = false
+    var previousBlockIndex = -1
+    val start = selection.start
+    val end = selection.end
+    val lastBlock = end.block.coerceAtMost(document.blocks.lastIndex)
+    for (blockIndex in start.block.coerceAtLeast(0)..lastBlock) {
+        val block = document.blocks[blockIndex]
+        if (block.illustrationContinuation || !isBlockVisible(blockIndex, block)) {
+            inWord = false
+            continue
+        }
+        val continuesPrev = block.continuesPrevious && previousBlockIndex == blockIndex - 1
+        if (!continuesPrev) {
+            inWord = false
+        }
+        val from = if (blockIndex == start.block) start.offset.coerceIn(0, block.text.length) else 0
+        val to = if (blockIndex == end.block) end.offset.coerceIn(from, block.text.length) else block.text.length
+        if (from > 0) {
+            inWord = false
+        }
+        var i = from
+        while (i < to) {
+            val codePoint = Character.codePointAt(block.text, i)
+            totalChars += 1L
+            val isWord = !Character.isWhitespace(codePoint)
+            if (isWord && !inWord) {
+                totalWords += 1L
+            }
+            inWord = isWord
+            i += Character.charCount(codePoint)
+        }
+        if (to < block.text.length) {
+            inWord = false
+        }
+        previousBlockIndex = blockIndex
+    }
+    return totalWords to totalChars
 }
 
 @Composable

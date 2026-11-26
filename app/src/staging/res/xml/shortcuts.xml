@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_document"
+        android:enabled="true"
+        android:icon="@drawable/ic_note_add"
+        android:shortcutShortLabel="@string/shortcut_new_document_short"
+        android:shortcutLongLabel="@string/home_new_document">
+        <intent
+            android:action="dev.soupslurpr.beautyxt.action.WINDOW_NEW"
+            android:targetPackage="dev.soupslurpr.beautyxt.staging"
+            android:targetClass="dev.soupslurpr.beautyxt.DocumentWindowActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="open_file"
+        android:enabled="true"
+        android:icon="@drawable/ic_file_open"
+        android:shortcutShortLabel="@string/shortcut_open_file_short"
+        android:shortcutLongLabel="@string/home_open_file">
+        <intent
+            android:action="dev.soupslurpr.beautyxt.action.WINDOW_OPEN"
+            android:targetPackage="dev.soupslurpr.beautyxt.staging"
+            android:targetClass="dev.soupslurpr.beautyxt.DocumentWindowActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="paste"
+        android:enabled="true"
+        android:icon="@drawable/ic_content_copy"
+        android:shortcutShortLabel="@string/shortcut_paste_short"
+        android:shortcutLongLabel="@string/home_paste">
+        <intent
+            android:action="dev.soupslurpr.beautyxt.action.WINDOW_PASTE"
+            android:targetPackage="dev.soupslurpr.beautyxt.staging"
+            android:targetClass="dev.soupslurpr.beautyxt.DocumentWindowActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="scan_qr"
+        android:enabled="true"
+        android:icon="@drawable/ic_qr_code_2"
+        android:shortcutShortLabel="@string/shortcut_scan_qr_short"
+        android:shortcutLongLabel="@string/action_scan_qr">
+        <intent
+            android:action="dev.soupslurpr.beautyxt.action.WINDOW_SCAN_QR"
+            android:targetPackage="dev.soupslurpr.beautyxt.staging"
+            android:targetClass="dev.soupslurpr.beautyxt.DocumentWindowActivity" />
+    </shortcut>
+</shortcuts>

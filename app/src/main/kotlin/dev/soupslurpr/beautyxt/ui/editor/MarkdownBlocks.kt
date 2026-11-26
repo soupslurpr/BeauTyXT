@@ -1,9 +1,11 @@
 /* Renders inert Markdown blocks and accessible inline interactions. */
 package dev.soupslurpr.beautyxt.ui.editor
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -46,10 +48,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -107,6 +111,7 @@ import dev.soupslurpr.beautyxt.markdown.MarkdownInlineDestinationKind
 import dev.soupslurpr.beautyxt.markdown.MarkdownInlineSpan
 import dev.soupslurpr.beautyxt.markdown.MarkdownQuoteKind
 import dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock
+import dev.soupslurpr.beautyxt.markdown.MarkdownSyntaxRun
 import dev.soupslurpr.beautyxt.markdown.MarkdownTableAlignment
 import dev.soupslurpr.beautyxt.markdown.markdownTableCellRanges
 import dev.soupslurpr.beautyxt.markdown.markdownFootnoteLabel
@@ -118,6 +123,15 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
 internal const val MAX_MARKDOWN_TABLE_COLUMNS = 16
+
+internal val LocalMarkdownTaskToggle =
+    compositionLocalOf<((Int, MarkdownRenderBlock) -> Unit)?> { null }
+
+internal val LocalMarkdownInspectorLauncher =
+    compositionLocalOf<((ReadingInspectorTarget) -> Unit)?> { null }
+
+internal val LocalMarkdownDocumentBlocks =
+    compositionLocalOf<List<MarkdownRenderBlock>> { emptyList() }
 
 private val EmptyMarkdownTableCell = AnnotatedString("")
 
@@ -445,6 +459,259 @@ private fun MarkdownBlockBody(
                 MarkdownStyledText(block, MaterialTheme.typography.bodyMedium,
                     onInlineInteraction, modifier = it)
             }
+
+        MarkdownBlockKind.Frontmatter ->
+            MarkdownFrontmatterCard(
+                blocks = listOf(block),
+                firstBlockIndex = LocalMarkdownPreviewBlockIndex.current ?: 0,
+                expanded = true,
+                onToggleExpanded = {},
+                onInlineInteraction = onInlineInteraction,
+                modifier = modifier
+            )
+
+        MarkdownBlockKind.DetailsSummary ->
+            MarkdownDetailsSummary(
+                block = block,
+                expanded = block.detailsInitiallyOpen,
+                onToggleExpanded = {},
+                onInlineInteraction = onInlineInteraction,
+                modifier = modifier
+            )
+    }
+}
+
+/** Displays leading YAML frontmatter entries in a collapsible Material 3 Properties card. */
+@Composable
+internal fun MarkdownFrontmatterCard(
+    blocks: List<MarkdownRenderBlock>,
+    firstBlockIndex: Int,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onInlineInteraction: (MarkdownInlineInteraction) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    require(blocks.isNotEmpty()) { "Markdown frontmatter card requires at least one block" }
+    val entryCount = remember(blocks) {
+        blocks.count { !it.continuesPrevious }.coerceAtLeast(1)
+    }
+    val stateLabel = stringResource(
+        if (expanded) R.string.markdown_details_expanded else R.string.markdown_details_collapsed
+    )
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        label = "frontmatterChevronRotation"
+    )
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .sizeIn(minHeight = 48.dp)
+                    .clickable(role = Role.Button, onClick = onToggleExpanded)
+                    .semantics { stateDescription = stateLabel }
+                    .padding(horizontal = EditorHorizontalPadding, vertical = EditorCompactSpacing),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(EditorCompactSpacing)
+            ) {
+                Text(
+                    text = stringResource(R.string.markdown_frontmatter_summary, entryCount),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Icon(
+                    painter = painterResource(R.drawable.ic_keyboard_arrow_down),
+                    contentDescription = null,
+                    modifier = Modifier.rotate(chevronRotation),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (expanded) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = EditorHorizontalPadding, vertical = EditorCompactSpacing),
+                    verticalArrangement = Arrangement.spacedBy(EditorCompactSpacing)
+                ) {
+                    blocks.forEachIndexed { localIndex, block ->
+                        CompositionLocalProvider(
+                            LocalMarkdownPreviewBlockIndex provides
+                                Math.addExact(firstBlockIndex, localIndex)
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                if (block.metadata.isNotEmpty() && !block.continuesPrevious) {
+                                    val keyBlockIndex = LocalMarkdownPreviewBlockIndex.current
+                                    val keyNavState = LocalMarkdownPreviewNavigationState.current
+                                    val keyBringIntoViewRequester = remember(keyBlockIndex) {
+                                        BringIntoViewRequester()
+                                    }
+                                    var keyLayoutResult by remember(keyBlockIndex, block.metadata) {
+                                        mutableStateOf<TextLayoutResult?>(null)
+                                    }
+                                    var keyTopInWindow by remember(keyBlockIndex, block.metadata) {
+                                        mutableStateOf<Int?>(null)
+                                    }
+                                    androidx.compose.runtime.SideEffect {
+                                        val top = keyTopInWindow
+                                        val layout = keyLayoutResult
+                                        if (keyBlockIndex != null && top != null && layout != null) {
+                                            keyNavState?.recordFrontmatterKeyMeasurement(
+                                                keyBlockIndex,
+                                                FrontmatterKeyMeasurement(
+                                                    topInWindowPixels = top,
+                                                    layoutResult = layout,
+                                                    bringIntoViewRequester = keyBringIntoViewRequester
+                                                )
+                                            )
+                                        }
+                                    }
+                                    DisposableEffect(keyNavState, keyBlockIndex) {
+                                        onDispose {
+                                            if (keyBlockIndex != null) {
+                                                keyNavState?.clearFrontmatterKeyMeasurement(keyBlockIndex)
+                                            }
+                                        }
+                                    }
+                                    val keyHighlights = LocalReadingFindHighlights.current[keyBlockIndex]
+                                        .orEmpty()
+                                        .filter { it.isFrontmatterKey }
+                                    val keyFindStyles = findHighlightStyles()
+                                    val keyText = remember(block.metadata, keyHighlights, keyFindStyles) {
+                                        buildAnnotatedString {
+                                            append(block.metadata)
+                                            keyHighlights.forEach { highlight ->
+                                                val s = highlight.start.coerceIn(0, block.metadata.length)
+                                                val e = highlight.end.coerceIn(0, block.metadata.length)
+                                                if (s < e) {
+                                                    addStyle(
+                                                        if (highlight.current) keyFindStyles.current else keyFindStyles.other,
+                                                        s,
+                                                        e
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    val keyMarkerColor = MaterialTheme.colorScheme.primary
+                                    Text(
+                                        text = keyText,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        onTextLayout = { keyLayoutResult = it },
+                                        modifier = Modifier
+                                            .bringIntoViewRequester(keyBringIntoViewRequester)
+                                            .onGloballyPositioned { coordinates ->
+                                                if (coordinates.isAttached) {
+                                                    keyTopInWindow =
+                                                        coordinates.positionInWindow().y.roundToInt()
+                                                }
+                                            }
+                                            .drawWithContent {
+                                                drawContent()
+                                                val layout = keyLayoutResult ?: return@drawWithContent
+                                                val maxOffset = layout.layoutInput.text.length
+                                                keyHighlights.filter { it.collapsed }.forEach { highlight ->
+                                                    val rect = layout.getCursorRect(
+                                                        highlight.start.coerceIn(0, maxOffset)
+                                                    )
+                                                    drawLine(
+                                                        keyMarkerColor,
+                                                        rect.topLeft,
+                                                        rect.bottomLeft,
+                                                        3.dp.toPx()
+                                                    )
+                                                }
+                                            }
+                                    )
+                                }
+                                MarkdownPresentationText(
+                                    sourceBlock = block,
+                                    sourceText = block.text,
+                                    sourceSpans = block.spans,
+                                    renderedOffsetBase = 0,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    onInlineInteraction = onInlineInteraction,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Displays one collapsible `<details>` summary header with an accessible 48 dp toggle target. */
+@Composable
+internal fun MarkdownDetailsSummary(
+    block: MarkdownRenderBlock,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onInlineInteraction: (MarkdownInlineInteraction) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val stateLabel = stringResource(
+        if (expanded) R.string.markdown_details_expanded else R.string.markdown_details_collapsed
+    )
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        label = "detailsChevronRotation"
+    )
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .sizeIn(minHeight = 48.dp)
+                .clickable(role = Role.Button, onClick = onToggleExpanded)
+                .semantics { stateDescription = stateLabel }
+                .padding(horizontal = EditorHorizontalPadding, vertical = EditorCompactSpacing),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(EditorCompactSpacing)
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_keyboard_arrow_down),
+                contentDescription = null,
+                modifier = Modifier.rotate(chevronRotation),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            if (block.text.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.markdown_details_default_summary),
+                    modifier = Modifier.weight(1f),
+                    style = markdownBodyStyle(),
+                    fontWeight = FontWeight.SemiBold
+                )
+            } else {
+                MarkdownPresentationText(
+                    sourceBlock = block,
+                    sourceText = block.text,
+                    sourceSpans = block.spans,
+                    renderedOffsetBase = 0,
+                    style = markdownBodyStyle(),
+                    fontWeight = FontWeight.SemiBold,
+                    onInlineInteraction = onInlineInteraction,
+                    modifier = Modifier.weight(1f),
+                    enableSourceTap = false
+                )
+            }
+        }
     }
 }
 
@@ -521,9 +788,10 @@ internal fun MarkdownCodeBlocks(
         "Markdown code preview contains a non-code block"
     }
     val horizontalScrollState = rememberScrollState()
-    val isDiagram = blocks.first().spans.singleOrNull()?.illustration.let {
-        it is IllustrationResult.Rendered && it.kind == IllustrationKind.Diagram
-    } && blocks.drop(1).all { it.illustrationContinuation }
+    val renderedIllustration = blocks.first().spans.singleOrNull()?.illustration
+        ?.takeIf { blocks.drop(1).all { block -> block.illustrationContinuation } }
+        as? IllustrationResult.Rendered
+    val isDiagram = renderedIllustration?.kind == IllustrationKind.Diagram
     var fitDiagram by rememberSaveable(blocks.first().source.start) { mutableStateOf(true) }
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -534,27 +802,50 @@ internal fun MarkdownCodeBlocks(
             modifier = Modifier.padding(EditorHorizontalPadding),
             verticalArrangement = Arrangement.spacedBy(EditorCompactSpacing)
         ) {
+            val inspectorLauncher = LocalMarkdownInspectorLauncher.current
             MarkdownCodeHeader(
                 metadata = blocks.first().metadata,
                 copy = LocalMarkdownCodeCopies.current[firstBlockIndex],
-                extraAction = if (isDiagram) {
+                extraAction = if (renderedIllustration != null && (isDiagram || inspectorLauncher != null)) {
                     {
                         val span = blocks.first().spans.single()
-                        val drawing = (span.illustration as IllustrationResult.Rendered).drawing
-                        DiagramLabelSelectionAction(drawing, firstBlockIndex, span.start)
-                        IconButton(onClick = { fitDiagram = !fitDiagram }) {
-                            Icon(
-                                painterResource(
-                                    if (fitDiagram) R.drawable.ic_zoom_in else R.drawable.ic_zoom_out
-                                ),
-                                contentDescription = stringResource(
-                                    if (fitDiagram) {
-                                        R.string.markdown_diagram_text_size
-                                    } else {
-                                        R.string.markdown_diagram_fit_width
-                                    }
+                        val drawing = renderedIllustration.drawing
+                        if (isDiagram) {
+                            DiagramLabelSelectionAction(drawing, firstBlockIndex, span.start)
+                        }
+                        if (inspectorLauncher != null) {
+                            IconButton(
+                                onClick = {
+                                    inspectorLauncher(
+                                        ReadingInspectorTarget.Illustration(
+                                            kind = renderedIllustration.kind,
+                                            drawing = drawing,
+                                            sourceText = blocks.joinToString("") { it.text }
+                                        )
+                                    )
+                                }
+                            ) {
+                                Icon(
+                                    painterResource(R.drawable.ic_open_in_new),
+                                    contentDescription = stringResource(R.string.markdown_inspector_open)
                                 )
-                            )
+                            }
+                        }
+                        if (isDiagram) {
+                            IconButton(onClick = { fitDiagram = !fitDiagram }) {
+                                Icon(
+                                    painterResource(
+                                        if (fitDiagram) R.drawable.ic_zoom_in else R.drawable.ic_zoom_out
+                                    ),
+                                    contentDescription = stringResource(
+                                        if (fitDiagram) {
+                                            R.string.markdown_diagram_text_size
+                                        } else {
+                                            R.string.markdown_diagram_fit_width
+                                        }
+                                    )
+                                )
+                            }
                         }
                     }
                 } else {
@@ -658,12 +949,29 @@ private fun MarkdownListItem(
         else maxOf(minimum, measured.width.toDp())
     }
     val contentBlock = remember(block) { if (taskState == null) block else markdownTaskContent(block) }
+    val taskToggle = LocalMarkdownTaskToggle.current
     val drawMarker: @Composable (Modifier, Boolean) -> Unit = { markerModifier, stacked ->
         if (taskState != null) {
             val checked = taskState == MarkdownTaskState.Checked
-            Box(markerModifier.size(markerWidth), contentAlignment = Alignment.Center) {
+            val blockIndex = LocalMarkdownPreviewBlockIndex.current
+            val canToggle = taskToggle != null && blockIndex != null && block.taskMarkerSourceUtf16 != null
+            val toggleDescription = stringResource(
+                if (checked) R.string.markdown_task_completed else R.string.markdown_task_incomplete
+            )
+            val toggleModifier = if (canToggle) {
+                Modifier
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .toggleable(
+                        value = checked,
+                        role = Role.Checkbox,
+                        onValueChange = { taskToggle(blockIndex, block) }
+                    )
+                    .semantics { stateDescription = toggleDescription }
+            } else {
+                Modifier.size(markerWidth)
+            }
+            Box(markerModifier.then(toggleModifier), contentAlignment = Alignment.Center) {
                 MarkdownTaskIndicator(checked = checked, size = markerWidth)
-                val blockIndex = LocalMarkdownPreviewBlockIndex.current
                 var markerLayout by remember(blockIndex) { mutableStateOf<TextLayoutResult?>(null) }
                 val selection = if (blockIndex == null) Modifier else Modifier.documentSelectionText(
                     key = "task-marker-$blockIndex", layout = markerLayout,
@@ -901,7 +1209,7 @@ private fun MarkdownHtmlLiteral(
     }
 }
 
-/** Displays one table row when surrounding rows cannot be grouped. */
+/** Displays one table row when surrounding rows cannot be grouped (e.g. quoted tables). */
 @Composable
 private fun MarkdownTableRow(
     block: MarkdownRenderBlock,
@@ -909,13 +1217,72 @@ private fun MarkdownTableRow(
     onInlineInteraction: (MarkdownInlineInteraction) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    MarkdownTable(
-        blocks = listOf(block),
-        firstBlockIndex = requireNotNull(LocalMarkdownPreviewBlockIndex.current),
-        showWrappedPreview = showWrappedPreview,
-        onInlineInteraction = onInlineInteraction,
-        modifier = modifier
-    )
+    val firstBlockIndex = requireNotNull(LocalMarkdownPreviewBlockIndex.current)
+    val inspectorLauncher = LocalMarkdownInspectorLauncher.current
+    val allBlocks = LocalMarkdownDocumentBlocks.current
+    if (block.startsTable && inspectorLauncher != null) {
+        Column(modifier = modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = {
+                        val tableBlocks = collectContiguousTableBlocks(allBlocks, firstBlockIndex, block)
+                        inspectorLauncher(ReadingInspectorTarget.Table(tableBlocks))
+                    }
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_open_in_new),
+                        contentDescription = stringResource(R.string.markdown_inspector_open)
+                    )
+                }
+            }
+            MarkdownTable(
+                blocks = listOf(block),
+                firstBlockIndex = firstBlockIndex,
+                showWrappedPreview = showWrappedPreview,
+                onInlineInteraction = onInlineInteraction,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    } else {
+        MarkdownTable(
+            blocks = listOf(block),
+            firstBlockIndex = firstBlockIndex,
+            showWrappedPreview = showWrappedPreview,
+            onInlineInteraction = onInlineInteraction,
+            modifier = modifier
+        )
+    }
+}
+
+private fun collectContiguousTableBlocks(
+    allBlocks: List<MarkdownRenderBlock>,
+    startIndex: Int,
+    firstBlock: MarkdownRenderBlock
+): List<MarkdownRenderBlock> {
+    if (startIndex !in allBlocks.indices) return listOf(firstBlock)
+    val footnoteLabel = firstBlock.markdownFootnoteLabel()
+    val result = ArrayList<MarkdownRenderBlock>()
+    result.add(allBlocks[startIndex])
+    var idx = startIndex + 1
+    while (idx < allBlocks.size) {
+        val candidate = allBlocks[idx]
+        if (
+            candidate.kind != MarkdownBlockKind.TableRow ||
+            candidate.startsTable ||
+            candidate.quoteDepth != firstBlock.quoteDepth ||
+            candidate.detailsId != firstBlock.detailsId ||
+            candidate.markdownFootnoteLabel() != footnoteLabel
+        ) {
+            break
+        }
+        result.add(candidate)
+        idx += 1
+    }
+    return result
 }
 
 /** Displays consecutive table rows with bounded, consistently sized cells. */
@@ -1309,11 +1676,35 @@ private fun MarkdownStyledText(
     if (block.kind != MarkdownBlockKind.Code &&
         standaloneDisplayIllustration(block.text, block.spans)
     ) {
+        val inspectorLauncher = LocalMarkdownInspectorLauncher.current
+        val renderedFormula = block.spans.singleOrNull()?.illustration as? IllustrationResult.Rendered
         Column(modifier = modifier) {
             MarkdownCodeHeader(
                 stringResource(R.string.markdown_formula),
                 remember(block) { MarkdownCodeCopy(listOf(block)) },
-                copyDescription = stringResource(R.string.markdown_copy_formula)
+                copyDescription = stringResource(R.string.markdown_copy_formula),
+                extraAction = if (inspectorLauncher != null && renderedFormula != null) {
+                    {
+                        IconButton(
+                            onClick = {
+                                inspectorLauncher(
+                                    ReadingInspectorTarget.Illustration(
+                                        kind = renderedFormula.kind,
+                                        drawing = renderedFormula.drawing,
+                                        sourceText = block.text
+                                    )
+                                )
+                            }
+                        ) {
+                            Icon(
+                                painterResource(R.drawable.ic_open_in_new),
+                                contentDescription = stringResource(R.string.markdown_inspector_open)
+                            )
+                        }
+                    }
+                } else {
+                    null
+                }
             )
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val viewportWidth = maxWidth
@@ -1355,7 +1746,8 @@ private fun MarkdownPresentationText(
     role: MarkdownTextRole = MarkdownTextRole.Body,
     fontWeight: FontWeight? = null,
     textAlign: TextAlign? = null,
-    softWrap: Boolean = true
+    softWrap: Boolean = true,
+    enableSourceTap: Boolean = true
 ) {
     require(renderedOffsetBase >= 0) { "Markdown rendered offset base must be nonnegative" }
     require(renderedOffsetBase + sourceText.length <= sourceBlock.text.length) {
@@ -1381,6 +1773,13 @@ private fun MarkdownPresentationText(
     }
     val linkColor = MaterialTheme.colorScheme.primary
     val codeBackground = MaterialTheme.colorScheme.surfaceContainerHighest
+    val syntaxHighlightingEnabled =
+        isCode &&
+            renderedOffsetBase == 0 &&
+            sourceBlock.syntaxRuns.isNotEmpty() &&
+            appearance.value(AppearanceOption.SyntaxHighlighting, AppearanceGroup.Markdown) == 1f
+    val syntaxPalette = if (syntaxHighlightingEnabled) rememberSyntaxHighlightPalette() else null
+    val activeSyntaxRuns = if (syntaxHighlightingEnabled) sourceBlock.syntaxRuns else emptyList()
     val footnoteNumbers = LocalMarkdownFootnoteNumbers.current
     val previewBlockIndex = LocalMarkdownPreviewBlockIndex.current
     val currentOnInlineInteraction by rememberUpdatedState(onInlineInteraction)
@@ -1393,6 +1792,8 @@ private fun MarkdownPresentationText(
         remember(
             sourceText,
             sourceSpans,
+            activeSyntaxRuns,
+            syntaxPalette,
             footnotePresentation,
             linkColor,
             codeBackground,
@@ -1418,6 +1819,8 @@ private fun MarkdownPresentationText(
                 sourceSpans = sourceSpans,
                 blockIndex = previewBlockIndex,
                 renderedOffsetBase = renderedOffsetBase,
+                syntaxRuns = activeSyntaxRuns,
+                syntaxPalette = syntaxPalette,
                 onFootnoteReference = { label, blockIdx, offset ->
                     currentOnInlineInteraction(
                         MarkdownInlineInteraction.FootnoteReference(label, blockIdx, offset)
@@ -1451,21 +1854,34 @@ private fun MarkdownPresentationText(
     val layoutGeneration = LocalMarkdownLayoutGeneration.current
     val findStyles = findHighlightStyles()
     val findRanges = LocalReadingFindHighlights.current[blockIndex].orEmpty().mapNotNull { highlight ->
+        if (highlight.isFrontmatterKey) return@mapNotNull null
         val start = maxOf(highlight.start, renderedOffsetBase) - renderedOffsetBase
         val end = minOf(highlight.end, renderedOffsetBase + sourceText.length) - renderedOffsetBase
         if (end < start || start !in 0..sourceText.length) null else {
             fun display(offset: Int): Int = footnotePresentation?.presentationUtf16OffsetForSource(
                 offset, sourceText.length, sourceSpans) ?: offset
-            highlight.copy(start = display(start) + highlight.markerStart, end = display(end) + highlight.markerEnd,
-                markerStart = 0, markerEnd = 0)
+            val displayStart = display(start) + highlight.markerStart
+            val displayEnd = display(end) + highlight.markerEnd
+            if (displayEnd < displayStart) null else {
+                highlight.copy(
+                    start = displayStart,
+                    end = displayEnd,
+                    markerStart = 0,
+                    markerEnd = 0
+                )
+            }
         }
     }
     val annotated = remember(baseAnnotated, findRanges, findStyles) {
         buildAnnotatedString {
             append(baseAnnotated)
             findRanges.filter { !it.collapsed }.forEach { highlight ->
-                addStyle(if (highlight.current) findStyles.current else findStyles.other,
-                    highlight.start, highlight.end)
+                val safeStart = highlight.start.coerceIn(0, baseAnnotated.length)
+                val safeEnd = highlight.end.coerceIn(0, baseAnnotated.length)
+                if (safeStart < safeEnd) {
+                    addStyle(if (highlight.current) findStyles.current else findStyles.other,
+                        safeStart, safeEnd)
+                }
             }
         }
     }
@@ -1535,7 +1951,7 @@ private fun MarkdownPresentationText(
         }
     }
     val sourceTapModifier =
-        if (navigationState?.isEditable == true && key != null) {
+        if (enableSourceTap && navigationState?.isEditable == true && key != null) {
             Modifier.pointerInput(annotated, owner) {
                 awaitEachGesture {
                     awaitFirstDown(
@@ -1691,9 +2107,20 @@ internal fun markdownAnnotatedStringForPresentation(
     sourceSpans: List<MarkdownInlineSpan> = spans,
     blockIndex: Int? = null,
     renderedOffsetBase: Int = 0,
+    syntaxRuns: List<MarkdownSyntaxRun> = emptyList(),
+    syntaxPalette: SyntaxHighlightPalette? = null,
     onFootnoteReference: ((String, Int?, Int) -> Unit)? = null
 ): AnnotatedString = buildAnnotatedString {
     appendMarkdownIllustrationText(text, spans)
+    if (syntaxPalette != null && syntaxRuns.isNotEmpty()) {
+        syntaxRuns.forEach { run ->
+            val start = run.start.coerceIn(0, text.length)
+            val end = run.end.coerceIn(start, text.length)
+            if (start < end) {
+                addStyle(syntaxPalette.styleFor(run.role), start, end)
+            }
+        }
+    }
     spans.forEachIndexed { spanIndex, span ->
         val literalMath = span.styles and MARKDOWN_SPAN_STYLE_MATH != 0 &&
             span.illustration !is IllustrationResult.Rendered

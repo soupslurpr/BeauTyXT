@@ -1,5 +1,6 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
+import android.content.Context
 import android.net.Uri
 import dev.soupslurpr.beautyxt.document.DocumentFormat
 import dev.soupslurpr.beautyxt.exporting.client.IsolatedDocumentExporter
@@ -12,6 +13,7 @@ import dev.soupslurpr.beautyxt.transfer.client.NfcTransferProcessor
 import dev.soupslurpr.beautyxt.transfer.client.QrTransferProcessor
 import dev.soupslurpr.beautyxt.ui.autosave.LeasedEditorDocumentSource
 import dev.soupslurpr.beautyxt.ui.incomingEditorPresentation
+import java.util.UUID
 
 /** Selects whether one imported provider capability may become an autosave source. */
 internal enum class ImportedSourcePolicy {
@@ -30,7 +32,7 @@ internal fun shouldUseWritableImportedSource(
     sourceAccess == ImportedSourceAccess.ReadWrite
 
 /** Takes one imported document and source into a complete editor session. */
-internal fun createImportedEditorSession(
+internal suspend fun createImportedEditorSession(
     importedDocument: ImportedDocument,
     exporter: IsolatedDocumentExporter,
     markdownRenderer: MarkdownRenderer,
@@ -40,30 +42,50 @@ internal fun createImportedEditorSession(
     sourceFormat: DocumentFormat = DocumentFormat.PlainText,
     sourcePurpose: IncomingSourcePurpose = IncomingSourcePurpose.Edit,
     readOnlyImporter: (suspend (Uri) -> ImportedDocument)? = null,
-    treeGrantLease: AutoCloseable? = null
+    treeGrantLease: AutoCloseable? = null,
+    context: Context? = null,
+    writableRegistry: WritableDocumentRegistry = WritableDocumentRegistry.shared,
+    replacesWritableOwnerId: UUID? = null
 ): EditorSession {
     var documentOwner: ImportedDocument? = importedDocument
     var selectedSource: SelectedDocumentSource? = null
     var editorSource: EditorDocumentSource? = null
     var unclaimedLease: AutoCloseable? = treeGrantLease
+    var unclaimedWriteLease: WritableDocumentLease? = null
     try {
         selectedSource = importedDocument.takeSelectedSource()
+        val observedIdentityKey = selectedSource.fileIdentityKey
+        val wantsWritable =
+            shouldUseWritableImportedSource(
+                sourceAccess = importedDocument.sourceAccess,
+                sourcePolicy = sourcePolicy
+            ) && (context == null || !observedIdentityKey.isNullOrBlank())
+        if (wantsWritable) {
+            val keys = buildSet {
+                add(writableDocumentKey(context, selectedSource.uri))
+                observedIdentityKey?.let(::add)
+            }
+            val probeUri = selectedSource.uri
+            val probeContext = context?.applicationContext
+            unclaimedWriteLease = writableRegistry.tryAcquireRefreshing(
+                documentKeys = keys,
+                replacesOwnerId = replacesWritableOwnerId,
+                liveProbe = probeContext?.let { app -> { probeWritableFileIdentity(app, probeUri) } }
+            )
+        }
         editorSource =
-            if (
-                shouldUseWritableImportedSource(
-                    sourceAccess = importedDocument.sourceAccess,
-                    sourcePolicy = sourcePolicy
-                )
-            ) {
+            if (wantsWritable && unclaimedWriteLease != null) {
                 val ownedSource = SelectedEditorDocumentSource.takeImportedOwnership(
                     selectedSource = checkNotNull(selectedSource),
                     exporter = exporter,
-                    readOnlyImporter = readOnlyImporter
+                    readOnlyImporter = readOnlyImporter,
+                    writeLease = unclaimedWriteLease
                 )
-                val lease = unclaimedLease
-                if (lease != null) {
-                    unclaimedLease = null
-                    LeasedEditorDocumentSource(ownedSource, lease)
+                val combinedLease = combineCloseables(unclaimedLease, unclaimedWriteLease)
+                unclaimedLease = null
+                unclaimedWriteLease = null
+                if (combinedLease != null) {
+                    LeasedEditorDocumentSource(ownedSource, combinedLease)
                 } else {
                     ownedSource
                 }
@@ -96,8 +118,11 @@ internal fun createImportedEditorSession(
         editorSource = null
         unclaimedLease?.close()
         unclaimedLease = null
+        unclaimedWriteLease?.close()
+        unclaimedWriteLease = null
         return editor
     } catch (failure: Throwable) {
+        closeAfterFailedImportTransfer(unclaimedWriteLease, failure)
         closeAfterFailedImportTransfer(unclaimedLease, failure)
         closeAfterFailedImportTransfer(editorSource, failure)
         closeAfterFailedImportTransfer(selectedSource, failure)

@@ -1385,6 +1385,16 @@ private fun markdownPrintText(
                     builder.append('\n')
                 }
 
+            MarkdownBlockKind.Frontmatter ->
+                if (block.metadata.isNotEmpty()) {
+                    builder.append(block.metadata).append(": ")
+                }
+
+            MarkdownBlockKind.DetailsSummary ->
+                if (block.text.isEmpty()) {
+                    builder.append(resources.getString(R.string.markdown_details_default_summary))
+                }
+
             else -> Unit
         }
         if (prefixStart < builder.length) {
@@ -1410,6 +1420,21 @@ private fun markdownPrintText(
     val printContent = markdownPrintContent(block, footnoteNumbers)
     val contentStart = builder.length
     builder.append(printContent.text)
+    if (block.kind == MarkdownBlockKind.DetailsSummary && contentStart < builder.length) {
+        builder.setSpan(
+            StyleSpan(Typeface.BOLD),
+            contentStart,
+            builder.length,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+    }
+    if (block.kind == MarkdownBlockKind.Code && block.syntaxRuns.isNotEmpty()) {
+        applyMarkdownPrintSyntaxRuns(
+            builder = builder,
+            runs = block.syntaxRuns,
+            offset = contentStart
+        )
+    }
     applyMarkdownPrintSpans(
         builder = builder,
         spans = printContent.spans,
@@ -1491,6 +1516,41 @@ private fun markdownPrintStyledText(
         )
     }
     return builder
+}
+
+/** Applies fixed high-contrast paper-palette syntax highlighting to printable code text. */
+private fun applyMarkdownPrintSyntaxRuns(
+    builder: SpannableStringBuilder,
+    runs: List<dev.soupslurpr.beautyxt.markdown.MarkdownSyntaxRun>,
+    offset: Int
+) {
+    runs.forEach { run ->
+        val start = Math.addExact(offset, run.start)
+        val end = Math.addExact(offset, run.end)
+        if (start !in offset..end || end > builder.length) return@forEach
+        val color = when (run.role) {
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.Keyword -> 0xFF6B21A8.toInt()
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.StringLiteral -> 0xFF166534.toInt()
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.Comment -> 0xFF52525B.toInt()
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.Number -> 0xFF9A3412.toInt()
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.Type -> 0xFF0F4C81.toInt()
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.Function -> 0xFF1D4ED8.toInt()
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.Attribute -> 0xFF854D0E.toInt()
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.Operator -> 0xFF3F3F46.toInt()
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.DiffAdded -> 0xFF166534.toInt()
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.DiffRemoved -> 0xFF991B1B.toInt()
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.DiffHeader -> 0xFF1D4ED8.toInt()
+        }
+        builder.setSpan(ForegroundColorSpan(color), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        when (run.role) {
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.Keyword,
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.DiffHeader ->
+                builder.setSpan(StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            dev.soupslurpr.beautyxt.markdown.SyntaxTokenRole.Comment ->
+                builder.setSpan(StyleSpan(Typeface.ITALIC), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            else -> Unit
+        }
+    }
 }
 
 /** Applies validated inline Markdown styling at one printable text offset. */

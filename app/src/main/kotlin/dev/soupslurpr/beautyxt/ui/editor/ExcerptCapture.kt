@@ -2,6 +2,7 @@ package dev.soupslurpr.beautyxt.ui.editor
 
 import dev.soupslurpr.beautyxt.document.*
 import dev.soupslurpr.beautyxt.markdown.MarkdownPreviewDocument
+import dev.soupslurpr.beautyxt.markdown.MarkdownRenderBlock
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
@@ -16,13 +17,15 @@ internal class ExcerptCapture(
     private val labelText: String? = null,
     val wholeDocument: Boolean = false,
     private val formatWholeDocument: Boolean = false,
-    val preferFormattedPdf: Boolean = !exactSource
+    val preferFormattedPdf: Boolean = !exactSource,
+    private val isReadingBlockVisible: (Int, MarkdownRenderBlock) -> Boolean = { _, _ -> true }
 ) : AutoCloseable {
     val canFormat get() = formatWholeDocument || readingSelection != null || labelText != null
     val canExportReadingText get() = wholeDocument && formatWholeDocument &&
         (textFormat == DocumentFormat.Markdown || preferFormattedPdf)
     fun formatted(): FormattedExcerpt? = when {
-        readingDocument != null && readingSelection != null -> selectedMarkdown(readingDocument, readingSelection)
+        readingDocument != null && readingSelection != null ->
+            selectedMarkdown(readingDocument, readingSelection, isReadingBlockVisible)
         labelText != null -> FormattedExcerpt(excerptEscape(labelText), MarkdownPreviewDocument(
             labelText.toByteArray().size.toLong(), emptyList(), 0, false), emptyList())
         else -> null

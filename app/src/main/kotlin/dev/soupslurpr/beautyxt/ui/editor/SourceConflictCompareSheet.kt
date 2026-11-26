@@ -55,6 +55,19 @@ import dev.soupslurpr.beautyxt.document.DiffLineKind
 import dev.soupslurpr.beautyxt.document.DocumentDiff
 import dev.soupslurpr.beautyxt.ui.asString
 
+/** Identifies whether the compare sheet is resolving a source conflict or inspecting a read-only diff. */
+internal sealed interface DocumentCompareMode {
+    data object SourceConflict : DocumentCompareMode
+    data class ReadOnlyFile(val otherTitle: String, val localTitle: String) : DocumentCompareMode
+    data class ReadOnlyClipboard(val localTitle: String) : DocumentCompareMode
+}
+
+/** Pairs a read-only comparison target with its live diff state. */
+internal data class GeneralDocumentComparison(
+    val mode: DocumentCompareMode,
+    val state: SourceConflictComparisonState
+)
+
 /** Presents a read-only comparison of external vs local changes before conflict resolution. */
 @Composable
 internal fun SourceConflictCompareSheet(
@@ -67,8 +80,28 @@ internal fun SourceConflictCompareSheet(
     onSaveAsNewFile: () -> Unit,
     onReload: () -> Unit,
     onOverwriteReviewed: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    mode: DocumentCompareMode = DocumentCompareMode.SourceConflict
 ) {
+    val isConflictMode = mode == DocumentCompareMode.SourceConflict
+    val headerTitle = when (mode) {
+        DocumentCompareMode.SourceConflict -> stringResource(R.string.feedback_compare_changes)
+        is DocumentCompareMode.ReadOnlyFile -> stringResource(R.string.compare_file_title)
+        is DocumentCompareMode.ReadOnlyClipboard -> stringResource(R.string.compare_clipboard_title)
+    }
+    val directionSubtitle = when (mode) {
+        DocumentCompareMode.SourceConflict -> null
+        is DocumentCompareMode.ReadOnlyFile -> stringResource(
+            R.string.compare_direction_subtitle,
+            mode.otherTitle.ifBlank { stringResource(R.string.compare_file_label) },
+            mode.localTitle
+        )
+        is DocumentCompareMode.ReadOnlyClipboard -> stringResource(
+            R.string.compare_direction_subtitle,
+            stringResource(R.string.compare_clipboard_label),
+            mode.localTitle
+        )
+    }
     val listState = rememberLazyListState()
     val headerDividerAlpha by animateFloatAsState(
         targetValue = if (listState.canScrollBackward) 1f else 0f,
@@ -86,10 +119,17 @@ internal fun SourceConflictCompareSheet(
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            text = stringResource(R.string.feedback_compare_changes),
+                            text = headerTitle,
                             style = MaterialTheme.typography.headlineSmall,
                             modifier = Modifier.semantics { heading() }
                         )
+                        if (directionSubtitle != null) {
+                            Text(
+                                text = directionSubtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         if (state is SourceConflictComparisonState.Ready) {
                             val addedCount = state.diff.addedLines.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                             val removedCount = state.diff.removedLines.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
@@ -265,24 +305,26 @@ internal fun SourceConflictCompareSheet(
                                 DiffHunkCard(hunk = hunk)
                             }
                         }
-                        item(key = "compare-actions") {
-                            CompareResolutionActions(
-                                state = state,
-                                hasNewerLocalEdits = hasNewerLocalEdits,
-                                canSaveAsNewFile = canSaveAsNewFile,
-                                canReload = canReload,
-                                canOverwriteReviewed = canOverwriteReviewed,
-                                onSaveAsNewFile = onSaveAsNewFile,
-                                onReload = onReload,
-                                onOverwriteReviewed = onOverwriteReviewed,
-                                onDismiss = onDismiss
-                            )
+                        if (isConflictMode) {
+                            item(key = "compare-actions") {
+                                CompareResolutionActions(
+                                    state = state,
+                                    hasNewerLocalEdits = hasNewerLocalEdits,
+                                    canSaveAsNewFile = canSaveAsNewFile,
+                                    canReload = canReload,
+                                    canOverwriteReviewed = canOverwriteReviewed,
+                                    onSaveAsNewFile = onSaveAsNewFile,
+                                    onReload = onReload,
+                                    onOverwriteReviewed = onOverwriteReviewed,
+                                    onDismiss = onDismiss
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            if (state !is SourceConflictComparisonState.Ready) {
+            if (isConflictMode && state !is SourceConflictComparisonState.Ready) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Column(
                     modifier = Modifier

@@ -47,7 +47,9 @@ private class HomeDocumentEntry(initialAction: InitialDocumentAction) {
 internal fun HomeDocumentScreen(
     initialAction: InitialDocumentAction,
     isCurrentEntry: () -> Boolean,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    returnDestination: DocumentSessionReturnDestination = DocumentSessionReturnDestination.Home,
+    topResumedLostVersion: Long = 0L
 ) {
     // These flags contain no document data. A completed selection or live document must
     // become an ended session after process death; a pending system picker may still return.
@@ -164,11 +166,12 @@ internal fun HomeDocumentScreen(
     RequestKeyboardPrivacy {
         BeauTyXTApp(
             initialDocumentAction = entry.action,
-            returnDestination = DocumentSessionReturnDestination.Home,
+            returnDestination = returnDestination,
             incomingShare = entry.share,
             onIncomingShareConsumed = { share ->
                 if (entry.share === share) entry.share = null
             },
+            topResumedLostVersion = topResumedLostVersion,
             onDocumentSessionClosed = ::closeEntry
         )
     }

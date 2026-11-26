@@ -65,4 +65,13 @@
     <string name="feedback_compare_refresh">Refresh comparison</string>
     <string name="feedback_compare_overwrite_reviewed">Overwrite file with reviewed edits</string>
     <string name="feedback_compare_overwrite_partial">Overwrite file anyway (partial preview)</string>
+    <string name="compare_with_file">Compare with file…</string>
+    <string name="compare_with_clipboard">Compare with clipboard</string>
+    <string name="compare_file_title">Compare with file</string>
+    <string name="compare_clipboard_title">Compare with clipboard</string>
+    <string name="compare_clipboard_empty">Clipboard does not contain plain text to compare.</string>
+    <string name="compare_clipboard_too_large">Clipboard text is too large to compare.</string>
+    <string name="compare_file_label">Selected file</string>
+    <string name="compare_clipboard_label">Clipboard</string>
+    <string name="compare_direction_subtitle">%1$s → %2$s</string>
 </resources>

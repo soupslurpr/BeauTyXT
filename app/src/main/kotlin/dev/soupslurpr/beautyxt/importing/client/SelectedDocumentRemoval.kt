@@ -65,7 +65,8 @@ internal suspend fun removeSelectedDocument(
     contentResolver: ContentResolver,
     uri: Uri,
     isDocumentUri: Boolean,
-    action: DocumentRemovalAction
+    action: DocumentRemovalAction,
+    verifyTargetBeforeDispatch: (suspend () -> Unit)? = null
 ) {
     val capabilities =
         querySelectedDocumentRemovalCapabilities(
@@ -76,6 +77,7 @@ internal suspend fun removeSelectedDocument(
     if (!capabilities.supports(action)) {
         throw SelectedDocumentRemovalException()
     }
+    verifyTargetBeforeDispatch?.invoke()
     try {
         withContext(Dispatchers.IO + NonCancellable) {
             val succeeded =

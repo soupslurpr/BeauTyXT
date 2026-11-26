@@ -14,11 +14,15 @@ import dev.soupslurpr.beautyxt.document.SourceVersion
 import dev.soupslurpr.beautyxt.exporting.ExportProtocol
 import dev.soupslurpr.beautyxt.exporting.IExportCallback
 import dev.soupslurpr.beautyxt.exporting.ISourceSaveCallback
+import dev.soupslurpr.beautyxt.importing.client.DescriptorFileIdentity
+import dev.soupslurpr.beautyxt.importing.client.isEmptyRegularFile
+import dev.soupslurpr.beautyxt.importing.client.probeDescriptorFileIdentityBounded
 import dev.soupslurpr.beautyxt.ipc.ReliableSnapshotPipe
 import dev.soupslurpr.beautyxt.ipc.SealedInput
 import dev.soupslurpr.beautyxt.ipc.TransferredFileDescriptor
 import dev.soupslurpr.beautyxt.ipc.acquireResourceWithTimeout
 import dev.soupslurpr.beautyxt.ipc.openProviderDescriptor
+import dev.soupslurpr.beautyxt.ipc.probeOwnedDescriptorMetadata
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -61,11 +65,34 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
         if (uri.scheme != ContentResolver.SCHEME_CONTENT) {
             throw DocumentExportException(DocumentExportFailure.DESTINATION_UNAVAILABLE)
         }
-        return TransientExportDestination.from(openSelectedDestination(uri))
+        val opened = openSelectedDestination(uri)
+        val identity =
+            try {
+                probeDescriptorFileIdentityBounded(opened)
+            } catch (failure: Throwable) {
+                closeRejectedDestination(opened)
+                throw failure
+            }
+        val identityKey = when (identity) {
+            is DescriptorFileIdentity.Regular -> identity.key
+            DescriptorFileIdentity.NonRegular -> null
+            DescriptorFileIdentity.Indeterminate -> {
+                closeRejectedDestination(opened)
+                throw DocumentExportException(DocumentExportFailure.DESTINATION_UNAVAILABLE)
+            }
+        }
+        return TransientExportDestination.from(
+            descriptor = opened,
+            fileIdentityKey = identityKey
+        )
     }
 
     /** Takes one destination and sealed input for a cancellation-safe binary export. */
-    suspend fun save(destination: TransientExportDestination, input: SealedInput) {
+    suspend fun save(
+        destination: TransientExportDestination,
+        input: SealedInput,
+        releaseLeaseOnUncertainExit: (() -> AutoCloseable?)? = null
+    ) {
         val successVerified = AtomicBoolean(false)
         var unclaimedInput: ParcelFileDescriptor? = null
         var unclaimedDestination: ParcelFileDescriptor? = destination.takeDescriptor()
@@ -88,7 +115,8 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
                             destinationDescriptor = ownedDestination,
                             expectedBytes = input.byteCount,
                             successVerified = successVerified,
-                            snapshotProducer = null
+                            snapshotProducer = null,
+                            releaseLeaseOnUncertainExit = releaseLeaseOnUncertainExit
                         )
                     }
                 } catch (failure: Throwable) {
@@ -111,7 +139,8 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
     suspend fun save(
         destination: TransientExportDestination,
         snapshot: EditorDocumentSnapshot,
-        expectedBytes: Long
+        expectedBytes: Long,
+        releaseLeaseOnUncertainExit: (() -> AutoCloseable?)? = null
     ) {
         val successVerified = AtomicBoolean(false)
         var unclaimedDestination: ParcelFileDescriptor? = destination.takeDescriptor()
@@ -136,7 +165,8 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
                             destinationDescriptor = ownedDestination,
                             snapshot = snapshot,
                             expectedBytes = expectedBytes,
-                            successVerified = successVerified
+                            successVerified = successVerified,
+                            releaseLeaseOnUncertainExit = releaseLeaseOnUncertainExit
                         )
                     }
                 } catch (failure: Throwable) {
@@ -158,6 +188,19 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
         source: TransientSourceDescriptor,
         stagedPackage: StagedSourceSavePackage,
         expectedSourceVersion: SourceVersion?
+    ): SourceSaveReceipt =
+        saveSource(
+            source = source,
+            stagedPackage = stagedPackage,
+            expectedSourceVersion = expectedSourceVersion,
+            releaseLeaseOnUncertainExit = null
+        )
+
+    override suspend fun saveSource(
+        source: TransientSourceDescriptor,
+        stagedPackage: StagedSourceSavePackage,
+        expectedSourceVersion: SourceVersion?,
+        releaseLeaseOnUncertainExit: (() -> AutoCloseable?)?
     ): SourceSaveReceipt {
         val verifiedReceipt = AtomicReference<SourceSaveReceipt?>()
         var unclaimedPackage: ParcelFileDescriptor? = null
@@ -187,7 +230,8 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
                             expectedBytes = stagedPackage.outputByteLength,
                             expectedSourceVersion = expectedSourceVersion,
                             verifiedReceipt = verifiedReceipt,
-                            inspectedVersion = null
+                            inspectedVersion = null,
+                            releaseLeaseOnUncertainExit = releaseLeaseOnUncertainExit
                         )
                     }
                 } catch (failure: Throwable) {
@@ -290,7 +334,8 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
         expectedBytes: Long,
         expectedSourceVersion: SourceVersion?,
         verifiedReceipt: AtomicReference<SourceSaveReceipt?>?,
-        inspectedVersion: AtomicReference<SourceVersion?>?
+        inspectedVersion: AtomicReference<SourceVersion?>?,
+        releaseLeaseOnUncertainExit: (() -> AutoCloseable?)? = null
     ) {
         require(expectedBytes in ExportProtocol.MIN_BYTE_LIMIT..ExportProtocol.MAX_BYTE_LIMIT) {
             "expected byte count exceeds export limits"
@@ -336,6 +381,7 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
         var completion: CompletableDeferred<SourceTerminalStatus>? = null
         var callback: SourceCallback? = null
         var accepted = false
+        var dispatchedToWorker = false
         var authoritativeTerminal = false
         var completed = false
         try {
@@ -371,6 +417,7 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
             callback = sourceCallback
             val acceptCode =
                 try {
+                    dispatchedToWorker = true
                     when (operation) {
                         SourceOperation.SAVE ->
                             service.startConditionalSourceSave(
@@ -433,6 +480,9 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
                     closeQuietly(source)
                     source = null
                 }
+            if (acceptCode != ExportProtocol.ACCEPT_ACCEPTED) {
+                dispatchedToWorker = false
+            }
             throwForSourceAcceptCode(acceptCode, operation)
             accepted = true
             currentCoroutineContext().ensureActive()
@@ -491,23 +541,27 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
                         )
                 ) {
                     is SourceTerminalResult.Saved -> {
+                        authoritativeTerminal = true
                         checkNotNull(verifiedReceipt).set(settled.receipt)
                         completed = true
                         return
                     }
 
                     SourceTerminalResult.Verified -> {
+                        authoritativeTerminal = true
                         completed = true
                         return
                     }
 
                     is SourceTerminalResult.Inspected -> {
+                        authoritativeTerminal = true
                         checkNotNull(inspectedVersion).set(settled.sourceVersion)
                         completed = true
                         return
                     }
 
                     is SourceTerminalResult.Failed -> {
+                        authoritativeTerminal = true
                         if (settled.failure == DocumentExportFailure.SOURCE_UNCERTAIN) {
                             throw DocumentExportException(settled.failure, failure)
                         }
@@ -552,6 +606,12 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
             if (accepted && !completed) {
                 binding.cancelExport(jobId)
             }
+            if ((accepted || dispatchedToWorker) && !authoritativeTerminal && operation == SourceOperation.SAVE) {
+                val leaseToRetain = releaseLeaseOnUncertainExit?.invoke()
+                if (leaseToRetain != null && !binding.retainLeaseUntilWorkerDies(leaseToRetain)) {
+                    closeAutoCloseableQuietly(leaseToRetain)
+                }
+            }
             binding.close()
         }
     }
@@ -589,7 +649,8 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
         destinationDescriptor: ParcelFileDescriptor,
         snapshot: EditorDocumentSnapshot,
         expectedBytes: Long,
-        successVerified: AtomicBoolean
+        successVerified: AtomicBoolean,
+        releaseLeaseOnUncertainExit: (() -> AutoCloseable?)? = null
     ) {
         val pipe = try {
             ReliableSnapshotPipe.create(EXPORT_TIMEOUT_MILLIS)
@@ -602,7 +663,8 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
                 destinationDescriptor = destinationDescriptor,
                 expectedBytes = expectedBytes,
                 successVerified = successVerified,
-                snapshotProducer = SnapshotPipeProducer(pipe = pipe, snapshot = snapshot)
+                snapshotProducer = SnapshotPipeProducer(pipe = pipe, snapshot = snapshot),
+                releaseLeaseOnUncertainExit = releaseLeaseOnUncertainExit
             )
         } finally {
             pipe.close()
@@ -615,7 +677,8 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
         destinationDescriptor: ParcelFileDescriptor,
         expectedBytes: Long,
         successVerified: AtomicBoolean,
-        snapshotProducer: SnapshotPipeProducer?
+        snapshotProducer: SnapshotPipeProducer?,
+        releaseLeaseOnUncertainExit: (() -> AutoCloseable?)? = null
     ) {
         require(expectedBytes in ExportProtocol.MIN_BYTE_LIMIT..ExportProtocol.MAX_BYTE_LIMIT) {
             "expected byte count exceeds export limits"
@@ -640,6 +703,8 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
         var callback: ExportCallback? = null
         var producer: Deferred<Long>? = null
         var accepted = false
+        var dispatchedToWorker = false
+        var authoritativeTerminal = false
         var completed = false
         val producedBytes = AtomicLong(NO_PRODUCED_BYTES)
         try {
@@ -671,6 +736,7 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
             callback = exportCallback
             val acceptCode =
                 try {
+                    dispatchedToWorker = true
                     service.startExport(
                         jobId,
                         transferredInput,
@@ -694,6 +760,9 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
                     closeRejectedDestination(destination)
                     destination = null
                 }
+            if (acceptCode != ExportProtocol.ACCEPT_ACCEPTED) {
+                dispatchedToWorker = false
+            }
             throwForAcceptCode(acceptCode)
             accepted = true
             currentCoroutineContext().ensureActive()
@@ -708,11 +777,16 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
                     currentCoroutineContext().ensureActive()
                     throw DocumentExportException(DocumentExportFailure.TIMED_OUT, failure)
                 }
-            terminalStatus.failureOrNull(expectedBytes)?.let { failure ->
-                throw DocumentExportException(failure)
-            }
             if (!exportCallback.hasCanonicalTerminal()) {
                 throw DocumentExportException(DocumentExportFailure.INVALID_RESPONSE)
+            }
+            val terminalFailure = terminalStatus.failureOrNull(expectedBytes)
+            if (terminalFailure == DocumentExportFailure.INVALID_RESPONSE) {
+                throw DocumentExportException(terminalFailure)
+            }
+            authoritativeTerminal = true
+            if (terminalFailure != null) {
+                throw DocumentExportException(terminalFailure)
             }
             if (producer != null) {
                 withContext(NonCancellable) {
@@ -735,7 +809,8 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
                     callback = callback,
                     producer = producer,
                     producedBytes = producedBytes,
-                    expectedBytes = expectedBytes
+                    expectedBytes = expectedBytes,
+                    onAuthoritativeTerminal = { authoritativeTerminal = true }
                 )
             ) {
                 successVerified.set(true)
@@ -771,6 +846,12 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
             if (!completed) {
                 snapshotProducer?.fail()
             }
+            if ((accepted || dispatchedToWorker) && !authoritativeTerminal) {
+                val leaseToRetain = releaseLeaseOnUncertainExit?.invoke()
+                if (leaseToRetain != null && !binding.retainLeaseUntilWorkerDies(leaseToRetain)) {
+                    closeAutoCloseableQuietly(leaseToRetain)
+                }
+            }
             binding.close()
         }
     }
@@ -781,7 +862,8 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
         callback: ExportCallback?,
         producer: Deferred<Long>?,
         producedBytes: AtomicLong,
-        expectedBytes: Long
+        expectedBytes: Long,
+        onAuthoritativeTerminal: () -> Unit = {}
     ): Boolean {
         val terminalStatus =
             try {
@@ -794,10 +876,15 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
                 return false
             }
                 ?: return false
-        if (
-            terminalStatus.failureOrNull(expectedBytes) != null ||
-            callback?.hasCanonicalTerminal() != true
-        ) {
+        if (callback?.hasCanonicalTerminal() != true) {
+            return false
+        }
+        val terminalFailure = terminalStatus.failureOrNull(expectedBytes)
+        if (terminalFailure == DocumentExportFailure.INVALID_RESPONSE) {
+            return false
+        }
+        onAuthoritativeTerminal()
+        if (terminalFailure != null) {
             return false
         }
         if (producer != null) {
@@ -881,8 +968,32 @@ internal class IsolatedDocumentExporter(context: Context) : SourceDocumentExport
 
 /** Owns one opened destination descriptor until export claims it. */
 internal class TransientExportDestination private constructor(
-    private var descriptor: ParcelFileDescriptor?
+    private var descriptor: ParcelFileDescriptor?,
+    /** Kernel `(st_dev, st_ino)` identity of the exact opened regular descriptor, if any. */
+    val fileIdentityKey: String?
 ) : AutoCloseable {
+    /** Re-stats the live retained descriptor on bounded detached background I/O to verify it is still empty. */
+    suspend fun isCurrentlyEmptyRegularFile(): Boolean {
+        val dup = synchronized(this) {
+            val active = descriptor ?: return false
+            try {
+                active.dup()
+            } catch (_: IOException) {
+                null
+            } catch (_: IllegalStateException) {
+                null
+            } catch (_: LinkageError) {
+                null
+            }
+        } ?: return false
+        return probeOwnedDescriptorMetadata(
+            ownedDescriptor = dup,
+            timeoutMillis = 5_000L,
+            defaultValue = false,
+            probe = ::isEmptyRegularFile
+        )
+    }
+
     /** Transfers the only destination capability to one export operation. */
     @Synchronized
     fun takeDescriptor(): ParcelFileDescriptor =
@@ -899,8 +1010,14 @@ internal class TransientExportDestination private constructor(
 
     companion object {
         /** Creates one owner around a freshly opened destination capability. */
-        fun from(descriptor: ParcelFileDescriptor): TransientExportDestination =
-            TransientExportDestination(descriptor)
+        fun from(
+            descriptor: ParcelFileDescriptor,
+            fileIdentityKey: String? = null
+        ): TransientExportDestination =
+            TransientExportDestination(
+                descriptor = descriptor,
+                fileIdentityKey = fileIdentityKey
+            )
     }
 }
 
@@ -1066,6 +1183,14 @@ private fun closeQuietly(descriptor: ParcelFileDescriptor?) {
         descriptor?.close()
     } catch (_: Exception) {
         // Descriptor ownership ends even when close reports an error.
+    }
+}
+
+private fun closeAutoCloseableQuietly(resource: AutoCloseable?) {
+    try {
+        resource?.close()
+    } catch (_: Exception) {
+        // Best-effort cleanup of fallback lease ownership.
     }
 }
 

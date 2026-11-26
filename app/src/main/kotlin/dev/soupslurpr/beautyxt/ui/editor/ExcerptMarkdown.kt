@@ -18,10 +18,14 @@ internal data class FormattedExcerpt(
 private data class ExcerptBlock(val original: Int, val block: MarkdownRenderBlock, val selection: TextRange?)
 
 /** Generates complete syntax from the selected semantic content, never from neighboring source. */
-internal fun selectedMarkdown(document: MarkdownPreviewDocument, selection: DocumentSelection.Reading): FormattedExcerpt {
-    val originalBlocks = excerptSemanticBlocks(document, selection)
+internal fun selectedMarkdown(
+    document: MarkdownPreviewDocument,
+    selection: DocumentSelection.Reading,
+    isBlockVisible: (Int, MarkdownRenderBlock) -> Boolean = { _, _ -> true }
+): FormattedExcerpt {
+    val originalBlocks = excerptSemanticBlocks(document, selection, isBlockVisible)
     val partialMarkers = excerptPartialFootnoteMarkers(document, selection)
-    val originals = partialMarkers?.let { excerptSemanticBlocks(it.first, it.second) } ?: originalBlocks
+    val originals = partialMarkers?.let { excerptSemanticBlocks(it.first, it.second, isBlockVisible) } ?: originalBlocks
     val notices = linkedSetOf<ExcerptNotice>()
     val selected = ArrayList<ExcerptBlock>()
     var index = 0
@@ -44,7 +48,8 @@ internal fun selectedMarkdown(document: MarkdownPreviewDocument, selection: Docu
                 selected += first.copy(selection = null)
             } else if (range != null) {
                 selected += first.copy(block = cropExcerptBlock(first.block, range.min, range.max), selection = null)
-            } else if (first.original in selection.start.block..selection.end.block) {
+            } else if (first.original in selection.start.block..selection.end.block &&
+                isBlockVisible(first.original, first.block)) {
                 val prefix = readingListPrefix(first.block)
                 val from = if (first.original == selection.start.block) selection.start.offset.coerceIn(-prefix.length, 0) else -prefix.length
                 val to = if (first.original == selection.end.block) selection.end.offset.coerceIn(-prefix.length, 0) else 0
@@ -58,11 +63,13 @@ internal fun selectedMarkdown(document: MarkdownPreviewDocument, selection: Docu
     }
     val listIndex = ExcerptListIndex(originals)
 
-    // Resolve original heading identities before headings acquire their shorter excerpt names.
+    // Resolve original heading identities against the full document so duplicate slugs stay stable;
+    // links to hidden headings are dropped because excerptAnchors only holds visible selected headings.
     val originalHeadings = MarkdownHeadingIndex(originalBlocks.map {
         MarkdownPreviewHeadingItem(it.original, it.block.kind == MarkdownBlockKind.Heading, it.block.text)
     })
-    val definitions = originalBlocks.filter { it.block.markdownFootnoteLabel() != null }
+    val definitions = originalBlocks
+        .filter { it.block.markdownFootnoteLabel() != null && isBlockVisible(it.original, it.block) }
         .groupBy { checkNotNull(it.block.markdownFootnoteLabel()) }
     val noteNumbers = linkedMapOf<String, String>()
     fun discover(block: MarkdownRenderBlock) {
@@ -182,21 +189,28 @@ private fun excerptHeadingAnchors(blocks: List<ExcerptBlock>): Map<Int, String> 
 }
 
 /** Joins renderer chunks before clipping, so a split style, table cell, or fence stays intact. */
-private fun excerptSemanticBlocks(document: MarkdownPreviewDocument, selection: DocumentSelection.Reading): List<ExcerptBlock> {
+private fun excerptSemanticBlocks(
+    document: MarkdownPreviewDocument,
+    selection: DocumentSelection.Reading,
+    isBlockVisible: (Int, MarkdownRenderBlock) -> Boolean = { _, _ -> true }
+): List<ExcerptBlock> {
     val result = ArrayList<ExcerptBlock>()
     var index = 0
     while (index < document.blocks.size) {
         val start = index
         val first = document.blocks[index++]
         if (first.illustrationContinuation) continue
+        val blockVisible = isBlockVisible(start, first)
         val text = StringBuilder(first.text)
         val spans = ArrayList(first.spans)
+        val syntaxRuns = ArrayList(first.syntaxRuns)
         val alignments = ArrayList(first.tableAlignments)
         val separators = ArrayList(first.tableCellSeparators)
         var source = first.source
         var selectedStart: Int? = null
         var selectedEnd: Int? = null
         fun include(blockIndex: Int, base: Int) {
+            if (!blockVisible) return
             val range = selection.rangeFor(blockIndex, document.blocks[blockIndex].text.length)
                 ?: TextRange(0).takeIf { document.blocks[blockIndex].text.isEmpty() &&
                     selection.start < selection.end && ReadingPoint(blockIndex, 0) >= selection.start &&
@@ -213,6 +227,7 @@ private fun excerptSemanticBlocks(document: MarkdownPreviewDocument, selection: 
             source = MarkdownSourceRange(minOf(source.start, part.source.start), maxOf(source.end, part.source.end))
             include(index, text.length)
             spans += part.spans.map { it.copy(start = it.start + text.length, end = it.end + text.length) }
+            syntaxRuns += part.syntaxRuns.map { it.copy(start = it.start + text.length, end = it.end + text.length) }
             if (first.kind == MarkdownBlockKind.TableRow) {
                 separators += part.tableCellSeparators.map { it + text.length }
                 val skip = if (alignments.isEmpty()) 0 else 1
@@ -222,6 +237,7 @@ private fun excerptSemanticBlocks(document: MarkdownPreviewDocument, selection: 
             index++
         }
         result += ExcerptBlock(start, first.copy(text = text.toString(), spans = mergeExcerptSpans(spans),
+            syntaxRuns = syntaxRuns,
             continuesPrevious = false, tableAlignments = alignments, tableCellSeparators = separators,
             source = source, sourceMaps = emptyList()),
             selectedStart?.let { TextRange(it, checkNotNull(selectedEnd)) })
@@ -251,6 +267,11 @@ private fun cropExcerptBlock(block: MarkdownRenderBlock, start: Int, end: Int): 
         val to = minOf(end, span.end)
         if (from >= to) null else span.copy(start = from - start, end = to - start,
             illustration = span.illustration.takeIf { from == span.start && to == span.end })
+    },
+    syntaxRuns = block.syntaxRuns.mapNotNull { run ->
+        val from = maxOf(start, run.start)
+        val to = minOf(end, run.end)
+        if (from >= to) null else run.copy(start = from - start, end = to - start)
     })
 
 /** Retains selected columns and their original headers, leaving unselected data cells empty. */
@@ -601,6 +622,14 @@ private fun serializeExcerptBlocks(blocks: List<MarkdownRenderBlock>, listLayout
                 val text = excerptInline(content)
                 if (block.continuesListItem) text else marker + task + text
             }
+            MarkdownBlockKind.Frontmatter ->
+                if (block.metadata.isNotEmpty()) {
+                    "${excerptEscape(block.metadata)}: ${excerptEscape(block.text)}"
+                } else {
+                    excerptEscape(block.text)
+                }
+            MarkdownBlockKind.DetailsSummary ->
+                "**${excerptEscape(block.text.ifEmpty { "Details" })}**"
             else -> excerptInline(block)
         }
         val alert = block.quoteKind?.takeIf { alertLayout.startsAlert(blockIndex) }

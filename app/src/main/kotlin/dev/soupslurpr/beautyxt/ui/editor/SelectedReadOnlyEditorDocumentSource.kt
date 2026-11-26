@@ -23,6 +23,9 @@ internal class SelectedReadOnlyEditorDocumentSource private constructor(
     /** Returns the exact encoded source URI for a user-initiated temporary grant. */
     override fun encodedShareUri(): String = selectedSource.uri.toString()
 
+    override val fileIdentityKey: String?
+        get() = selectedSource.fileIdentityKey
+
     /** Forgets the selected source capability and releases any tree lease when the viewer closes. */
     override fun close() {
         if (!closed.compareAndSet(false, true)) return

@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import dev.soupslurpr.beautyxt.R
 import dev.soupslurpr.beautyxt.ui.UiText
 import dev.soupslurpr.beautyxt.ui.asString
@@ -64,7 +65,11 @@ internal data class EditorNavigationActions(
     val onReadNfc: () -> Unit,
     val onKeyboardShortcuts: () -> Unit = {},
     val onTextAppearance: () -> Unit = {},
-    val onAppTheme: () -> Unit = {}
+    val onAppTheme: () -> Unit = {},
+    val onCompareFile: () -> Unit = {},
+    val onCompareClipboard: () -> Unit = {},
+    val onToggleSplitView: () -> Unit = {},
+    val onOpenNewWindow: () -> Unit = {}
 )
 
 /** Describes the single operation that currently offers cancellation. */
@@ -216,6 +221,27 @@ internal fun EditorTopBar(
                         )
                     }
                 }
+                if (availableWidth >= 840.dp && session.canToggleSplitView) {
+                    val splitActive = session.isSplitViewEnabled &&
+                        session.presentation == EditorPresentation.Text
+                    IconButton(onClick = actions.onToggleSplitView) {
+                        Icon(
+                            painterResource(R.drawable.ic_description),
+                            contentDescription = stringResource(
+                                if (splitActive) {
+                                    R.string.editor_split_view_hide
+                                } else {
+                                    R.string.editor_split_view_show
+                                }
+                            ),
+                            tint = if (splitActive) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                }
                 IconButton(onClick = {
                     session.flushPendingEdit()
                     onOverflowExpandedChange(true)
@@ -315,6 +341,26 @@ internal fun EditorTopBar(
                         }
                         HorizontalDivider(
                             modifier = Modifier.padding(MenuDefaults.HorizontalDividerPadding)
+                        )
+                        ActionMenuItem(
+                            shape = MenuDefaults.middleItemShape,
+                            label = stringResource(R.string.compare_with_file),
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_file_open), contentDescription = null) },
+                            enabled = session.canShowFileInfo,
+                            onClick = { onOverflowExpandedChange(false); actions.onCompareFile() }
+                        )
+                        ActionMenuItem(
+                            shape = MenuDefaults.middleItemShape,
+                            label = stringResource(R.string.compare_with_clipboard),
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_content_copy), contentDescription = null) },
+                            enabled = session.canShowFileInfo,
+                            onClick = { onOverflowExpandedChange(false); actions.onCompareClipboard() }
+                        )
+                        ActionMenuItem(
+                            shape = MenuDefaults.middleItemShape,
+                            label = stringResource(R.string.editor_new_window),
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_open_in_new), contentDescription = null) },
+                            onClick = { onOverflowExpandedChange(false); actions.onOpenNewWindow() }
                         )
                         ActionMenuItem(
                             shape = MenuDefaults.middleItemShape,

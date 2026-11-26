@@ -51,6 +51,7 @@ private val HomeDestination.contentKey: String
 @Composable
 internal fun HomeNavigation(
     versionName: String,
+    topResumedLostVersion: Long = 0L,
     homeContent: @Composable (onAbout: () -> Unit, onDocument: (InitialDocumentAction) -> Unit) -> Unit
 ) {
     // Document keys contain only an opaque identity and a starting action, never text or URIs.
@@ -122,6 +123,7 @@ internal fun HomeNavigation(
                     HomeDocumentScreen(
                         initialAction = destination.action,
                         isCurrentEntry = { backStack.lastOrNull() == destination },
+                        topResumedLostVersion = topResumedLostVersion,
                         onClose = {
                             if (backStack.lastOrNull() == destination) goBack()
                         }

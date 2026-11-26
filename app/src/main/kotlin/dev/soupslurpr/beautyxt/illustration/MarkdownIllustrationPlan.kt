@@ -15,7 +15,11 @@ internal data class IllustrationRequest(
 )
 
 /** Prepares provenance once off the UI thread. Drawings never enter this immutable index. */
-internal class MarkdownIllustrationPlan(private val blocks: List<MarkdownRenderBlock>) {
+internal class MarkdownIllustrationPlan private constructor(
+    private val blocks: List<MarkdownRenderBlock>,
+    private val targets: Map<Int, List<Target>>,
+    private val fenceOwners: IntArray
+) {
     private data class Target(
         val request: IllustrationRequest?,
         val fallback: IllustrationResult.Fallback?,
@@ -23,115 +27,153 @@ internal class MarkdownIllustrationPlan(private val blocks: List<MarkdownRenderB
         val joined: MarkdownRenderBlock?
     )
 
-    private val targets = HashMap<Int, List<Target>>()
-    private val fenceOwners = IntArray(blocks.size) { -1 }
     val isEmpty: Boolean get() = targets.isEmpty()
 
+    constructor(blocks: List<MarkdownRenderBlock>) : this(
+        blocks = blocks,
+        targets = HashMap<Int, List<Target>>().also { targetMap ->
+            val owners = IntArray(blocks.size) { -1 }
+            populateIllustrationTargets(blocks, targetMap, owners)
+        },
+        fenceOwners = IntArray(blocks.size) { -1 }
+    )
+
     init {
-        var index = 0
-        while (index < blocks.size) {
-            val block = blocks[index]
-            val kind = when (block.metadata.trim().lowercase()) {
-                "math" -> IllustrationKind.Math
-                "mermaid" -> IllustrationKind.Diagram
-                else -> null
-            }
-            if (block.kind == MarkdownBlockKind.Code && !block.continuesPrevious &&
-                kind != null && block.text.isNotEmpty() &&
-                block.spans.none { it.illustration != null }
-            ) {
-                var end = index + 1
-                var units = block.text.length.toLong()
+        if (targets.isNotEmpty() && fenceOwners.all { it < 0 }) {
+            for ((ownerIndex, list) in targets) {
+                val single = list.singleOrNull() ?: continue
+                if (single.spanIndex != null) continue
+                var end = ownerIndex + 1
                 while (end < blocks.size && blocks[end].kind == MarkdownBlockKind.Code &&
                     blocks[end].continuesPrevious
                 ) {
-                    units += blocks[end++].text.length
+                    end += 1
                 }
-                val maximum = sourceLimit(kind)
-                val source = if (units <= maximum) {
-                    buildString(units.toInt()) {
-                        for (fragment in index until end) append(blocks[fragment].text)
-                    }
-                } else {
-                    null
+                for (fragment in ownerIndex until end) {
+                    fenceOwners[fragment] = ownerIndex
                 }
-                val failure = if (source == null) {
-                    IllustrationFailure.TooLarge
-                } else {
-                    admission(source, true, kind)
+            }
+        }
+    }
+
+    /** Returns an updated plan with one non-fence block replaced (for example, a toggled task item). */
+    fun withUpdatedBlock(index: Int, updatedBlock: MarkdownRenderBlock): MarkdownIllustrationPlan {
+        if (index !in blocks.indices || fenceOwners[index] >= 0) return this
+        val updatedBlocks = blocks.toMutableList().apply { this[index] = updatedBlock }
+        return MarkdownIllustrationPlan(updatedBlocks, targets, fenceOwners)
+    }
+
+    companion object {
+        private fun populateIllustrationTargets(
+            blocks: List<MarkdownRenderBlock>,
+            targets: HashMap<Int, List<Target>>,
+            fenceOwners: IntArray
+        ) {
+            var index = 0
+            while (index < blocks.size) {
+                val block = blocks[index]
+                val kind = when (block.metadata.trim().lowercase()) {
+                    "math" -> IllustrationKind.Math
+                    "mermaid" -> IllustrationKind.Diagram
+                    else -> null
                 }
-                val request = source?.takeIf {
-                    failure == null
-                }?.let { IllustrationRequest(it, true, kind) }
-                var offset = 0
-                val joined = request?.let {
-                    block.copy(
-                        text = it.source,
-                        source = MarkdownSourceRange(
-                            block.source.start,
-                            blocks[end - 1].source.end
-                        ),
-                        sourceMaps = blocks.subList(index, end).flatMap { fragment ->
-                            fragment.sourceMaps.map { map ->
-                                map.copy(
-                                    renderedStart = map.renderedStart + offset,
-                                    renderedEnd =
-                                        map.renderedEnd + offset
-                                )
-                            }.also { offset += fragment.text.length }
-                        }
-                    )
-                }
-                targets[index] =
-                    listOf(
-                        Target(
-                            request,
-                            failure?.let {
-                                IllustrationResult.Fallback(it, kind)
-                            },
-                            null,
-                            joined
-                        )
-                    )
-                for (fragment in index until end) fenceOwners[fragment] = index
-                index = end
-            } else {
-                val found = block.spans.mapIndexedNotNull { spanIndex, span ->
-                    if (span.styles and MARKDOWN_SPAN_STYLE_MATH == 0 ||
-                        span.illustration != null
+                if (block.kind == MarkdownBlockKind.Code && !block.continuesPrevious &&
+                    kind != null && block.text.isNotEmpty() &&
+                    block.spans.none { it.illustration != null }
+                ) {
+                    var end = index + 1
+                    var units = block.text.length.toLong()
+                    while (end < blocks.size && blocks[end].kind == MarkdownBlockKind.Code &&
+                        blocks[end].continuesPrevious
                     ) {
-                        null
+                        units += blocks[end++].text.length
+                    }
+                    val maximum = sourceLimit(kind)
+                    val source = if (units <= maximum) {
+                        buildString(units.toInt()) {
+                            for (fragment in index until end) append(blocks[fragment].text)
+                        }
                     } else {
-                        val source = block.text.substring(span.start, span.end)
-                        val display = span.styles and MARKDOWN_SPAN_STYLE_DISPLAY_MATH != 0
-                        val multiline =
-                            ('\n' in source || '\r' in source) &&
-                                (span.start != 0 || span.end != block.text.length)
-                        val failure = if (multiline) {
-                            IllustrationFailure.Unsupported
+                        null
+                    }
+                    val failure = if (source == null) {
+                        IllustrationFailure.TooLarge
+                    } else {
+                        admission(source, true, kind)
+                    }
+                    val request = source?.takeIf {
+                        failure == null
+                    }?.let { IllustrationRequest(it, true, kind) }
+                    var offset = 0
+                    val joined = request?.let {
+                        block.copy(
+                            text = it.source,
+                            source = MarkdownSourceRange(
+                                block.source.start,
+                                blocks[end - 1].source.end
+                            ),
+                            sourceMaps = blocks.subList(index, end).flatMap { fragment ->
+                                fragment.sourceMaps.map { map ->
+                                    map.copy(
+                                        renderedStart = map.renderedStart + offset,
+                                        renderedEnd =
+                                            map.renderedEnd + offset
+                                    )
+                                }.also { offset += fragment.text.length }
+                            }
+                        )
+                    }
+                    targets[index] =
+                        listOf(
+                            Target(
+                                request,
+                                failure?.let {
+                                    IllustrationResult.Fallback(it, kind)
+                                },
+                                null,
+                                joined
+                            )
+                        )
+                    for (fragment in index until end) fenceOwners[fragment] = index
+                    index = end
+                } else {
+                    val found = block.spans.mapIndexedNotNull { spanIndex, span ->
+                        if (span.styles and MARKDOWN_SPAN_STYLE_MATH == 0 ||
+                            span.illustration != null
+                        ) {
+                            null
                         } else {
-                            admission(
-                                source,
-                                display,
-                                IllustrationKind.Math
+                            val source = block.text.substring(span.start, span.end)
+                            val display = span.styles and MARKDOWN_SPAN_STYLE_DISPLAY_MATH != 0
+                            val multiline =
+                                ('\n' in source || '\r' in source) &&
+                                    (span.start != 0 || span.end != block.text.length)
+                            val failure = if (multiline) {
+                                IllustrationFailure.Unsupported
+                            } else {
+                                admission(
+                                    source,
+                                    display,
+                                    IllustrationKind.Math
+                                )
+                            }
+                            Target(
+                                if (failure ==
+                                    null
+                                ) {
+                                    IllustrationRequest(source, display, IllustrationKind.Math)
+                                } else {
+                                    null
+                                },
+                                failure?.let { IllustrationResult.Fallback(it) },
+                                spanIndex,
+                                null
                             )
                         }
-                        Target(
-                            if (failure ==
-                                null
-                            ) {
-                                IllustrationRequest(source, display, IllustrationKind.Math)
-                            } else {
-                                null
-                            },
-                            failure?.let { IllustrationResult.Fallback(it) },
-                            spanIndex,
-                            null
-                        )
                     }
+                    if (found.isNotEmpty()) targets[index] = found
+                    index++
                 }
-                if (found.isNotEmpty()) targets[index] = found
-                index++
             }
         }
     }

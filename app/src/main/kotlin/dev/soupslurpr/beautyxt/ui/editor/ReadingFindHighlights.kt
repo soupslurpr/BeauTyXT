@@ -1,8 +1,14 @@
 package dev.soupslurpr.beautyxt.ui.editor
 
 import androidx.compose.runtime.staticCompositionLocalOf
-internal data class ReadingFindHighlight(val start: Int, val end: Int, val current: Boolean,
-    val markerStart: Int = 0, val markerEnd: Int = 0) {
+internal data class ReadingFindHighlight(
+    val start: Int,
+    val end: Int,
+    val current: Boolean,
+    val markerStart: Int = 0,
+    val markerEnd: Int = 0,
+    val isFrontmatterKey: Boolean = false
+) {
     val collapsed get() = start == end && markerStart == markerEnd
 }
 internal val LocalReadingFindHighlights = staticCompositionLocalOf<Map<Int, List<ReadingFindHighlight>>> { emptyMap() }
@@ -14,8 +20,16 @@ internal fun readingFindHighlights(session: EditorSession): Map<Int, List<Readin
     val result = HashMap<Int, MutableList<ReadingFindHighlight>>()
     session.findResults.forEachIndexed { index, match ->
         match.segments.forEach { part ->
-            result.getOrPut(part.block) { ArrayList() }.add(ReadingFindHighlight(
-                part.blockStart, part.blockEnd, index == session.findResultIndex, part.markerStart, part.markerEnd))
+            result.getOrPut(part.block) { ArrayList() }.add(
+                ReadingFindHighlight(
+                    start = part.blockStart,
+                    end = part.blockEnd,
+                    current = index == session.findResultIndex,
+                    markerStart = part.markerStart,
+                    markerEnd = part.markerEnd,
+                    isFrontmatterKey = part.isFrontmatterKey
+                )
+            )
         }
     }
     return result

@@ -27,6 +27,11 @@ private const val SESSION_AUTHORITY = "session"
 private const val TEMPORARY_URI_GRANT_FLAGS =
     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
+internal const val ACTION_WINDOW_NEW = "dev.soupslurpr.beautyxt.action.WINDOW_NEW"
+internal const val ACTION_WINDOW_OPEN = "dev.soupslurpr.beautyxt.action.WINDOW_OPEN"
+internal const val ACTION_WINDOW_PASTE = "dev.soupslurpr.beautyxt.action.WINDOW_PASTE"
+internal const val ACTION_WINDOW_SCAN_QR = "dev.soupslurpr.beautyxt.action.WINDOW_SCAN_QR"
+
 /** Describes one action that starts an otherwise empty document session. */
 internal enum class InitialDocumentAction {
     /** Waits for an Android source or share intent. */
@@ -41,6 +46,9 @@ internal enum class InitialDocumentAction {
     /** Resolves one selected source before isolated import begins. */
     OpeningSelectedDocument,
 
+    /** Reads plain clipboard text explicitly once the window is focused. */
+    PasteClipboard,
+
     /** Opens the QR scanner before a document exists. */
     ScanQr,
 
@@ -49,6 +57,28 @@ internal enum class InitialDocumentAction {
 
     /** Reports that Android restored a memory-only session without its content. */
     Unrestorable
+}
+
+/** Maps one non-exported multi-window or static launcher-shortcut intent to its start action. */
+internal fun resolveDocumentWindowAction(intent: Intent?): InitialDocumentAction =
+    when (intent?.action) {
+        ACTION_WINDOW_OPEN -> InitialDocumentAction.SelectDocument
+        ACTION_WINDOW_PASTE -> InitialDocumentAction.PasteClipboard
+        ACTION_WINDOW_SCAN_QR -> InitialDocumentAction.ScanQr
+        ACTION_WINDOW_NEW, null -> InitialDocumentAction.NewDocument
+        else -> InitialDocumentAction.NewDocument
+    }
+
+/** Creates an explicit, content-free intent that launches a separate BeauTyXT document window. */
+internal fun createNewDocumentWindowIntent(
+    context: Context,
+    action: String = ACTION_WINDOW_NEW,
+    launchAdjacent: Boolean = true
+): Intent = Intent(action, newSessionUri("window"), context, DocumentWindowActivity::class.java).apply {
+    addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+    if (launchAdjacent) {
+        addFlags(Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT)
+    }
 }
 
 /** Describes what Android reveals after one document session finishes. */
@@ -196,7 +226,7 @@ private val observedTreeGrantAuthorities: MutableSet<String> = ConcurrentHashMap
 
 /** Normalizes Android user-qualified authorities (`0@authority`) to the provider authority. */
 internal fun normalizedProviderAuthority(uri: Uri): String? =
-    uri.authority?.substringAfter('@')?.takeIf(String::isNotBlank)
+    uri.authority?.substringAfterLast('@')?.takeIf(String::isNotBlank)
 
 /** Records any provider authority for which this process held a tree grant (even after release). */
 internal fun recordObservedTreeGrantAuthority(uri: Uri) {
@@ -227,7 +257,14 @@ internal fun mayHaveAmbientTreeAccessForUri(
         return true
     }
     return try {
-        DocumentsContract.isTreeUri(uri) || DocumentsContract.isDocumentUri(context, uri)
+        val lookupUri = dev.soupslurpr.beautyxt.ui.editor.stripUserQualifierFromContentUri(uri)
+        if (DocumentsContract.isTreeUri(lookupUri) || DocumentsContract.isDocumentUri(context, lookupUri)) {
+            return true
+        }
+        val pathDocId = dev.soupslurpr.beautyxt.ui.editor.safDocumentIdFromPath(lookupUri)
+        val rawAuth = lookupUri.authority
+        pathDocId != null && !rawAuth.isNullOrBlank() &&
+            DocumentsContract.isDocumentUri(context, DocumentsContract.buildDocumentUri(rawAuth, pathDocId))
     } catch (_: Exception) {
         false
     }

@@ -36,6 +36,14 @@ internal interface EditorDocumentSource : AutoCloseable {
 
     /** Returns the exact encoded content URI that may receive a temporary read grant. */
     fun encodedShareUri(): String?
+
+    /** Returns the kernel `(st_dev, st_ino)` identity key observed on this source, if any. */
+    val fileIdentityKey: String?
+        get() = null
+
+    /** Returns the process-local write lease owner ID held by this source, if writable and leased. */
+    val writableLeaseOwnerId: java.util.UUID?
+        get() = null
 }
 
 /** Saves revisions to one compatible retained document source. */

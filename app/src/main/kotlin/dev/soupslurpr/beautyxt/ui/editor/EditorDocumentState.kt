@@ -742,7 +742,7 @@ internal constructor(
 
     /** Applies a prepared batch only while the draft and revision still agree. */
     suspend fun replaceDocumentBatch(revision: Long, patches: List<DocumentPatch>,
-        selectionAfter: Utf16Range): DocumentReplacementResult = operations.withLock {
+        selectionAfter: Utf16Range, openEditWindow: Boolean = true): DocumentReplacementResult = operations.withLock {
         val previous = metrics ?: return@withLock DocumentReplacementResult.Unavailable
         if (status != EditorDocumentStatus.Ready || hasActiveDraftChanges ||
             revision != currentRevision || previous.revision != revision || closeStarted.get() ||
@@ -785,7 +785,9 @@ internal constructor(
                 failedEditWindowSelection = null
                 failedEditWindowLine = null
                 status = EditorDocumentStatus.Ready
-                requestEditWindowLocked(selectionAfter)
+                if (openEditWindow) {
+                    requestEditWindowLocked(selectionAfter)
+                }
                 DocumentReplacementResult.Applied(result.revision)
             }
         }
@@ -1221,7 +1223,7 @@ internal constructor(
 
     /** Restores native tree roots; no document text crosses JNI for Undo or Redo. */
     suspend fun restoreDocumentHistory(revision: Long, entry: CommittedEditDelta,
-        undo: Boolean): DocumentReplacementResult = operations.withLock {
+        undo: Boolean, openEditWindow: Boolean = true): DocumentReplacementResult = operations.withLock {
         val previous = metrics ?: return@withLock DocumentReplacementResult.Unavailable
         if (!canReplaceTree(revision)) return@withLock DocumentReplacementResult.Unavailable
         val change = entry.changes.sumOf { it.insertedLength - (it.range.end - it.range.start) }
@@ -1232,8 +1234,31 @@ internal constructor(
         val after = if (selection.end - selection.start > EDIT_WINDOW_UTF16_UNITS)
             Utf16Range(selection.end, selection.end) else selection
         withDocumentTreeChange {
-            publishDocumentTree(revision, expectedLength, after) {
+            publishDocumentTree(revision, expectedLength, after, openEditWindow) {
                 document.restoreHistory(revision, entry.revisionAfter, undo)
+            }
+        }
+    }
+
+    /** Converts all serialized line endings uniformly as one atomic, Undo-able revision. */
+    suspend fun convertLineEndings(
+        revision: Long,
+        target: dev.soupslurpr.beautyxt.document.DocumentLineEnding,
+        selection: Utf16Range = Utf16Range(0L, 0L),
+        openEditWindow: Boolean = false
+    ): DocumentReplacementResult = operations.withLock {
+        val previous = metrics ?: return@withLock DocumentReplacementResult.Unavailable
+        if (!canReplaceTree(revision)) return@withLock DocumentReplacementResult.Unavailable
+        val clampedStart = selection.start.coerceIn(0L, previous.utf16Length)
+        val clampedEnd = selection.end.coerceIn(clampedStart, previous.utf16Length)
+        val targetSelection = if (clampedEnd - clampedStart > EDIT_WINDOW_UTF16_UNITS) {
+            Utf16Range(clampedEnd, clampedEnd)
+        } else {
+            Utf16Range(clampedStart, clampedEnd)
+        }
+        withDocumentTreeChange {
+            publishDocumentTree(revision, previous.utf16Length, targetSelection, openEditWindow) {
+                document.convertLineEndings(revision, target)
             }
         }
     }
@@ -1259,7 +1284,8 @@ internal constructor(
 
     /** Keeps native publication and its platform revision update in one completion. */
     private suspend fun publishDocumentTree(revision: Long, expectedLength: Long,
-        selection: Utf16Range, operation: () -> DocumentMetrics): DocumentReplacementResult =
+        selection: Utf16Range, openEditWindow: Boolean = true,
+        operation: () -> DocumentMetrics): DocumentReplacementResult =
         withContext(NonCancellable) {
             status = EditorDocumentStatus.ApplyingEdit
             editorMessage = null
@@ -1285,7 +1311,9 @@ internal constructor(
                     return@withContext DocumentReplacementResult.Failed
                 }
                 status = EditorDocumentStatus.Ready
-                requestEditWindowLocked(selection)
+                if (openEditWindow) {
+                    requestEditWindowLocked(selection)
+                }
                 return@withContext DocumentReplacementResult.Applied(revision)
             }
             if (result.revision != Math.incrementExact(revision) || result.utf16Length != expectedLength) {
@@ -1301,7 +1329,9 @@ internal constructor(
             failedEditWindowSelection = null
             failedEditWindowLine = null
             status = EditorDocumentStatus.Ready
-            requestEditWindowLocked(selection)
+            if (openEditWindow) {
+                requestEditWindowLocked(selection)
+            }
             DocumentReplacementResult.Applied(result.revision)
         }
 
@@ -1629,14 +1659,26 @@ internal constructor(
         status = EditorDocumentStatus.ApplyingEdit
         editorMessage = null
 
+        val linePreservingPatches = buildLinePreservingPatches(
+            oldText = removedText,
+            newText = minimalDiff.replacement,
+            baseGlobalOffset = globalRange.start
+        )
         val resultingMetrics =
             try {
                 withContext(workerDispatcher + NonCancellable) {
-                    document.replace(
-                        expectedRevision = edit.snapshot.metrics.revision,
-                        range = globalRange,
-                        replacement = minimalDiff.replacement
-                    )
+                    if (linePreservingPatches != null) {
+                        document.replaceBatch(
+                            revision = edit.snapshot.metrics.revision,
+                            patches = linePreservingPatches
+                        )
+                    } else {
+                        document.replace(
+                            expectedRevision = edit.snapshot.metrics.revision,
+                            range = globalRange,
+                            replacement = minimalDiff.replacement
+                        )
+                    }
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -1868,6 +1910,86 @@ internal constructor(
                         layout = layout
                     )
                 }
+            }
+        } finally {
+            captured.snapshot.close()
+        }
+    }
+
+    /**
+     * Renders one live Split View preview snapshot with an optional uncommitted draft overlay.
+     *
+     * Never mutates document revision, Undo history, or autosave state.
+     */
+    suspend fun renderMarkdownForSplitPreview(
+        renderer: MarkdownRenderer,
+        draftRange: Utf16Range? = null,
+        draftText: String? = null
+    ): RenderedMarkdownRevision? {
+        val captured =
+            operations.withLock {
+                if (status != EditorDocumentStatus.Ready || closeStarted.get()) {
+                    return@withLock null
+                }
+                val capturedMetrics = metrics ?: return@withLock null
+                check(capturedMetrics.revision == currentRevision) {
+                    "document metrics revision does not match the current revision"
+                }
+                var ownedSnapshot: EditorDocumentSnapshot? = null
+                try {
+                    val useOverlay = draftRange != null &&
+                        draftText != null &&
+                        draftRange.start >= 0L &&
+                        draftRange.end <= capturedMetrics.utf16Length &&
+                        draftText.hasWellFormedUtf16()
+                    val snapshot = if (useOverlay) {
+                        document.capturePreviewSnapshot(
+                            expectedRevision = currentRevision,
+                            range = draftRange,
+                            replacement = draftText
+                        )
+                    } else {
+                        document.captureSnapshot(currentRevision)
+                    }
+                    ownedSnapshot = snapshot
+                    val expectedBytes = if (useOverlay) {
+                        snapshot.metrics().serializedByteLength
+                    } else {
+                        capturedMetrics.serializedByteLength
+                    }
+                    CapturedMarkdown(
+                        revision = currentRevision,
+                        serializedByteLength = expectedBytes,
+                        snapshot = snapshot
+                    ).also { ownedSnapshot = null }
+                } catch (failure: Exception) {
+                    ownedSnapshot?.close()
+                    if (handleStaleRevision(failure)) {
+                        return@withLock null
+                    }
+                    throw failure
+                } catch (failure: Throwable) {
+                    ownedSnapshot?.close()
+                    throw failure
+                }
+            } ?: return null
+
+        return try {
+            val rendered =
+                renderer.renderPreview(
+                    snapshot = captured.snapshot,
+                    expectedBytes = captured.serializedByteLength
+                )
+            val layout = withContext(workerDispatcher) { prepareMarkdownPreview(rendered.blocks) }
+            currentCoroutineContext().ensureActive()
+            if (closeStarted.get()) {
+                null
+            } else {
+                RenderedMarkdownRevision(
+                    revision = captured.revision,
+                    document = rendered,
+                    layout = layout
+                )
             }
         } finally {
             captured.snapshot.close()

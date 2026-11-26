@@ -19,6 +19,13 @@
     <string name="outline_empty">Headings in this document appear here.</string>
     <string name="outline_untitled">Untitled section</string>
     <string name="outline_level">Heading level %1$d</string>
+    <string name="outline_filter_placeholder">Filter headings</string>
+    <string name="outline_filter_clear">Clear heading filter</string>
+    <string name="outline_filter_empty">No matching headings.</string>
+    <plurals name="outline_filter_matches">
+        <item quantity="one">%1$d matching heading</item>
+        <item quantity="other">%1$d matching headings</item>
+    </plurals>
     <string name="navigation_reloading">Reloading file</string>
     <string name="navigation_closing">Closing document</string>
     <string name="navigation_source">Back to source</string>

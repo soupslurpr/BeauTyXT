@@ -135,6 +135,7 @@ internal fun HomeScreen(
     onReadNfc: () -> Unit,
     onAbout: () -> Unit,
     modifier: Modifier = Modifier,
+    onPaste: () -> Unit = {},
     onAutosaveSettings: () -> Unit = {},
     onAppTheme: () -> Unit = {}
 ) {
@@ -155,6 +156,7 @@ internal fun HomeScreen(
                 onNewDocument = onNewDocument,
                 onOpenDocument = onOpenDocument,
                 onCancelDocumentOpen = onCancelDocumentOpen,
+                onPaste = onPaste,
                 isCameraAvailable = isCameraAvailable,
                 isScanQrEnabled = isScanQrEnabled,
                 onScanQr = onScanQr,
@@ -178,6 +180,7 @@ private fun HomeContent(
     onNewDocument: () -> Unit,
     onOpenDocument: () -> Unit,
     onCancelDocumentOpen: () -> Unit,
+    onPaste: () -> Unit,
     isCameraAvailable: Boolean,
     isScanQrEnabled: Boolean,
     onScanQr: () -> Unit,
@@ -203,6 +206,7 @@ private fun HomeContent(
                     onNewDocument = onNewDocument,
                     onOpenDocument = onOpenDocument,
                     onCancelDocumentOpen = onCancelDocumentOpen,
+                    onPaste = onPaste,
                     isCameraAvailable = isCameraAvailable,
                     isScanQrEnabled = isScanQrEnabled,
                     onScanQr = onScanQr,
@@ -328,6 +332,7 @@ private fun HomeActionSections(
     onNewDocument: () -> Unit,
     onOpenDocument: () -> Unit,
     onCancelDocumentOpen: () -> Unit,
+    onPaste: () -> Unit,
     isCameraAvailable: Boolean,
     isScanQrEnabled: Boolean,
     onScanQr: () -> Unit,
@@ -349,6 +354,8 @@ private fun HomeActionSections(
         )
         OpenFeedback(openStatus = openStatus)
         ReceiveActions(
+            isPasteEnabled = isNewDocumentEnabled,
+            onPaste = onPaste,
             isCameraAvailable = isCameraAvailable,
             isScanQrEnabled = isScanQrEnabled,
             onScanQr = onScanQr,
@@ -447,6 +454,8 @@ private fun DocumentActions(
 /** Groups direct receive actions in one quiet surface with hardware availability. */
 @Composable
 private fun ReceiveActions(
+    isPasteEnabled: Boolean,
+    onPaste: () -> Unit,
     isCameraAvailable: Boolean,
     isScanQrEnabled: Boolean,
     onScanQr: () -> Unit,
@@ -467,6 +476,12 @@ private fun ReceiveActions(
                     .semantics { heading() },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.labelMedium
+            )
+            ReceiveAction(
+                label = stringResource(R.string.home_paste),
+                iconRes = R.drawable.ic_content_copy,
+                onClick = onPaste,
+                enabled = isPasteEnabled
             )
             ReceiveAction(
                 label = stringResource(R.string.action_scan_qr),

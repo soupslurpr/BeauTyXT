@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -33,6 +34,8 @@ import dev.soupslurpr.beautyxt.ui.designsystem.trueBlackOrDefault
 
 /** Hosts BeauTyXT's stable launcher workbench. */
 class HomeActivity : ComponentActivity() {
+    private val topResumedLostVersion = mutableLongStateOf(0L)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -50,7 +53,10 @@ class HomeActivity : ComponentActivity() {
                     cleanup = app.legacyCleanup,
                     onClose = ::finish
                 ) {
-                    HomeNavigation(versionName = versionName) { onAbout, onDocument ->
+                    HomeNavigation(
+                        versionName = versionName,
+                        topResumedLostVersion = topResumedLostVersion.longValue
+                    ) { onAbout, onDocument ->
                         HomeActivityContent(
                             appThemeStore = app.appTheme,
                             appThemeState = appThemeState,
@@ -62,6 +68,13 @@ class HomeActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onTopResumedActivityChanged(isTopResumedActivity: Boolean) {
+        super.onTopResumedActivityChanged(isTopResumedActivity)
+        if (!isTopResumedActivity) {
+            topResumedLostVersion.longValue += 1L
         }
     }
 
@@ -122,6 +135,7 @@ class HomeActivity : ComponentActivity() {
             onNewDocument = { onDocument(InitialDocumentAction.NewDocument) },
             onOpenDocument = { onDocument(InitialDocumentAction.SelectDocument) },
             onCancelDocumentOpen = {},
+            onPaste = { onDocument(InitialDocumentAction.PasteClipboard) },
             isCameraAvailable = hasCamera,
             isScanQrEnabled = hasCamera,
             onScanQr = { onDocument(InitialDocumentAction.ScanQr) },
