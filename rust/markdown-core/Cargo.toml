@@ -9,6 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+beautyxt-syntax-core = { path = "../syntax-core" }
 html5ever = { version = "0.40.1", default-features = false }
 pulldown-cmark = { version = "0.13.6", default-features = false }
 unicode-segmentation = "1.13.3"

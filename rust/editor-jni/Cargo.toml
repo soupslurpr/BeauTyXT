@@ -14,6 +14,7 @@ crate-type = ["cdylib"]
 [dependencies]
 beautyxt-editor-bridge-protocol = { path = "../editor-bridge-protocol" }
 beautyxt-editor-core = { path = "../editor-core" }
+beautyxt-syntax-core = { path = "../syntax-core" }
 jni = "0.22.4"
 libc = "0.2.191"
 

@@ -7,8 +7,8 @@ use crate::{
     Utf16Range, piece_tree::ReplaceOutcome, read_find_text,
 };
 
-/// Bounds the number of patches in one atomic, undoable transaction.
-pub const MAX_BATCH_EDITS: usize = 4096;
+/// Bounds the number of patches in one atomic, undoable transaction (covers a full 32 KiB edit draft).
+pub const MAX_BATCH_EDITS: usize = 32_769;
 /// Bounds temporary removed and inserted UTF-16 in one reviewed batch.
 pub const MAX_BATCH_TEXT_UTF16_UNITS: usize = 256 * 1024;
 

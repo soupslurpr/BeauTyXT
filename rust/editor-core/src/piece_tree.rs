@@ -536,6 +536,7 @@ pub(crate) struct PieceTree {
     root: Tree,
     has_utf8_bom: bool,
     inserted_line_ending: LineEnding,
+    line_ending_override: Option<LineEnding>,
 }
 
 impl PieceTree {
@@ -546,6 +547,7 @@ impl PieceTree {
             root: None,
             has_utf8_bom: false,
             inserted_line_ending: LineEnding::Lf,
+            line_ending_override: None,
         }
     }
 
@@ -561,6 +563,7 @@ impl PieceTree {
             root,
             has_utf8_bom: false,
             inserted_line_ending: LineEnding::Lf,
+            line_ending_override: None,
         }
     }
 
@@ -628,7 +631,25 @@ impl PieceTree {
             root: build_balanced_tree(&leaves)?,
             has_utf8_bom,
             inserted_line_ending: line_endings.preferred(),
+            line_ending_override: None,
         })
+    }
+
+    /// Returns a cloned tree whose serialized line endings are uniformly overridden.
+    #[must_use]
+    pub(crate) fn with_line_ending_override(&self, target: LineEnding) -> Self {
+        Self {
+            root: self.root.clone(),
+            has_utf8_bom: self.has_utf8_bom,
+            inserted_line_ending: target,
+            line_ending_override: Some(target),
+        }
+    }
+
+    /// Returns whether this tree overrides per-piece source line endings at serialization.
+    #[must_use]
+    pub(crate) const fn has_line_ending_override(&self) -> bool {
+        self.line_ending_override.is_some()
     }
 
     /// Returns the complete tree summary.
@@ -640,8 +661,19 @@ impl PieceTree {
     /// Returns the exact serialized byte length, including an optional BOM.
     #[must_use]
     pub(crate) fn serialized_bytes(&self) -> usize {
-        self.summary()
-            .serialized_bytes
+        let summary = self.summary();
+        let body_bytes = match self.line_ending_override {
+            Some(target) => {
+                let extra_per_newline = target.bytes().len().saturating_sub(1);
+                summary
+                    .line_feeds
+                    .checked_mul(extra_per_newline)
+                    .and_then(|extra| summary.bytes.checked_add(extra))
+                    .expect("serialized document length must fit usize")
+            }
+            None => summary.serialized_bytes,
+        };
+        body_bytes
             .checked_add(usize::from(self.has_utf8_bom) * UTF8_BOM.len())
             .expect("serialized document length must fit its tree summary")
     }
@@ -664,19 +696,28 @@ impl PieceTree {
     /// Returns whether serialization contains an LF line ending.
     #[must_use]
     pub(crate) fn has_lf_line_endings(&self) -> bool {
-        self.summary().line_endings & LINE_ENDING_LF_FLAG != 0
+        match self.line_ending_override {
+            Some(target) => self.summary().line_feeds > 0 && target == LineEnding::Lf,
+            None => self.summary().line_endings & LINE_ENDING_LF_FLAG != 0,
+        }
     }
 
     /// Returns whether serialization contains a CRLF line ending.
     #[must_use]
     pub(crate) fn has_crlf_line_endings(&self) -> bool {
-        self.summary().line_endings & LINE_ENDING_CRLF_FLAG != 0
+        match self.line_ending_override {
+            Some(target) => self.summary().line_feeds > 0 && target == LineEnding::CrLf,
+            None => self.summary().line_endings & LINE_ENDING_CRLF_FLAG != 0,
+        }
     }
 
     /// Returns whether serialization contains a CR line ending.
     #[must_use]
     pub(crate) fn has_cr_line_endings(&self) -> bool {
-        self.summary().line_endings & LINE_ENDING_CR_FLAG != 0
+        match self.line_ending_override {
+            Some(target) => self.summary().line_feeds > 0 && target == LineEnding::Cr,
+            None => self.summary().line_endings & LINE_ENDING_CR_FLAG != 0,
+        }
     }
 
     /// Returns the serialized form used for newly inserted logical newlines.
@@ -797,6 +838,7 @@ impl PieceTree {
             root,
             has_utf8_bom: self.has_utf8_bom,
             inserted_line_ending: self.inserted_line_ending,
+            line_ending_override: self.line_ending_override,
         }))
     }
 
@@ -806,6 +848,7 @@ impl PieceTree {
             root: None,
             has_utf8_bom: false,
             inserted_line_ending: self.inserted_line_ending,
+            line_ending_override: None,
         }
     }
 
@@ -843,6 +886,7 @@ impl PieceTree {
             root,
             has_utf8_bom: self.has_utf8_bom,
             inserted_line_ending: self.inserted_line_ending,
+            line_ending_override: self.line_ending_override,
         })
     }
 
@@ -891,6 +935,69 @@ impl PieceTree {
     pub(crate) fn write_to(&self, writer: &mut impl Write) -> Result<(), DocumentError> {
         if self.has_utf8_bom {
             writer.write_all(UTF8_BOM)?;
+        }
+        if let Some(target) = self.line_ending_override {
+            const CRLF_WRITE_CHUNK_BYTES: usize = 16 * 1024;
+            let total_utf16 = self.summary().utf16_units;
+            let mut reader = self.reader();
+            let mut offset = 0;
+            let terminator = target.bytes();
+            let mut chunk_buf = if target == LineEnding::Lf {
+                Vec::new()
+            } else {
+                Vec::with_capacity(CRLF_WRITE_CHUNK_BYTES)
+            };
+            while offset < total_utf16 {
+                let prefix = reader
+                    .bounded_text_prefix(Utf16Range::new(offset, total_utf16), MAX_PIECE_BYTES)?;
+                if target == LineEnding::Lf {
+                    writer.write_all(prefix.text.as_bytes())?;
+                } else {
+                    let bytes = prefix.text.as_bytes();
+                    let mut start = 0;
+                    for (idx, &b) in bytes.iter().enumerate() {
+                        if b == b'\n' {
+                            let segment = &bytes[start..idx];
+                            if chunk_buf.len() + segment.len() + terminator.len()
+                                > CRLF_WRITE_CHUNK_BYTES
+                                && !chunk_buf.is_empty()
+                            {
+                                writer.write_all(&chunk_buf)?;
+                                chunk_buf.clear();
+                            }
+                            if segment.len() + terminator.len() > CRLF_WRITE_CHUNK_BYTES {
+                                writer.write_all(segment)?;
+                                writer.write_all(terminator)?;
+                            } else {
+                                chunk_buf.extend_from_slice(segment);
+                                chunk_buf.extend_from_slice(terminator);
+                            }
+                            start = idx + 1;
+                        }
+                    }
+                    let tail = &bytes[start..];
+                    if !tail.is_empty() {
+                        if chunk_buf.len() + tail.len() > CRLF_WRITE_CHUNK_BYTES
+                            && !chunk_buf.is_empty()
+                        {
+                            writer.write_all(&chunk_buf)?;
+                            chunk_buf.clear();
+                        }
+                        if tail.len() > CRLF_WRITE_CHUNK_BYTES {
+                            writer.write_all(tail)?;
+                        } else {
+                            chunk_buf.extend_from_slice(tail);
+                        }
+                    }
+                }
+                offset = offset
+                    .checked_add(prefix.utf16_units)
+                    .ok_or_else(invalid_tree_summary)?;
+            }
+            if !chunk_buf.is_empty() {
+                writer.write_all(&chunk_buf)?;
+            }
+            return Ok(());
         }
         let mut source_buffer = vec![0_u8; MAX_PIECE_BYTES].into_boxed_slice();
         let mut previous_serialized_byte = None;

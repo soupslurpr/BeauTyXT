@@ -479,6 +479,9 @@ fn ordinary_block_spec(kind: u32, heading_level: u32, context: SafeHtmlBlockCont
         quote_alert_depth: 0,
         list_depth: 0,
         list_number: 0,
+        details_id: 0,
+        details_parent_id: 0,
+        task_marker_source_utf16: 0,
         metadata: String::new(),
     }
 }
@@ -725,6 +728,9 @@ fn list_item_spec(
         quote_alert_depth: 0,
         list_depth,
         list_number: if ordered && first_content { number } else { 0 },
+        details_id: 0,
+        details_parent_id: 0,
+        task_marker_source_utf16: 0,
         metadata: String::new(),
     }
 }
@@ -896,6 +902,9 @@ fn render_table_row(
         quote_alert_depth: 0,
         list_depth: 0,
         list_number: 0,
+        details_id: 0,
+        details_parent_id: 0,
+        task_marker_source_utf16: 0,
         metadata: std::iter::repeat_n(TABLE_ALIGNMENT_NONE, cells.len()).collect(),
     });
     for (cell_index, cell) in cells.iter().enumerate() {

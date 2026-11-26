@@ -11,8 +11,8 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 use beautyxt_markdown_core::{
-    DOCUMENT_FLAG_RAW_HTML, MAX_INPUT_BYTES, MAX_PACKET_BYTES, RenderControl, RenderError,
-    RenderInterruption, render_markdown_with_control,
+    DOCUMENT_FLAG_RAW_HTML, DOCUMENT_FLAG_SYNTAX_TRUNCATED, MAX_INPUT_BYTES, MAX_PACKET_BYTES,
+    RenderControl, RenderError, RenderInterruption, render_markdown_with_control,
 };
 const JOB_ACTIVE: u8 = 0;
 const JOB_CANCELLED: u8 = 1;
@@ -260,7 +260,8 @@ pub(crate) fn run_render(
             .expect("bounded packet length should fit u64"),
         block_count: packet.block_count(),
         span_count: packet.span_count(),
-        flags: u32::from(packet.contains_raw_html()) * DOCUMENT_FLAG_RAW_HTML,
+        flags: (u32::from(packet.contains_raw_html()) * DOCUMENT_FLAG_RAW_HTML)
+            | (u32::from(packet.syntax_truncated()) * DOCUMENT_FLAG_SYNTAX_TRUNCATED),
     }
 }
 
